@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Flow Graph - Static Code Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            maxEdges: 5000,
+            theme: 'default',
+            securityLevel: 'loose'
+        });
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .content h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .content h2::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 24px;
+            background: #667eea;
+            border-radius: 2px;
+        }
+
+        .graph-container {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            overflow-x: auto;
+            min-height: 500px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .graph-container pre.mermaid {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            width: 100%;
+            min-height: 500px;
+        }
+
+        .info-box {
+            background: #fce4ec;
+            border-left: 4px solid #e91e63;
+            padding: 15px 20px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #880e4f;
+        }
+
+        .footer {
+            background: #f9f9f9;
+            border-top: 1px solid #e0e0e0;
+            padding: 20px 40px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>?? Data Flow Graph Visualization</h1>
+            <p>Variable Lifecycle Tracking</p>
+        </div>
+
+        <div class="content">
+            <h2>Data Flow Graph - Variable Transformations</h2>
+            <div class="info-box">
+                <strong>?? Information:</strong> This diagram tracks how data/variables flow through your system. 
+                It shows source (where data originates), transformations (methods it passes through), and sink (where it ends).
+            </div>
+            <div class="graph-container">
+                <pre class="mermaid">
+graph LR
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_11["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:11"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_11 -->|lines (string[])| var_lines["lines"]
+    var_lines -->|Passed Through| methods_lines["Methods: ProjectMapParser.ParseLines"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_17["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:17"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_17 -->|lines (string[])| var_lines["lines"]
+    var_lines -->|Passed Through| methods_lines["Methods: ProjectMapParser.ParseLines"]
+    source_ProjectMapParser_ParseLines["?? Source: ProjectMapParser.ParseLines"]
+    source_ProjectMapParser_ParseLines -->|lines (string[])| var_lines["lines"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_23["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:23"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_23 -->|resultMap (var)| var_resultMap["resultMap"]
+    var_resultMap -->|return| sink_ProjectMapParser_ParseLines["?? Sink: ProjectMapParser.ParseLines"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_24["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:24"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_24 -->|currentFeature (BusinessFeature)| var_currentFeature["currentFeature"]
+    var_currentFeature -->|Passed Through| methods_currentFeature["Methods: List.Add, ProjectMapParser.ParseFeatureDetails, List.Add"]
+    source_ProjectMapParser_ParseTechStack["?? Source: ProjectMapParser.ParseTechStack"]
+    source_ProjectMapParser_ParseTechStack -->|techStack (TechStack)| var_techStack["techStack"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_81["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:81"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_81 -->|frameworkMatch (var)| var_frameworkMatch["frameworkMatch"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_88["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:88"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_88 -->|libMatch (var)| var_libMatch["libMatch"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_92["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:92"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_92 -->|libs (string[])| var_libs["libs"]
+    source_ProjectMapParser_ParseFeatureDetails["?? Source: ProjectMapParser.ParseFeatureDetails"]
+    source_ProjectMapParser_ParseFeatureDetails -->|feature (BusinessFeature)| var_feature["feature"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_107["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:107"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_107 -->|descMatch (var)| var_descMatch["descMatch"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_114["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:114"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_114 -->|endpointMatch (var)| var_endpointMatch["endpointMatch"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_121["?? Source: D:\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser.cs:121"]
+    source_D_\TaiLieu_SU26\DUAL_CAPSTONE\Markdown_Parser\ProjectMapParser_cs_121 -->|entryMatch (var)| var_entryMatch["entryMatch"]
+
+                </pre>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Generated by Static Code Analyzer (Phase 1) | Powered by Mermaid.js</p>
+            <p>Report Generated: 2026-06-02 12:30:35</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (window.mermaid) {
+                mermaid.contentLoaded();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -12,8 +12,14 @@ public class OutputWriter
             WriteIndented = true,
             DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
         };
+        // Only include call graph + optional call graph mermaid string in JSON output.
+        var outputObj = new
+        {
+            CallGraph = result.CallGraph,
+            MermaidCallGraph = string.IsNullOrEmpty(result.MermaidCallGraph) ? null : result.MermaidCallGraph
+        };
 
-        var json = JsonSerializer.Serialize(result, options);
+        var json = JsonSerializer.Serialize(outputObj, options);
         await File.WriteAllTextAsync(outputPath, json);
         Console.WriteLine($"? JSON output written to: {outputPath}");
     }
@@ -50,10 +56,105 @@ public class OutputWriter
         // Also generate separate HTML files for convenience
         if (!string.IsNullOrEmpty(result.MermaidCallGraph))
         {
-            var callGraphHtml = GenerateCallGraphHtml(result.MermaidCallGraph);
-            var callGraphPath = Path.Combine(outputDir, "call_graph.html");
-            await File.WriteAllTextAsync(callGraphPath, callGraphHtml);
-            Console.WriteLine($"? Call graph HTML written to: {callGraphPath}");
+            // If the call graph is large, split it per caller class to avoid Mermaid size/text limits
+            var threshold = 350; // edges threshold to split by class
+            if (result.CallGraph != null && result.CallGraph.Count > threshold)
+            {
+                var mg = new MermaidGenerator();
+                var indexSb = new System.Text.StringBuilder();
+                indexSb.AppendLine("<!doctype html><html><head><meta charset=\"utf-8\"><title>Call Graph Index</title></head><body>");
+                indexSb.AppendLine("<h1>Call Graph by Caller Class</h1><ul>");
+
+                // Prefer splitting by controller: find classes that end with 'Controller'
+                var controllers = result.CallGraph
+                    .Select(e => e.CallerClass)
+                    .Where(n => !string.IsNullOrEmpty(n) && n.EndsWith("Controller"))
+                    .Distinct()
+                    .ToList();
+
+                // Fallback: if no controllers detected, group by caller class as before
+                if (controllers.Count == 0)
+                {
+                    controllers = result.CallGraph
+                        .Select(e => string.IsNullOrEmpty(e.CallerClass) ? "Unknown" : e.CallerClass)
+                        .Distinct()
+                        .ToList();
+                }
+
+                var safe = new Func<string, string>(s => string.Join('_', s.Split(Path.GetInvalidFileNameChars())).Replace(' ', '_'));
+
+                // Build a map from caller node (Class.Method) to outgoing edges for quick traversal
+                var edgesByCaller = new Dictionary<string, List<CallGraphEdge>>();
+                foreach (var edge in result.CallGraph)
+                {
+                    var callerKey = (edge.CallerClass ?? "") + "." + (edge.CallerMethod ?? "");
+                    if (!edgesByCaller.TryGetValue(callerKey, out var list))
+                    {
+                        list = new List<CallGraphEdge>();
+                        edgesByCaller[callerKey] = list;
+                    }
+                    list.Add(edge);
+                }
+
+                foreach (var controller in controllers)
+                {
+                    // Seed with all methods of the controller (class-level)
+                    var seedNodes = result.CallGraph
+                        .Where(e => string.Equals(e.CallerClass, controller, StringComparison.Ordinal))
+                        .Select(e => (e.CallerClass ?? "") + "." + (e.CallerMethod ?? ""))
+                        .Distinct()
+                        .ToList();
+
+                    var includedEdges = new List<CallGraphEdge>();
+                    var visited = new HashSet<string>(StringComparer.Ordinal);
+                    var q = new Queue<string>(seedNodes);
+                    foreach (var sn in seedNodes) visited.Add(sn);
+
+                    while (q.Count > 0)
+                    {
+                        var node = q.Dequeue();
+                        if (!edgesByCaller.TryGetValue(node, out var outs)) continue;
+                        foreach (var e in outs)
+                        {
+                            includedEdges.Add(e);
+                            var calleeNode = (e.CalleeClass ?? "") + "." + (e.CalleeMethod ?? "");
+                            if (!visited.Contains(calleeNode))
+                            {
+                                visited.Add(calleeNode);
+                                q.Enqueue(calleeNode);
+                            }
+                        }
+                    }
+
+                    // If nothing included (rare), skip
+                    if (includedEdges.Count == 0) continue;
+
+                    var mermaid = mg.GenerateCallGraph(includedEdges);
+                    var fileName = $"call_graph_controller_{safe(controller)}.html";
+                    var filePath = Path.Combine(outputDir, fileName);
+                    var html = GenerateCallGraphHtml(mermaid);
+                    await File.WriteAllTextAsync(filePath, html);
+                    Console.WriteLine($"? Call graph (controller) written to: {filePath}");
+                    indexSb.AppendLine($"<li><a href=\"{fileName}\">{System.Net.WebUtility.HtmlEncode(controller)}</a> ({includedEdges.Count} edges)</li>");
+                }
+
+                indexSb.AppendLine("</ul></body></html>");
+                var indexPath = Path.Combine(outputDir, "call_graph_index.html");
+                await File.WriteAllTextAsync(indexPath, indexSb.ToString());
+                Console.WriteLine($"? Call graph index written to: {indexPath}");
+
+                // Also write a small redirect root call_graph.html that links to the index
+                var rootRedirect = $"<!doctype html><html><head><meta http-equiv=\"refresh\" content=\"0;url=call_graph_index.html\" /></head><body>Redirecting to <a href=\"call_graph_index.html\">index</a></body></html>";
+                var rootPath = Path.Combine(outputDir, "call_graph.html");
+                await File.WriteAllTextAsync(rootPath, rootRedirect);
+            }
+            else
+            {
+                var callGraphPath = Path.Combine(outputDir, "call_graph.html");
+                var callGraphContent = GenerateCallGraphHtml(result.MermaidCallGraph);
+                await File.WriteAllTextAsync(callGraphPath, callGraphContent);
+                Console.WriteLine($"? Call graph HTML written to: {callGraphPath}");
+            }
         }
 
         if (!string.IsNullOrEmpty(result.MermaidDataFlowGraph))

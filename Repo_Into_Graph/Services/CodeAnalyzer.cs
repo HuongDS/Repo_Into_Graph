@@ -75,9 +75,6 @@ public class CodeAnalyzer
                 var callGraphEdges = _callGraphExtractor.Extract(filePath, tree, semanticModel, interfaceImplementationMap);
                 _allCallGraphEdges.AddRange(callGraphEdges);
 
-                var dataFlowNodes = _dataFlowExtractor.Extract(filePath, tree, semanticModel);
-                _allDataFlowNodes.AddRange(dataFlowNodes);
-
                 Console.WriteLine($"? Analyzed: {filePath}");
             }
             catch (Exception ex)
@@ -93,7 +90,8 @@ public class CodeAnalyzer
         return new AnalysisResult
         {
             CallGraph = _allCallGraphEdges,
-            DataFlowGraph = _allDataFlowNodes,
+            // Do not include data flow graph to keep output focused on call graph only
+            DataFlowGraph = new(),
             MermaidCallGraph = mermaidCallGraph,
             // MermaidDataFlowGraph = mermaidDataFlow
         };

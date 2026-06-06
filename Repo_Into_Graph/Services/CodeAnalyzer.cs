@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Repo_Into_Graph.Models;
 using Repo_Into_Graph.Services;
 
@@ -61,6 +62,8 @@ public class CodeAnalyzer
             .AddSyntaxTrees(syntaxTrees)
             .AddReferences(ReferenceAssemblies());
 
+        var interfaceImplementationMap = BuildInterfaceImplementationMap(compilation);
+
         // Extract call graph and data flow
         foreach (var tree in syntaxTrees)
         {
@@ -69,7 +72,7 @@ public class CodeAnalyzer
 
             try
             {
-                var callGraphEdges = _callGraphExtractor.Extract(filePath, tree, semanticModel);
+                var callGraphEdges = _callGraphExtractor.Extract(filePath, tree, semanticModel, interfaceImplementationMap);
                 _allCallGraphEdges.AddRange(callGraphEdges);
 
                 var dataFlowNodes = _dataFlowExtractor.Extract(filePath, tree, semanticModel);
@@ -85,14 +88,14 @@ public class CodeAnalyzer
 
         // Generate Mermaid diagrams
         var mermaidCallGraph = _mermaidGenerator.GenerateCallGraph(_allCallGraphEdges);
-        var mermaidDataFlow = _mermaidGenerator.GenerateDataFlowGraph(_allDataFlowNodes);
+        // var mermaidDataFlow = _mermaidGenerator.GenerateDataFlowGraph(_allDataFlowNodes);
 
         return new AnalysisResult
         {
             CallGraph = _allCallGraphEdges,
             DataFlowGraph = _allDataFlowNodes,
             MermaidCallGraph = mermaidCallGraph,
-            MermaidDataFlowGraph = mermaidDataFlow
+            // MermaidDataFlowGraph = mermaidDataFlow
         };
     }
 
@@ -112,5 +115,78 @@ public class CodeAnalyzer
         }
 
         return references;
+    }
+
+    private Dictionary<IMethodSymbol, List<IMethodSymbol>> BuildInterfaceImplementationMap(Compilation compilation)
+    {
+        var map = new Dictionary<IMethodSymbol, List<IMethodSymbol>>(SymbolEqualityComparer.Default);
+
+        foreach (var namedType in GetAllNamedTypes(compilation.Assembly.GlobalNamespace))
+        {
+            if (namedType.TypeKind != TypeKind.Class || namedType.IsAbstract)
+            {
+                continue;
+            }
+
+            foreach (var interfaceType in namedType.AllInterfaces)
+            {
+                foreach (var interfaceMember in interfaceType.GetMembers().OfType<IMethodSymbol>())
+                {
+                    var implementation = namedType.FindImplementationForInterfaceMember(interfaceMember) as IMethodSymbol;
+                    if (implementation == null)
+                    {
+                        continue;
+                    }
+
+                    var interfaceMethod = interfaceMember.OriginalDefinition;
+                    if (!map.TryGetValue(interfaceMethod, out var implementations))
+                    {
+                        implementations = new List<IMethodSymbol>();
+                        map[interfaceMethod] = implementations;
+                    }
+
+                    if (!implementations.Any(existing => SymbolEqualityComparer.Default.Equals(existing, implementation)))
+                    {
+                        implementations.Add(implementation);
+                    }
+                }
+            }
+        }
+
+        return map;
+    }
+
+    private static IEnumerable<INamedTypeSymbol> GetAllNamedTypes(INamespaceSymbol namespaceSymbol)
+    {
+        foreach (var type in namespaceSymbol.GetTypeMembers())
+        {
+            yield return type;
+
+            foreach (var nestedType in GetNestedTypes(type))
+            {
+                yield return nestedType;
+            }
+        }
+
+        foreach (var nestedNamespace in namespaceSymbol.GetNamespaceMembers())
+        {
+            foreach (var nestedType in GetAllNamedTypes(nestedNamespace))
+            {
+                yield return nestedType;
+            }
+        }
+    }
+
+    private static IEnumerable<INamedTypeSymbol> GetNestedTypes(INamedTypeSymbol typeSymbol)
+    {
+        foreach (var nestedType in typeSymbol.GetTypeMembers())
+        {
+            yield return nestedType;
+
+            foreach (var deeperNestedType in GetNestedTypes(nestedType))
+            {
+                yield return deeperNestedType;
+            }
+        }
     }
 }

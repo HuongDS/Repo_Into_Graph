@@ -1,34 +1,50 @@
 ﻿using Repo_Into_Graph;
 using Repo_Into_Graph.Services;
 
-if (args.Length == 0)
+
+
+string repositoryPath = "";
+string outputDir = "./output";
+
+if (args.Length > 0)
+{
+    repositoryPath = args[0];
+    outputDir = args.Length > 1 ? args[1] : "./output";
+}
+else
 {
     Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
-    Console.WriteLine("║     Static Code Analyzer - Call Graph & Data Flow Extractor    ║");
+    Console.WriteLine("║    Static Code Analyzer - Call Graph & Data Flow Extractor     ║");
     Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
     Console.WriteLine();
-    Console.WriteLine("Usage: Repo_Into_Graph <repository-path> [output-directory]");
-    Console.WriteLine();
-    Console.WriteLine("Arguments:");
-    Console.WriteLine("  <repository-path>     Path to the directory containing C# source code");
-    Console.WriteLine("  [output-directory]    Directory for output files (default: ./output)");
-    Console.WriteLine();
-    Console.WriteLine("Example:");
-    Console.WriteLine("  Repo_Into_Graph C:\\MyProject ./analysis_output");
-    Console.WriteLine();
-    Console.WriteLine("Output files:");
-    Console.WriteLine("  - output_graph.json       : Complete analysis data (Call Graph + Data Flow)");
-    Console.WriteLine("  - call_graph.md           : Mermaid diagram of function calls");
-    Console.WriteLine("  - data_flow_graph.md      : Mermaid diagram of data flow");
-    return;
-}
 
-var repositoryPath = args[0];
-var outputDir = args.Length > 1 ? args[1] : "./output";
+    while (string.IsNullOrWhiteSpace(repositoryPath))
+    {
+        Console.Write($"👉 Nhập (hoặc nắm kéo thả) thư mục chứa code cần quét vào đây: ");
+        string input = Console.ReadLine();
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            Console.WriteLine("❌ Đường dẫn không được để trống!");
+            continue;
+        }
+
+        repositoryPath = input.Trim('"', ' ');
+    }
+
+    Console.Write("📁 Nhập thư mục xuất kết quả (Bấm Enter để lấy mặc định './output'): ");
+    string inputDir = Console.ReadLine()?.Trim('"', ' ');
+    if (!string.IsNullOrWhiteSpace(inputDir))
+    {
+        outputDir = inputDir;
+    }
+}
 
 if (!Directory.Exists(repositoryPath))
 {
-    Console.WriteLine($"❌ Error: Repository path does not exist: {repositoryPath}");
+    Console.WriteLine($"❌ Thư mục không tồn tại: {repositoryPath}");
+    Console.WriteLine("Bấm phím bất kỳ để thoát...");
+    Console.ReadKey();
     return;
 }
 
@@ -69,5 +85,14 @@ Console.WriteLine($"   • call_graph.html         - Call graph only (HTML)");
 Console.WriteLine($"   • data_flow_graph.html    - Data flow only (HTML)");
 Console.WriteLine();
 Console.WriteLine("💡 Tip: Open the HTML files in your browser for interactive visualization!");
+
+Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
+Console.WriteLine("║              Generating Architecture Graph...                 ║");
+Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
+Console.WriteLine();
+
+
+
+
 
 

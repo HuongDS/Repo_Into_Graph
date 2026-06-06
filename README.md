@@ -2,7 +2,6 @@
 
 A comprehensive C# CLI tool (built with .NET 8 and Roslyn) that performs **static code analysis** to extract and visualize:
 - **Call Graph** - Function invocation relationships
-- **Data Flow Graph** - Variable/object lifecycle tracking
 
 ## ?? Purpose
 
@@ -16,22 +15,13 @@ This tool is designed for scientific research to extract **Business Workflow Flo
 - Tracks location (file path and line number)
 - Filters out standard library calls (System.*, etc.)
 
-### 2. **Data Flow Graph Extraction**
-- Tracks variable/object lifecycle from source to sink
-- Identifies:
-  - **Source**: Where variables are declared or passed as parameters
-  - **Passed Through**: Methods that receive the variable as parameter
-  - **Sink**: Where variables are returned or stored
-
-### 3. **Multiple Output Formats**
+### 2. **Multiple Output Formats**
 - **JSON** (`output_graph.json`) - Raw data structure for further processing
 - **Markdown Diagrams** - Visual representations
   - `call_graph.md` - Method invocation flow
-  - `data_flow_graph.md` - Data transformation journey
 - **HTML Visualizations** (NEW!) - Interactive diagrams
-  - `output_graph.html` - Combined tabbed view (supports up to 5000 edges!)
+  - `output_graph.html` - Interactive call graph view
   - `call_graph.html` - Standalone call graph
-  - `data_flow_graph.html` - Standalone data flow graph
 
 ## ?? Usage
 
@@ -52,6 +42,24 @@ Repo_Into_Graph "C:\MyProject" ".\analysis_output"
 Repo_Into_Graph "C:\MyProject"
 ```
 
+### PostgreSQL storage
+
+This version also stores discovered methods in PostgreSQL.
+
+Start the database with Docker:
+
+```bash
+docker compose up -d postgres
+```
+
+The app uses this connection string by default:
+
+```text
+Host=localhost;Port=5432;Database=repo_into_graph;Username=postgres;Password=postgres
+```
+
+If you need a custom connection string, set `POSTGRES_CONNECTION_STRING` before running the tool.
+
 ## ?? Output Files
 
 ### 1. `output_graph.json`
@@ -68,18 +76,7 @@ Complete analysis data containing:
       "LineNumber": 25
     }
   ],
-  "DataFlowGraph": [
-    {
-      "VariableName": "user",
-      "DataType": "User",
-      "SourceLocation": "UserService.CreateUserAsync",
-      "PassedThroughMethods": ["UserService.ValidateUser", "UserRepository.SaveAsync"],
-      "SinkLocation": "UserService.CreateUserAsync",
-      "SinkType": "return"
-    }
-  ],
-  "MermaidCallGraph": "...",
-  "MermaidDataFlowGraph": "..."
+  "MermaidCallGraph": "..."
 }
 ```
 
@@ -91,24 +88,12 @@ graph TD
     UserService_CreateUserAsync["UserService.CreateUserAsync"] --> UserService_ValidateUser["UserService.ValidateUser"]
 ```
 
-### 3. `data_flow_graph.md`
-Mermaid diagram showing variable lifecycle:
-```mermaid
-graph LR
-    source_UserService_CreateUserAsync["?? Source: UserService.CreateUserAsync"]
-    source_UserService_CreateUserAsync -->|user (User)| var_user["user"]
-    var_user -->|Passed Through| methods_user["Methods: UserService.ValidateUser, UserRepository.SaveAsync"]
-    var_user -->|return| sink_UserService_CreateUserAsync["?? Sink: UserService.CreateUserAsync"]
-```
-
-### 4. `output_graph.html` (NEW!)
-**Interactive tabbed HTML visualization** with full Mermaid.js support:
-- ? **Supports up to 5,000 edges** (vs 500 in Markdown)
-- ? **Professional tabbed interface** - Switch between Call Graph and Data Flow
-- ? **Responsive design** - Works on desktop, tablet, and mobile
-- ? **Self-contained** - Single HTML file, no external CSS/JS files needed
-- ? **Interactive features** - Zoom, pan, and full-screen support
-- ? **Export-friendly** - Save as PDF directly from browser
+### 3. `output_graph.html` (NEW!)
+**Interactive HTML visualization** with full Mermaid.js support:
+- **Responsive design** - Works on desktop, tablet, and mobile
+- **Self-contained** - Single HTML file, no external CSS/JS files needed
+- **Interactive features** - Zoom and pan support
+- **Export-friendly** - Save as PDF directly from browser
 
 **How to use:**
 ```bash
@@ -118,8 +103,8 @@ start output_graph.html # Windows
 xdg-open output_graph.html # Linux
 ```
 
-### 5. `call_graph.html` & `data_flow_graph.html` (NEW!)
-**Standalone HTML files** for individual graphs:
+### 4. `call_graph.html` (NEW!)
+**Standalone HTML file** for the call graph:
 - Full-page focused view
 - Optimized layout for large diagrams
 - Perfect for sharing or embedding in documentation
@@ -135,24 +120,18 @@ xdg-open output_graph.html # Linux
 - Extracts all method invocations
 - Filters standard library calls using namespace checking
 
-#### 2. **DataFlowGraphExtractor** (`Services/DataFlowGraphExtractor.cs`)
-- Tracks variable declarations and parameter flows
-- Monitors method parameter passing
-- Records return statements as sinks
-- Skips primitive types and System.* types
-
-#### 3. **CodeAnalyzer** (`Services/CodeAnalyzer.cs`)
+#### 2. **CodeAnalyzer** (`Services/CodeAnalyzer.cs`)
 - Orchestrates the analysis pipeline
 - Parses all C# files in the repository
 - Creates semantic model for symbol resolution
 - Aggregates results from extractors
 
-#### 4. **MermaidGenerator** (`Services/MermaidGenerator.cs`)
+#### 3. **MermaidGenerator** (`Services/MermaidGenerator.cs`)
 - Generates Mermaid.js diagram syntax
 - Deduplicates edges
 - Sanitizes node names for diagram compatibility
 
-#### 5. **OutputWriter** (`Services/OutputWriter.cs`)
+#### 4. **OutputWriter** (`Services/OutputWriter.cs`)
 - Serializes results to JSON
 - Generates Markdown files with Mermaid diagrams
 
@@ -220,12 +199,15 @@ The tool expects:
 - **AST Analysis**: Microsoft.CodeAnalysis.CSharp (Roslyn)
 - **Serialization**: System.Text.Json
 - **Diagram Format**: Mermaid.js
+- **Database**: EF Core + PostgreSQL
 
 ## ?? Dependencies
 
 ```xml
 <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
 <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
+<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.6" />
+<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.4" />
 ```
 
 ## ?? Example: UserService Analysis

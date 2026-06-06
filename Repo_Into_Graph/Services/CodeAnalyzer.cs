@@ -10,10 +10,9 @@ public class CodeAnalyzer
 {
     private readonly string _repositoryPath;
     private readonly CallGraphExtractor _callGraphExtractor = new();
-    private readonly DataFlowGraphExtractor _dataFlowExtractor = new();
     private readonly MermaidGenerator _mermaidGenerator = new();
     private readonly List<CallGraphEdge> _allCallGraphEdges = new();
-    private readonly List<DataFlowNode> _allDataFlowNodes = new();
+    private readonly List<MethodSource> _allMethodSources = new();
 
     public CodeAnalyzer(string repositoryPath)
     {
@@ -23,7 +22,9 @@ public class CodeAnalyzer
     public async Task<AnalysisResult> AnalyzeAsync()
     {
         var csharpFiles = Directory.GetFiles(_repositoryPath, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains("obj\\") && !f.Contains("bin\\"))
+            .Where(f => !f.Contains("obj\\") && 
+                        !f.Contains("bin\\") && 
+                        !f.Split(Path.DirectorySeparatorChar).Any(part => part.Equals("Migrations", StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
         Console.WriteLine($"Found {csharpFiles.Count} C# files to analyze.");
@@ -32,8 +33,7 @@ public class CodeAnalyzer
         {
             return new AnalysisResult
             {
-                CallGraph = new(),
-                DataFlowGraph = new()
+                CallGraph = new()
             };
         }
 
@@ -72,8 +72,9 @@ public class CodeAnalyzer
 
             try
             {
-                var callGraphEdges = _callGraphExtractor.Extract(filePath, tree, semanticModel, interfaceImplementationMap);
-                _allCallGraphEdges.AddRange(callGraphEdges);
+                var extractionResult = _callGraphExtractor.Extract(tree, semanticModel, interfaceImplementationMap);
+                _allCallGraphEdges.AddRange(extractionResult.CallGraphEdges);
+                _allMethodSources.AddRange(extractionResult.MethodSources);
 
                 Console.WriteLine($"? Analyzed: {filePath}");
             }
@@ -90,10 +91,8 @@ public class CodeAnalyzer
         return new AnalysisResult
         {
             CallGraph = _allCallGraphEdges,
-            // Do not include data flow graph to keep output focused on call graph only
-            DataFlowGraph = new(),
             MermaidCallGraph = mermaidCallGraph,
-            // MermaidDataFlowGraph = mermaidDataFlow
+            MethodSources = _allMethodSources
         };
     }
 

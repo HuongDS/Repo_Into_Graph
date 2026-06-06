@@ -27,41 +27,6 @@ public class MermaidGenerator
         return sb.ToString();
     }
 
-    public string GenerateDataFlowGraph(List<DataFlowNode> dataFlowGraph)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("graph LR");
-
-        foreach (var node in dataFlowGraph)
-        {
-            var varNodeId = SanitizeNodeName($"var_{node.VariableName}");
-            var sourceNodeId = SanitizeNodeName($"source_{node.SourceLocation ?? "unknown"}");
-            var sinkNodeId = SanitizeNodeName($"sink_{node.SinkLocation ?? "unknown"}");
-
-            // Source
-            if (!string.IsNullOrEmpty(node.SourceLocation))
-            {
-                sb.AppendLine($"    {sourceNodeId}[\"?? Source: {node.SourceLocation}\"]");
-                sb.AppendLine($"    {sourceNodeId} -->|{node.VariableName} ({node.DataType})| {varNodeId}[\"{node.VariableName}\"]");
-            }
-
-            // Passed through methods
-            if (node.PassedThroughMethods.Count > 0)
-            {
-                var methodsStr = string.Join(", ", node.PassedThroughMethods);
-                sb.AppendLine($"    {varNodeId} -->|Passed Through| {SanitizeNodeName($"methods_{node.VariableName}")}[\"Methods: {methodsStr}\"]");
-            }
-
-            // Sink
-            if (!string.IsNullOrEmpty(node.SinkLocation))
-            {
-                sb.AppendLine($"    {varNodeId} -->|{node.SinkType}| {sinkNodeId}[\"?? Sink: {node.SinkLocation}\"]");
-            }
-        }
-
-        return sb.ToString();
-    }
-
     private string SanitizeNodeName(string name)
     {
         return name

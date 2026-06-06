@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Static Code Analysis - Call Graph</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/panzoom@9.4.0/dist/panzoom.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            maxEdges: 10000,
+            maxTextSize: 90000,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: {
+                rankSpacing: 100,
+                nodeSpacing: 150,
+                padding: 50
+            }
+        });
+    </script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 12px; }
+        .container { max-width: 100%; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); overflow: hidden; display: flex; flex-direction: column; height: calc(100vh - 24px); min-height: 0; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; text-align: center; flex-shrink: 0; }
+        .header h1 { font-size: 24px; margin-bottom: 5px; font-weight: 700; }
+        .header p { font-size: 13px; opacity: 0.9; }
+        .content { flex: 1; overflow: auto; padding: 24px; min-height: 0; }
+        .mermaid { background: #fff; padding: 20px; border-radius: 8px; min-height: 500px; }
+        .mermaid svg { max-width: none !important; height: auto !important; }
+    </style>
+    <script>
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                const svg = document.querySelector('.mermaid svg');
+                if (svg) {
+                    const panzoom = Panzoom(svg, { maxScale: 5, minScale: 0.1, contain: 'outside' });
+                    svg.parentElement.addEventListener('wheel', panzoom.zoomWithWheel);
+                }
+            }, 500);
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Static Code Analysis Results</h1>
+            <p>Interactive call graph visualization</p>
+        </div>
+        <div class="content">
+<div class="mermaid">
+graph TD
+    AuctionController___CLASS__["AuctionController.__CLASS__"] --> AuctionController_GET_GetAuctions["AuctionController.GET GetAuctions"]
+    AuctionController_GET_GetAuctions["AuctionController.GET GetAuctions"] --> IAuctionService_GetAuctionsAsync["IAuctionService.GetAuctionsAsync"]
+    IAuctionService_GetAuctionsAsync["IAuctionService.GetAuctionsAsync"] --> AuctionServiceimpl_GetAuctionsAsync["AuctionServiceimpl.GetAuctionsAsync"]
+    AuctionController___CLASS__["AuctionController.__CLASS__"] --> AuctionController_GET_GetAuction["AuctionController.GET GetAuction"]
+    AuctionController_GET_GetAuction["AuctionController.GET GetAuction"] --> IAuctionService_GetAuctionAsync["IAuctionService.GetAuctionAsync"]
+    IAuctionService_GetAuctionAsync["IAuctionService.GetAuctionAsync"] --> AuctionServiceimpl_GetAuctionAsync["AuctionServiceimpl.GetAuctionAsync"]
+    AuctionController___CLASS__["AuctionController.__CLASS__"] --> AuctionController_POST_CreateAuction["AuctionController.POST CreateAuction"]
+    AuctionController_POST_CreateAuction["AuctionController.POST CreateAuction"] --> IAuctionService_CreateAuctionAsync["IAuctionService.CreateAuctionAsync"]
+    IAuctionService_CreateAuctionAsync["IAuctionService.CreateAuctionAsync"] --> AuctionServiceimpl_CreateAuctionAsync["AuctionServiceimpl.CreateAuctionAsync"]
+    AuctionController___CLASS__["AuctionController.__CLASS__"] --> AuctionController_PUT_UpdateAuction["AuctionController.PUT UpdateAuction"]
+    AuctionController_PUT_UpdateAuction["AuctionController.PUT UpdateAuction"] --> IAuctionService_UpdateAuctionAsync["IAuctionService.UpdateAuctionAsync"]
+    IAuctionService_UpdateAuctionAsync["IAuctionService.UpdateAuctionAsync"] --> AuctionServiceimpl_UpdateAuctionAsync["AuctionServiceimpl.UpdateAuctionAsync"]
+    AuctionController___CLASS__["AuctionController.__CLASS__"] --> AuctionController_DELETE_DeleteAuction["AuctionController.DELETE DeleteAuction"]
+    AuctionController_DELETE_DeleteAuction["AuctionController.DELETE DeleteAuction"] --> IAuctionService_DeleteAuctionAsync["IAuctionService.DeleteAuctionAsync"]
+    IAuctionService_DeleteAuctionAsync["IAuctionService.DeleteAuctionAsync"] --> AuctionServiceimpl_DeleteAuctionAsync["AuctionServiceimpl.DeleteAuctionAsync"]
+    AuctionController___CLASS__["AuctionController.__CLASS__"] --> AuctionController_GET_ExportAuctionsToExcel["AuctionController.GET ExportAuctionsToExcel"]
+    AuctionController_GET_ExportAuctionsToExcel["AuctionController.GET ExportAuctionsToExcel"] --> IAuctionService_ExportAuctionsToExcelAsync["IAuctionService.ExportAuctionsToExcelAsync"]
+    IAuctionService_ExportAuctionsToExcelAsync["IAuctionService.ExportAuctionsToExcelAsync"] --> AuctionServiceimpl_ExportAuctionsToExcelAsync["AuctionServiceimpl.ExportAuctionsToExcelAsync"]
+    AuctionController___CLASS__["AuctionController.__CLASS__"] --> AuctionController_GET_ExportTemplate["AuctionController.GET ExportTemplate"]
+    AuctionController_GET_ExportTemplate["AuctionController.GET ExportTemplate"] --> IAuctionService_GenerateTemplateAsync["IAuctionService.GenerateTemplateAsync"]
+    IAuctionService_GenerateTemplateAsync["IAuctionService.GenerateTemplateAsync"] --> AuctionServiceimpl_GenerateTemplateAsync["AuctionServiceimpl.GenerateTemplateAsync"]
+    AuctionController___CLASS__["AuctionController.__CLASS__"] --> AuctionController_POST_ImportAuctions["AuctionController.POST ImportAuctions"]
+    AuctionController_POST_ImportAuctions["AuctionController.POST ImportAuctions"] --> IAuctionService_ImportAuctionsFromExcelAsync["IAuctionService.ImportAuctionsFromExcelAsync"]
+    IAuctionService_ImportAuctionsFromExcelAsync["IAuctionService.ImportAuctionsFromExcelAsync"] --> AuctionServiceimpl_ImportAuctionsFromExcelAsync["AuctionServiceimpl.ImportAuctionsFromExcelAsync"]
+    SearchController___CLASS__["SearchController.__CLASS__"] --> SearchController_GET_Search["SearchController.GET Search"]
+    SearchController_GET_Search["SearchController.GET Search"] --> ISearchService_SearchAsync["ISearchService.SearchAsync"]
+    ISearchService_SearchAsync["ISearchService.SearchAsync"] --> SearchServiceImpl_SearchAsync["SearchServiceImpl.SearchAsync"]
+    AuctionServiceimpl_CreateAuctionAsync["AuctionServiceimpl.CreateAuctionAsync"] --> IGenericRepository_Add["IGenericRepository.Add"]
+    IGenericRepository_Add["IGenericRepository.Add"] --> GenericRepository_Add["GenericRepository.Add"]
+    AuctionServiceimpl_CreateAuctionAsync["AuctionServiceimpl.CreateAuctionAsync"] --> IGenericRepository_SaveChangesAsync["IGenericRepository.SaveChangesAsync"]
+    IGenericRepository_SaveChangesAsync["IGenericRepository.SaveChangesAsync"] --> GenericRepository_SaveChangesAsync["GenericRepository.SaveChangesAsync"]
+    AuctionServiceimpl_DeleteAuctionAsync["AuctionServiceimpl.DeleteAuctionAsync"] --> IGenericRepository_GetByIdAsync["IGenericRepository.GetByIdAsync"]
+    IGenericRepository_GetByIdAsync["IGenericRepository.GetByIdAsync"] --> GenericRepository_GetByIdAsync["GenericRepository.GetByIdAsync"]
+    AuctionServiceimpl_DeleteAuctionAsync["AuctionServiceimpl.DeleteAuctionAsync"] --> IGenericRepository_Delete["IGenericRepository.Delete"]
+    IGenericRepository_Delete["IGenericRepository.Delete"] --> GenericRepository_Delete["GenericRepository.Delete"]
+    AuctionServiceimpl_DeleteAuctionAsync["AuctionServiceimpl.DeleteAuctionAsync"] --> IGenericRepository_SaveChangesAsync["IGenericRepository.SaveChangesAsync"]
+    AuctionServiceimpl_ExportAuctionsToExcelAsync["AuctionServiceimpl.ExportAuctionsToExcelAsync"] --> IAuctionRepository_GetAuctionsWithItemsAsync["IAuctionRepository.GetAuctionsWithItemsAsync"]
+    IAuctionRepository_GetAuctionsWithItemsAsync["IAuctionRepository.GetAuctionsWithItemsAsync"] --> AuctionRepository_GetAuctionsWithItemsAsync["AuctionRepository.GetAuctionsWithItemsAsync"]
+    AuctionServiceimpl_ExportAuctionsToExcelAsync["AuctionServiceimpl.ExportAuctionsToExcelAsync"] --> IExcelService_ExportToExcel["IExcelService.ExportToExcel"]
+    IExcelService_ExportToExcel["IExcelService.ExportToExcel"] --> ExcelService_ExportToExcel["ExcelService.ExportToExcel"]
+    AuctionServiceimpl_GenerateTemplateAsync["AuctionServiceimpl.GenerateTemplateAsync"] --> IExcelService_GenerateTemplate["IExcelService.GenerateTemplate"]
+    IExcelService_GenerateTemplate["IExcelService.GenerateTemplate"] --> ExcelService_GenerateTemplate["ExcelService.GenerateTemplate"]
+    AuctionServiceimpl_GetAuctionAsync["AuctionServiceimpl.GetAuctionAsync"] --> IAuctionRepository_GetAuctionWithItemsAsync["IAuctionRepository.GetAuctionWithItemsAsync"]
+    IAuctionRepository_GetAuctionWithItemsAsync["IAuctionRepository.GetAuctionWithItemsAsync"] --> AuctionRepository_GetAuctionWithItemsAsync["AuctionRepository.GetAuctionWithItemsAsync"]
+    AuctionServiceimpl_GetAuctionsAsync["AuctionServiceimpl.GetAuctionsAsync"] --> IAuctionRepository_GetAuctionsWithItemsAsync["IAuctionRepository.GetAuctionsWithItemsAsync"]
+    AuctionServiceimpl_ImportAuctionsFromExcelAsync["AuctionServiceimpl.ImportAuctionsFromExcelAsync"] --> IExcelService_ImportFromExcel["IExcelService.ImportFromExcel"]
+    IExcelService_ImportFromExcel["IExcelService.ImportFromExcel"] --> ExcelService_ImportFromExcel["ExcelService.ImportFromExcel"]
+    AuctionServiceimpl_ImportAuctionsFromExcelAsync["AuctionServiceimpl.ImportAuctionsFromExcelAsync"] --> IGenericRepository_AddRangeAsync["IGenericRepository.AddRangeAsync"]
+    IGenericRepository_AddRangeAsync["IGenericRepository.AddRangeAsync"] --> GenericRepository_AddRangeAsync["GenericRepository.AddRangeAsync"]
+    AuctionServiceimpl_ImportAuctionsFromExcelAsync["AuctionServiceimpl.ImportAuctionsFromExcelAsync"] --> IGenericRepository_SaveChangesAsync["IGenericRepository.SaveChangesAsync"]
+    AuctionServiceimpl_UpdateAuctionAsync["AuctionServiceimpl.UpdateAuctionAsync"] --> IAuctionRepository_GetAuctionWithItemsAsync["IAuctionRepository.GetAuctionWithItemsAsync"]
+    AuctionServiceimpl_UpdateAuctionAsync["AuctionServiceimpl.UpdateAuctionAsync"] --> IGenericRepository_Update["IGenericRepository.Update"]
+    IGenericRepository_Update["IGenericRepository.Update"] --> GenericRepository_Update["GenericRepository.Update"]
+    AuctionServiceimpl_UpdateAuctionAsync["AuctionServiceimpl.UpdateAuctionAsync"] --> IGenericRepository_SaveChangesAsync["IGenericRepository.SaveChangesAsync"]
+    AuctionSvcHttpClient_GetItemForSearchAsync["AuctionSvcHttpClient.GetItemForSearchAsync"] --> ISearchRepository_GetLastUpdateTimeAsync["ISearchRepository.GetLastUpdateTimeAsync"]
+    ISearchRepository_GetLastUpdateTimeAsync["ISearchRepository.GetLastUpdateTimeAsync"] --> SearchRepository_GetLastUpdateTimeAsync["SearchRepository.GetLastUpdateTimeAsync"]
+    SearchServiceImpl_SearchAsync["SearchServiceImpl.SearchAsync"] --> ISearchRepository_SearchAsync["ISearchRepository.SearchAsync"]
+    ISearchRepository_SearchAsync["ISearchRepository.SearchAsync"] --> SearchRepository_SearchAsync["SearchRepository.SearchAsync"]
+
+</div>
+        </div>
+    </div>
+</body>
+</html>

@@ -22,22 +22,24 @@ public class CallGraphExtractor
         "System.Reflection"
     };
 
-    public List<CallGraphEdge> Extract(
-        string filePath,
+    public ExtractionResult Extract(
         SyntaxTree syntaxTree,
         SemanticModel semanticModel,
         IReadOnlyDictionary<IMethodSymbol, List<IMethodSymbol>>? interfaceImplementationMap = null)
     {
         var root = (CompilationUnitSyntax)syntaxTree.GetRoot();
-        var visitor = new CallGraphVisitor(semanticModel, filePath, _standardNamespaces, interfaceImplementationMap);
+        var visitor = new CallGraphVisitor(semanticModel, _standardNamespaces, interfaceImplementationMap);
         visitor.Visit(root);
-        return visitor.CallGraphEdges;
+        return new ExtractionResult
+        {
+            CallGraphEdges = visitor.CallGraphEdges,
+            MethodSources = visitor.MethodSources
+        };
     }
 
     private class CallGraphVisitor : CSharpSyntaxWalker
     {
         private readonly SemanticModel _semanticModel;
-        private readonly string _filePath;
         private readonly HashSet<string> _standardNamespaces;
         private readonly IReadOnlyDictionary<IMethodSymbol, List<IMethodSymbol>>? _interfaceImplementationMap;
         private string _currentClass = string.Empty;
@@ -45,15 +47,14 @@ public class CallGraphExtractor
         private string _currentMethodDisplay = string.Empty;
 
         public List<CallGraphEdge> CallGraphEdges { get; } = new();
+        public List<MethodSource> MethodSources { get; } = new();
 
         public CallGraphVisitor(
             SemanticModel semanticModel,
-            string filePath,
             HashSet<string> standardNamespaces,
             IReadOnlyDictionary<IMethodSymbol, List<IMethodSymbol>>? interfaceImplementationMap)
         {
             _semanticModel = semanticModel;
-            _filePath = filePath;
             _standardNamespaces = standardNamespaces;
             _interfaceImplementationMap = interfaceImplementationMap;
         }
@@ -73,17 +74,26 @@ public class CallGraphExtractor
             _currentMethod = node.Identifier.Text;
             _currentMethodDisplay = GetMethodDisplayName(node);
 
-            if (ShouldIncludeMethodEntry(node))
+            if (!IsMigrationClass(_currentClass))
             {
-                CallGraphEdges.Add(new CallGraphEdge
+                var sourceCode = node.ToString();
+                MethodSources.Add(new MethodSource
                 {
-                    CallerClass = _currentClass,
-                    CallerMethod = "__CLASS__",
-                    CalleeClass = _currentClass,
-                    CalleeMethod = string.IsNullOrEmpty(_currentMethodDisplay) ? node.Identifier.Text : _currentMethodDisplay,
-                    FilePath = _filePath,
-                    LineNumber = node.GetLocation().GetLineSpan().StartLinePosition.Line + 1
+                    ClassName = _currentClass,
+                    MethodName = _currentMethod,
+                    SourceCode = sourceCode
                 });
+
+                if (ShouldIncludeMethodEntry(node))
+                {
+                    CallGraphEdges.Add(new CallGraphEdge
+                    {
+                        CallerClass = _currentClass,
+                        CallerMethod = "__CLASS__",
+                        CalleeClass = _currentClass,
+                        CalleeMethod = string.IsNullOrEmpty(_currentMethodDisplay) ? node.Identifier.Text : _currentMethodDisplay
+                    });
+                }
             }
 
             base.VisitMethodDeclaration(node);
@@ -95,28 +105,29 @@ public class CallGraphExtractor
         {
             if (_currentClass != string.Empty && _currentMethod != string.Empty)
             {
-                var symbolInfo = _semanticModel.GetSymbolInfo(node);
-                var methodSymbol = ResolveMethodSymbol(symbolInfo);
-
-                if (methodSymbol != null)
+                if (!IsMigrationClass(_currentClass))
                 {
-                    var calleeClass = methodSymbol.ContainingType?.Name ?? "Unknown";
-                    var calleeName = methodSymbol.Name;
+                    var symbolInfo = _semanticModel.GetSymbolInfo(node);
+                    var methodSymbol = ResolveMethodSymbol(symbolInfo);
 
-                    // Filter out standard library calls
-                    if (!IsStandardLibraryCall(methodSymbol))
+                    if (methodSymbol != null)
                     {
-                        CallGraphEdges.Add(new CallGraphEdge
-                        {
-                            CallerClass = _currentClass,
-                            CallerMethod = string.IsNullOrEmpty(_currentMethodDisplay) ? _currentMethod : _currentMethodDisplay,
-                            CalleeClass = calleeClass,
-                            CalleeMethod = calleeName,
-                            FilePath = _filePath,
-                            LineNumber = node.GetLocation().GetLineSpan().StartLinePosition.Line + 1
-                        });
+                        var calleeClass = methodSymbol.ContainingType?.Name ?? "Unknown";
+                        var calleeName = methodSymbol.Name;
 
-                        AddImplementationEdges(methodSymbol, node);
+                        // Filter out standard library calls and migration calls
+                        if (!IsStandardLibraryCall(methodSymbol) && !IsMigrationClass(calleeClass) && !IsMigration(methodSymbol))
+                        {
+                            CallGraphEdges.Add(new CallGraphEdge
+                            {
+                                CallerClass = _currentClass,
+                                CallerMethod = string.IsNullOrEmpty(_currentMethodDisplay) ? _currentMethod : _currentMethodDisplay,
+                                CalleeClass = calleeClass,
+                                CalleeMethod = calleeName
+                            });
+
+                            AddImplementationEdges(methodSymbol, node);
+                        }
                     }
                 }
             }
@@ -172,15 +183,17 @@ public class CallGraphExtractor
 
             foreach (var implementation in implementations)
             {
-                CallGraphEdges.Add(new CallGraphEdge
+                var calleeClass = implementation.ContainingType?.Name ?? "Unknown";
+                if (!IsMigrationClass(containingType.Name) && !IsMigrationClass(calleeClass) && !IsMigration(implementation))
                 {
-                    CallerClass = containingType.Name,
-                    CallerMethod = interfaceMethod.Name,
-                    CalleeClass = implementation.ContainingType?.Name ?? "Unknown",
-                    CalleeMethod = implementation.Name,
-                    FilePath = _filePath,
-                    LineNumber = node.GetLocation().GetLineSpan().StartLinePosition.Line + 1
-                });
+                    CallGraphEdges.Add(new CallGraphEdge
+                    {
+                        CallerClass = containingType.Name,
+                        CallerMethod = interfaceMethod.Name,
+                        CalleeClass = calleeClass,
+                        CalleeMethod = implementation.Name
+                    });
+                }
             }
         }
 
@@ -243,5 +256,49 @@ public class CallGraphExtractor
             var containingNamespace = methodSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
             return _standardNamespaces.Any(ns => containingNamespace.StartsWith(ns));
         }
+
+        private bool IsMigrationClass(string className)
+        {
+            if (string.IsNullOrEmpty(className)) return false;
+            return className.Contains("Migration") || className.Contains("Migrations");
+        }
+
+        private bool IsMigration(IMethodSymbol methodSymbol)
+        {
+            if (methodSymbol == null) return false;
+            
+            var containingType = methodSymbol.ContainingType;
+            if (containingType != null)
+            {
+                if (containingType.Name.Contains("Migration") || containingType.Name.Contains("Migrations"))
+                {
+                    return true;
+                }
+                
+                var baseType = containingType.BaseType;
+                while (baseType != null)
+                {
+                    if (baseType.Name == "Migration" || baseType.ToDisplayString() == "Microsoft.EntityFrameworkCore.Migrations.Migration")
+                    {
+                        return true;
+                    }
+                    baseType = baseType.BaseType;
+                }
+            }
+
+            var containingNamespace = methodSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+            if (containingNamespace.Contains("Migration") || containingNamespace.Contains("Migrations"))
+            {
+                return true;
+            }
+
+            return false;
+        }
     }
+}
+
+public class ExtractionResult
+{
+    public List<CallGraphEdge> CallGraphEdges { get; set; } = new();
+    public List<MethodSource> MethodSources { get; set; } = new();
 }

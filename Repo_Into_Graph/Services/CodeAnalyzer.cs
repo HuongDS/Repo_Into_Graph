@@ -1,18 +1,40 @@
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Repo_Into_Graph.Models;
-using Repo_Into_Graph.Services;
+using Repo_Into_Graph.Services.Parsers;
 
 namespace Repo_Into_Graph;
 
+/// <summary>
+/// Orchestrates multi-language static code analysis.
+/// Automatically detects language by file extension and delegates to the
+/// appropriate ILanguageParser implementation.
+///
+/// Supported languages:
+///   - C# (.cs)         → CSharpParser  (Roslyn-based, full semantic analysis)
+///   - Java (.java)     → JavaParser     (Spring Boot, regex/heuristic)
+///   - Python (.py)     → PythonParser   (FastAPI, regex/heuristic)
+///   - JS/TS (.js/.ts)  → NodeJsParser   (Express/NestJS, regex/heuristic)
+/// </summary>
 public class CodeAnalyzer
 {
     private readonly string _repositoryPath;
-    private readonly CallGraphExtractor _callGraphExtractor = new();
-    private readonly MermaidGenerator _mermaidGenerator = new();
-    private readonly List<CallGraphEdge> _allCallGraphEdges = new();
-    private readonly List<MethodSource> _allMethodSources = new();
+
+    // ─── Registered parsers ─────────────────────────────────────────────────
+    private readonly List<ILanguageParser> _parsers = new()
+    {
+        new CSharpParser(),
+        new JavaParser(),
+        new PythonParser(),
+        new NodeJsParser()
+    };
+
+    // ─── Dirs to always skip ─────────────────────────────────────────────────
+    private static readonly HashSet<string> _skipDirs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "obj", "bin", "node_modules", ".git", ".github", ".vscode", ".idea",
+        "__pycache__", ".pytest_cache", ".mypy_cache", "venv", ".venv", "env",
+        "dist", "build", ".next", ".nuxt", "coverage", "migrations", "Migrations",
+        "target" // Java/Maven build output
+    };
 
     public CodeAnalyzer(string repositoryPath)
     {
@@ -21,169 +43,120 @@ public class CodeAnalyzer
 
     public async Task<AnalysisResult> AnalyzeAsync()
     {
-        var csharpFiles = Directory.GetFiles(_repositoryPath, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains("obj\\") && 
-                        !f.Contains("bin\\") && 
-                        !f.Split(Path.DirectorySeparatorChar).Any(part => part.Equals("Migrations", StringComparison.OrdinalIgnoreCase)))
+        var allEdges = new List<CallGraphEdge>();
+        var allSources = new List<MethodSource>();
+
+        // Build extension → parser lookup
+        var extensionMap = new Dictionary<string, ILanguageParser>(StringComparer.OrdinalIgnoreCase);
+        foreach (var parser in _parsers)
+            foreach (var ext in parser.SupportedExtensions)
+                extensionMap[ext] = parser;
+
+        // Discover all files
+        var allFiles = Directory.GetFiles(_repositoryPath, "*.*", SearchOption.AllDirectories)
+            .Where(f => !IsInSkippedDirectory(f))
+            .Where(f => extensionMap.ContainsKey(Path.GetExtension(f)))
             .ToList();
 
-        Console.WriteLine($"Found {csharpFiles.Count} C# files to analyze.");
+        // Group by language for reporting
+        var filesByLang = allFiles
+            .GroupBy(f => extensionMap[Path.GetExtension(f)].LanguageName)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
-        if (csharpFiles.Count == 0)
+        Console.WriteLine($"📂 Found {allFiles.Count} source files across {filesByLang.Count} language(s):");
+        foreach (var (lang, files) in filesByLang)
+            Console.WriteLine($"   • {lang}: {files.Count} file(s)");
+        Console.WriteLine();
+
+        // Parse each file with appropriate parser
+        int parsed = 0, errors = 0;
+        foreach (var file in allFiles)
         {
-            return new AnalysisResult
-            {
-                CallGraph = new()
-            };
-        }
+            var ext = Path.GetExtension(file);
+            var parser = extensionMap[ext];
 
-        var syntaxTrees = new List<SyntaxTree>();
-        var fileMap = new Dictionary<SyntaxTree, string>();
-
-        // Parse all files
-        foreach (var file in csharpFiles)
-        {
             try
             {
                 var code = await File.ReadAllTextAsync(file);
-                var tree = CSharpSyntaxTree.ParseText(code);
-                syntaxTrees.Add(tree);
-                fileMap[tree] = file;
-                Console.WriteLine($"? Parsed: {file}");
+                var extraction = await parser.ParseAsync(file, code);
+
+                allEdges.AddRange(extraction.CallGraphEdges);
+                allSources.AddRange(extraction.MethodSources);
+                parsed++;
+
+                Console.WriteLine($"  ✅ [{parser.LanguageName}] {Path.GetRelativePath(_repositoryPath, file)}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"? Error parsing {file}: {ex.Message}");
+                errors++;
+                Console.WriteLine($"  ❌ Error parsing {Path.GetFileName(file)}: {ex.Message}");
             }
         }
 
-        // Create compilation
-        var compilation = CSharpCompilation.Create("TempAnalysis")
-            .AddSyntaxTrees(syntaxTrees)
-            .AddReferences(ReferenceAssemblies());
+        Console.WriteLine();
+        Console.WriteLine($"📊 Parse complete: {parsed} succeeded, {errors} failed.");
+        Console.WriteLine($"   → {allEdges.Count} call graph edges");
+        Console.WriteLine($"   → {allSources.Count} method sources");
 
-        var interfaceImplementationMap = BuildInterfaceImplementationMap(compilation);
+        // Remove duplicate edges
+        var uniqueEdges = allEdges
+            .DistinctBy(e => $"{e.CallerClass}::{e.CallerMethod}→{e.CalleeClass}::{e.CalleeMethod}")
+            .ToList();
 
-        // Extract call graph and data flow
-        foreach (var tree in syntaxTrees)
-        {
-            var filePath = fileMap[tree];
-            var semanticModel = compilation.GetSemanticModel(tree);
-
-            try
-            {
-                var extractionResult = _callGraphExtractor.Extract(tree, semanticModel, interfaceImplementationMap);
-                _allCallGraphEdges.AddRange(extractionResult.CallGraphEdges);
-                _allMethodSources.AddRange(extractionResult.MethodSources);
-
-                Console.WriteLine($"? Analyzed: {filePath}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"? Error analyzing {filePath}: {ex.Message}");
-            }
-        }
-
-        // Generate Mermaid diagrams
-        var mermaidCallGraph = _mermaidGenerator.GenerateCallGraph(_allCallGraphEdges);
-        // var mermaidDataFlow = _mermaidGenerator.GenerateDataFlowGraph(_allDataFlowNodes);
+        // Generate Mermaid diagram
+        var mermaid = GenerateMermaid(uniqueEdges);
 
         return new AnalysisResult
         {
-            CallGraph = _allCallGraphEdges,
-            MermaidCallGraph = mermaidCallGraph,
-            MethodSources = _allMethodSources
+            CallGraph = uniqueEdges,
+            MermaidCallGraph = mermaid,
+            MethodSources = allSources
         };
     }
 
-    private List<MetadataReference> ReferenceAssemblies()
+    // ─── Mermaid generation ──────────────────────────────────────────────────
+
+    private static string GenerateMermaid(List<CallGraphEdge> edges)
     {
-        var references = new List<MetadataReference>
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location)
-        };
+        if (edges.Count == 0) return string.Empty;
 
-        var runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location) ?? string.Empty;
-        var coreLibPath = Path.Combine(runtimePath, "System.Runtime.dll");
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("graph LR");
 
-        if (File.Exists(coreLibPath))
+        var nodeIds = new Dictionary<string, string>();
+        int nodeCounter = 0;
+
+        string GetNodeId(string className, string methodName)
         {
-            references.Add(MetadataReference.CreateFromFile(coreLibPath));
+            var key = $"{className}::{methodName}";
+            if (!nodeIds.TryGetValue(key, out var id))
+            {
+                id = $"N{nodeCounter++}";
+                nodeIds[key] = id;
+                var label = SanitizeMermaid($"{className}.{methodName}");
+                sb.AppendLine($"    {id}[\"{label}\"]");
+            }
+            return id;
         }
 
-        return references;
+        foreach (var edge in edges)
+        {
+            var callerId = GetNodeId(edge.CallerClass, edge.CallerMethod);
+            var calleeId = GetNodeId(edge.CalleeClass, edge.CalleeMethod);
+            sb.AppendLine($"    {callerId} --> {calleeId}");
+        }
+
+        return sb.ToString();
     }
 
-    private Dictionary<IMethodSymbol, List<IMethodSymbol>> BuildInterfaceImplementationMap(Compilation compilation)
+    private static string SanitizeMermaid(string text)
+        => text.Replace("\"", "'").Replace("<", "&lt;").Replace(">", "&gt;");
+
+    // ─── Directory filter ────────────────────────────────────────────────────
+
+    private static bool IsInSkippedDirectory(string filePath)
     {
-        var map = new Dictionary<IMethodSymbol, List<IMethodSymbol>>(SymbolEqualityComparer.Default);
-
-        foreach (var namedType in GetAllNamedTypes(compilation.Assembly.GlobalNamespace))
-        {
-            if (namedType.TypeKind != TypeKind.Class || namedType.IsAbstract)
-            {
-                continue;
-            }
-
-            foreach (var interfaceType in namedType.AllInterfaces)
-            {
-                foreach (var interfaceMember in interfaceType.GetMembers().OfType<IMethodSymbol>())
-                {
-                    var implementation = namedType.FindImplementationForInterfaceMember(interfaceMember) as IMethodSymbol;
-                    if (implementation == null)
-                    {
-                        continue;
-                    }
-
-                    var interfaceMethod = interfaceMember.OriginalDefinition;
-                    if (!map.TryGetValue(interfaceMethod, out var implementations))
-                    {
-                        implementations = new List<IMethodSymbol>();
-                        map[interfaceMethod] = implementations;
-                    }
-
-                    if (!implementations.Any(existing => SymbolEqualityComparer.Default.Equals(existing, implementation)))
-                    {
-                        implementations.Add(implementation);
-                    }
-                }
-            }
-        }
-
-        return map;
-    }
-
-    private static IEnumerable<INamedTypeSymbol> GetAllNamedTypes(INamespaceSymbol namespaceSymbol)
-    {
-        foreach (var type in namespaceSymbol.GetTypeMembers())
-        {
-            yield return type;
-
-            foreach (var nestedType in GetNestedTypes(type))
-            {
-                yield return nestedType;
-            }
-        }
-
-        foreach (var nestedNamespace in namespaceSymbol.GetNamespaceMembers())
-        {
-            foreach (var nestedType in GetAllNamedTypes(nestedNamespace))
-            {
-                yield return nestedType;
-            }
-        }
-    }
-
-    private static IEnumerable<INamedTypeSymbol> GetNestedTypes(INamedTypeSymbol typeSymbol)
-    {
-        foreach (var nestedType in typeSymbol.GetTypeMembers())
-        {
-            yield return nestedType;
-
-            foreach (var deeperNestedType in GetNestedTypes(nestedType))
-            {
-                yield return deeperNestedType;
-            }
-        }
+        var parts = filePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return parts.Any(part => _skipDirs.Contains(part));
     }
 }

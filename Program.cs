@@ -101,6 +101,18 @@ Console.WriteLine();
 Console.WriteLine("📊 Results Summary:");
 Console.WriteLine($"   • Call Graph Edges: {result.CallGraph.Count}");
 Console.WriteLine($"   • Method Sources:   {result.MethodSources.Count}");
+
+// Language breakdown
+var langBreakdown = result.CallGraph
+    .Where(e => !string.IsNullOrEmpty(e.Language))
+    .GroupBy(e => e.Language!)
+    .OrderByDescending(g => g.Count());
+if (langBreakdown.Any())
+{
+    Console.WriteLine("   • Language breakdown:");
+    foreach (var g in langBreakdown)
+        Console.WriteLine($"     - {g.Key}: {g.Count()} edge(s)");
+}
 Console.WriteLine();
 
 try

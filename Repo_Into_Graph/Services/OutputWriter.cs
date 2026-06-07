@@ -16,9 +16,7 @@ public class OutputWriter
 
         var outputObj = new
         {
-            CallGraph = result.CallGraph,
-            MermaidCallGraph = string.IsNullOrEmpty(result.MermaidCallGraph) ? null : result.MermaidCallGraph,
-            MethodSources = result.MethodSources
+            CallGraph = result.CallGraph
         };
 
         var json = JsonSerializer.Serialize(outputObj, options);

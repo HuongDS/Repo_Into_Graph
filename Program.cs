@@ -1,13 +1,15 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Repo_Into_Graph;
 using Repo_Into_Graph.Data;
 using Repo_Into_Graph.Services;
 
 string repositoryPath = string.Empty;
+if (File.Exists(".env"))
+{
+    DotNetEnv.Env.Load();
+}
 string outputDir = "./output";
-string connectionString = Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING")
-    ?? "Host=localhost;Port=5432;Database=repo_into_graph;Username=postgres;Password=postgres";
-
 if (args.Length > 0)
 {
     repositoryPath = args[0];
@@ -16,7 +18,7 @@ if (args.Length > 0)
 else
 {
     Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
-    Console.WriteLine("║            Static Code Analyzer - Call Graph Only             ║");
+    Console.WriteLine("║            Static Code Analyzer - Call Graph Only              ║");
     Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
     Console.WriteLine();
 
@@ -30,7 +32,6 @@ else
             Console.WriteLine("❌ Đường dẫn không được để trống!");
             continue;
         }
-
         repositoryPath = input.Trim('"', ' ');
     }
 
@@ -53,42 +54,25 @@ if (!Directory.Exists(repositoryPath))
 Directory.CreateDirectory(outputDir);
 
 Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
-Console.WriteLine("║                    Analyzing Repository...                    ║");
+Console.WriteLine("║                    Analyzing Repository...                     ║");
 Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
 Console.WriteLine();
 
 var analyzer = new CodeAnalyzer(repositoryPath);
-var dbOptions = new DbContextOptionsBuilder<AnalysisDbContext>()
-    .UseNpgsql(connectionString)
-    .Options;
-
-await using var dbContext = new AnalysisDbContext(dbOptions);
+await using var dbContext = new AnalysisDbContext();
 var databaseReady = false;
 
 try
 {
-    await dbContext.Database.EnsureCreatedAsync();
-    
-    // Execute raw SQL to ensure method_sources table exists (backward compatibility)
-    await dbContext.Database.ExecuteSqlRawAsync(@"
-        CREATE TABLE IF NOT EXISTS method_sources (
-            ""Id"" UUID PRIMARY KEY,
-            ""AnalysisRunId"" UUID NOT NULL REFERENCES analysis_runs(""Id"") ON DELETE CASCADE,
-            ""ClassName"" TEXT NOT NULL,
-            ""MethodName"" TEXT NOT NULL,
-            ""SourceCode"" TEXT NOT NULL,
-            ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT now()
-        );
-        CREATE INDEX IF NOT EXISTS ""IX_method_sources_AnalysisRunId"" ON method_sources(""AnalysisRunId"");
-    ");
+    await dbContext.Database.MigrateAsync();
 
-    Console.WriteLine("✅ PostgreSQL schema ready.");
+    Console.WriteLine("✅ PostgreSQL schema ready via Migrations.");
     databaseReady = true;
 }
 catch (Exception ex)
 {
     Console.WriteLine($"❌ Cannot prepare PostgreSQL schema: {ex.Message}");
-    Console.WriteLine("Check your Docker PostgreSQL container and POSTGRES_CONNECTION_STRING.");
+    Console.WriteLine("Check your Docker PostgreSQL container and configuration.");
 }
 
 var result = await analyzer.AnalyzeAsync();
@@ -119,7 +103,6 @@ try
 {
     if (databaseReady)
     {
-        // Delete old analysis runs with the same RepositoryPath (cascade deletes call graph and method sources)
         var existingRuns = await dbContext.AnalysisRuns
             .Where(r => r.RepositoryPath.ToLower() == repositoryPath.ToLower())
             .ToListAsync();
@@ -160,6 +143,21 @@ try
         await dbContext.AnalysisRuns.AddAsync(analysisRun);
         await dbContext.SaveChangesAsync();
         Console.WriteLine($"✅ Saved {result.CallGraph.Count} call graph edges and {result.MethodSources.Count} method source codes to PostgreSQL.");
+        
+        var graphMapper = new GraphMapperService(dbContext);
+        try
+        {
+            string featuresJsonPath = "./template_feature.json"; 
+
+            await graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, featuresJsonPath);
+
+            Console.WriteLine("🚀 Successfully processed and mapped features from JSON to PostgreSQL!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Error during graph mapping: {ex.Message}");
+        }
+
     }
 }
 catch (Exception ex)

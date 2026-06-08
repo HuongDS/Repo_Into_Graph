@@ -1,3 +1,4 @@
+using Repo_Into_Graph.Repo_Into_Graph.Data;
 using System;
 
 namespace Repo_Into_Graph.Data;
@@ -11,4 +12,5 @@ public class MethodSourceRecord
     public string SourceCode { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public AnalysisRun? AnalysisRun { get; set; }
+    public List<FeatureMethodMapping> FeatureMethodMappings { get; set; } = new();
 }

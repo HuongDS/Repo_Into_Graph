@@ -7,4 +7,5 @@ public class AnalysisRun
     public DateTime CreatedAt { get; set; }
     public List<CallGraphEdgeRecord> CallGraphEdges { get; set; } = new();
     public List<MethodSourceRecord> MethodSources { get; set; } = new();
+    public List<FeatureRecord> Features { get; set; } = new();
 }

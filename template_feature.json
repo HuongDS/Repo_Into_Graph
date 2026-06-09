@@ -1,0 +1,26 @@
+[
+  {
+    "feature_name": "Quản lý đấu giá cơ bản",
+    "apis": [
+      "GET GetAuctions",
+      "GET GetAuction",
+      "POST CreateAuction",
+      "PUT UpdateAuction",
+      "DELETE DeleteAuction"
+    ]
+  },
+  {
+    "feature_name": "Xuất nhập dữ liệu Excel",
+    "apis": [
+      "GET ExportAuctionsToExcel",
+      "GET ExportTemplate",
+      "POST ImportAuctions"
+    ]
+  },
+  {
+    "feature_name": "Tìm kiếm nâng cao",
+    "apis": [
+      "GET Search"
+    ]
+  }
+]

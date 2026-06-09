@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: repo-into-graph-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: repo_into_graph
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - repo_into_graph_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  repo_into_graph_postgres_data:

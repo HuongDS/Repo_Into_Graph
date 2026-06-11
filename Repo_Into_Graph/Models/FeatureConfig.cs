@@ -9,6 +9,11 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Models
     public class FeatureConfig
     {
         public string feature_name { get; set; } = string.Empty;
-        public List<string> apis { get; set; } = new();
+        public List<ApiConfig> apis { get; set; } = new();
+    }
+    public class ApiConfig
+    {
+        public string controller { get; set; } = string.Empty;
+        public string method { get; set; } = string.Empty;
     }
 }

@@ -2,13 +2,14 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Repo_Into_Graph.Models;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Repo_Into_Graph.Services.Parsers;
 
-/// <summary>
-/// C# parser using Roslyn for full semantic analysis.
-/// Handles .NET API projects (ASP.NET Core, Web API, MVC).
-/// </summary>
 public class CSharpParser : ILanguageParser
 {
     public string LanguageName => "C# (.NET)";
@@ -16,33 +17,27 @@ public class CSharpParser : ILanguageParser
 
     private readonly HashSet<string> _standardNamespaces = new()
     {
-        "System",
-        "System.Collections",
-        "System.Collections.Generic",
-        "System.Linq",
-        "System.Text",
-        "System.IO",
-        "System.Threading",
-        "System.Diagnostics",
-        "System.Net",
-        "System.Reflection"
+        "System", "System.Collections", "System.Collections.Generic", "System.Linq",
+        "System.Text", "System.IO", "System.Threading", "System.Diagnostics",
+        "System.Net", "System.Reflection"
     };
 
-    public Task<ExtractionResult> ParseAsync(string filePath, string sourceCode)
+    // Hàm phân tích tập trung nhận vào danh sách tất cả các cây syntax trong Solution
+    public ExtractionResult ParseWithFullContext(SyntaxTree targetTree, List<SyntaxTree> allTrees, string filePath)
     {
         var result = new ExtractionResult();
 
         try
         {
-            var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
-            var compilation = CSharpCompilation.Create("TempAnalysis")
-                .AddSyntaxTrees(syntaxTree)
+            // Tạo một Compilation chung chứa TOÀN BỘ file của project để không bị mất Context
+            var compilation = CSharpCompilation.Create("FullRepoAnalysis")
+                .AddSyntaxTrees(allTrees)
                 .AddReferences(GetReferenceAssemblies());
 
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
+            var semanticModel = compilation.GetSemanticModel(targetTree);
             var interfaceImplementationMap = BuildInterfaceImplementationMap(compilation);
 
-            var root = (CompilationUnitSyntax)syntaxTree.GetRoot();
+            var root = (CompilationUnitSyntax)targetTree.GetRoot();
             var visitor = new CallGraphVisitor(semanticModel, _standardNamespaces, interfaceImplementationMap, LanguageName);
             visitor.Visit(root);
 
@@ -54,7 +49,15 @@ public class CSharpParser : ILanguageParser
             Console.WriteLine($"  ⚠️  C# parse error in {Path.GetFileName(filePath)}: {ex.Message}");
         }
 
-        return Task.FromResult(result);
+        return result;
+    }
+
+    // Giữ nguyên interface cũ để không lỗi compile, nhưng sẽ xử lý đơn lẻ (hoặc không dùng tới nếu gọi trực tiếp)
+    public Task<ExtractionResult> ParseAsync(string filePath, string sourceCode)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
+        var res = ParseWithFullContext(syntaxTree, new List<SyntaxTree> { syntaxTree }, filePath);
+        return Task.FromResult(res);
     }
 
     private static List<MetadataReference> GetReferenceAssemblies()
@@ -127,8 +130,6 @@ public class CSharpParser : ILanguageParser
         }
     }
 
-    // ─── Inner Syntax Walker ───────────────────────────────────────────────────
-
     private class CallGraphVisitor : CSharpSyntaxWalker
     {
         private readonly SemanticModel _semanticModel;
@@ -137,7 +138,6 @@ public class CSharpParser : ILanguageParser
         private readonly string _language;
         private string _currentClass = string.Empty;
         private string _currentMethod = string.Empty;
-        private string _currentMethodDisplay = string.Empty;
 
         public List<CallGraphEdge> CallGraphEdges { get; } = new();
         public List<MethodSource> MethodSources { get; } = new();
@@ -165,36 +165,21 @@ public class CSharpParser : ILanguageParser
         public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
         {
             var prevMethod = _currentMethod;
-            var prevDisplay = _currentMethodDisplay;
             _currentMethod = node.Identifier.Text;
-            _currentMethodDisplay = GetMethodDisplayName(node);
 
             if (!IsMigrationClass(_currentClass))
             {
                 MethodSources.Add(new MethodSource
                 {
                     ClassName = _currentClass,
-                    MethodName = _currentMethod,
+                    MethodName = _currentMethod, // Lưu tên thuần túy
                     SourceCode = node.ToString(),
                     Language = _language
                 });
-
-                if (ShouldIncludeMethodEntry(node))
-                {
-                    CallGraphEdges.Add(new CallGraphEdge
-                    {
-                        CallerClass = _currentClass,
-                        CallerMethod = "__CLASS__",
-                        CalleeClass = _currentClass,
-                        CalleeMethod = string.IsNullOrEmpty(_currentMethodDisplay) ? node.Identifier.Text : _currentMethodDisplay,
-                        Language = _language
-                    });
-                }
             }
 
             base.VisitMethodDeclaration(node);
             _currentMethod = prevMethod;
-            _currentMethodDisplay = prevDisplay;
         }
 
         public override void VisitInvocationExpression(InvocationExpressionSyntax node)
@@ -214,7 +199,7 @@ public class CSharpParser : ILanguageParser
                         CallGraphEdges.Add(new CallGraphEdge
                         {
                             CallerClass = _currentClass,
-                            CallerMethod = string.IsNullOrEmpty(_currentMethodDisplay) ? _currentMethod : _currentMethodDisplay,
+                            CallerMethod = _currentMethod, // Dùng tên thuần túy đồng bộ
                             CalleeClass = calleeClass,
                             CalleeMethod = calleeName,
                             Language = _language
@@ -262,50 +247,6 @@ public class CSharpParser : ILanguageParser
                     });
                 }
             }
-        }
-
-        private bool ShouldIncludeMethodEntry(MethodDeclarationSyntax node)
-        {
-            var hasHttpAttr = node.AttributeLists
-                .SelectMany(a => a.Attributes)
-                .Any(a => IsHttpAttribute(a.Name.ToString()));
-
-            var isControllerMethod = _currentClass.EndsWith("Controller", StringComparison.Ordinal)
-                                     && node.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword));
-            return hasHttpAttr || isControllerMethod;
-        }
-
-        private string GetMethodDisplayName(MethodDeclarationSyntax node)
-        {
-            var verb = node.AttributeLists
-                .SelectMany(a => a.Attributes)
-                .Select(a => GetHttpVerb(a.Name.ToString()))
-                .FirstOrDefault(v => !string.IsNullOrEmpty(v));
-
-            return string.IsNullOrEmpty(verb) ? node.Identifier.Text : $"{verb} {node.Identifier.Text}";
-        }
-
-        private static bool IsHttpAttribute(string name)
-        {
-            if (name.EndsWith("Attribute", StringComparison.Ordinal))
-                name = name[..^"Attribute".Length];
-            return name is "HttpGet" or "Get" or "HttpPost" or "Post"
-                       or "HttpPut" or "Put" or "HttpDelete" or "Delete" or "HttpPatch" or "Patch";
-        }
-
-        private static string GetHttpVerb(string name)
-        {
-            if (name.EndsWith("Attribute", StringComparison.Ordinal))
-                name = name[..^"Attribute".Length];
-            return name switch
-            {
-                "HttpGet" or "Get" => "GET",
-                "HttpPost" or "Post" => "POST",
-                "HttpPut" or "Put" => "PUT",
-                "HttpDelete" or "Delete" => "DELETE",
-                "HttpPatch" or "Patch" => "PATCH",
-                _ => string.Empty
-            };
         }
 
         private bool IsStandardLibraryCall(IMethodSymbol symbol)

@@ -1,24 +1,15 @@
 using Repo_Into_Graph.Models;
 using Repo_Into_Graph.Services.Parsers;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+
 
 namespace Repo_Into_Graph;
 
-/// <summary>
-/// Orchestrates multi-language static code analysis.
-/// Automatically detects language by file extension and delegates to the
-/// appropriate ILanguageParser implementation.
-///
-/// Supported languages:
-///   - C# (.cs)         → CSharpParser  (Roslyn-based, full semantic analysis)
-///   - Java (.java)     → JavaParser     (Spring Boot, regex/heuristic)
-///   - Python (.py)     → PythonParser   (FastAPI, regex/heuristic)
-///   - JS/TS (.js/.ts)  → NodeJsParser   (Express/NestJS, regex/heuristic)
-/// </summary>
 public class CodeAnalyzer
 {
     private readonly string _repositoryPath;
 
-    // ─── Registered parsers ─────────────────────────────────────────────────
     private readonly List<ILanguageParser> _parsers = new()
     {
         new CSharpParser(),
@@ -27,13 +18,12 @@ public class CodeAnalyzer
         new NodeJsParser()
     };
 
-    // ─── Dirs to always skip ─────────────────────────────────────────────────
     private static readonly HashSet<string> _skipDirs = new(StringComparer.OrdinalIgnoreCase)
     {
         "obj", "bin", "node_modules", ".git", ".github", ".vscode", ".idea",
         "__pycache__", ".pytest_cache", ".mypy_cache", "venv", ".venv", "env",
         "dist", "build", ".next", ".nuxt", "coverage", "migrations", "Migrations",
-        "target" // Java/Maven build output
+        "target"
     };
 
     public CodeAnalyzer(string repositoryPath)
@@ -46,19 +36,27 @@ public class CodeAnalyzer
         var allEdges = new List<CallGraphEdge>();
         var allSources = new List<MethodSource>();
 
-        // Build extension → parser lookup
         var extensionMap = new Dictionary<string, ILanguageParser>(StringComparer.OrdinalIgnoreCase);
         foreach (var parser in _parsers)
             foreach (var ext in parser.SupportedExtensions)
                 extensionMap[ext] = parser;
 
-        // Discover all files
         var allFiles = Directory.GetFiles(_repositoryPath, "*.*", SearchOption.AllDirectories)
             .Where(f => !IsInSkippedDirectory(f))
             .Where(f => extensionMap.ContainsKey(Path.GetExtension(f)))
             .ToList();
 
-        // Group by language for reporting
+        var csharpFiles = allFiles.Where(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)).ToList();
+        var csharpTreesMap = new Dictionary<string, SyntaxTree>();
+
+        foreach (var file in csharpFiles)
+        {
+            var code = await File.ReadAllTextAsync(file);
+            csharpTreesMap[file] = CSharpSyntaxTree.ParseText(code);
+        }
+        var allCSharpTrees = csharpTreesMap.Values.ToList();
+        // ------------------------------------------------------------------------
+
         var filesByLang = allFiles
             .GroupBy(f => extensionMap[Path.GetExtension(f)].LanguageName)
             .ToDictionary(g => g.Key, g => g.ToList());
@@ -68,7 +66,6 @@ public class CodeAnalyzer
             Console.WriteLine($"   • {lang}: {files.Count} file(s)");
         Console.WriteLine();
 
-        // Parse each file with appropriate parser
         int parsed = 0, errors = 0;
         foreach (var file in allFiles)
         {
@@ -77,8 +74,18 @@ public class CodeAnalyzer
 
             try
             {
-                var code = await File.ReadAllTextAsync(file);
-                var extraction = await parser.ParseAsync(file, code);
+                ExtractionResult extraction;
+
+                if (parser is CSharpParser csParser && ext.Equals(".cs", StringComparison.OrdinalIgnoreCase))
+                {
+                    var targetTree = csharpTreesMap[file];
+                    extraction = csParser.ParseWithFullContext(targetTree, allCSharpTrees, file);
+                }
+                else
+                {
+                    var code = await File.ReadAllTextAsync(file);
+                    extraction = await parser.ParseAsync(file, code);
+                }
 
                 allEdges.AddRange(extraction.CallGraphEdges);
                 allSources.AddRange(extraction.MethodSources);
@@ -98,12 +105,10 @@ public class CodeAnalyzer
         Console.WriteLine($"   → {allEdges.Count} call graph edges");
         Console.WriteLine($"   → {allSources.Count} method sources");
 
-        // Remove duplicate edges
         var uniqueEdges = allEdges
             .DistinctBy(e => $"{e.CallerClass}::{e.CallerMethod}→{e.CalleeClass}::{e.CalleeMethod}")
             .ToList();
 
-        // Generate Mermaid diagram
         var mermaid = GenerateMermaid(uniqueEdges);
 
         return new AnalysisResult
@@ -113,8 +118,6 @@ public class CodeAnalyzer
             MethodSources = allSources
         };
     }
-
-    // ─── Mermaid generation ──────────────────────────────────────────────────
 
     private static string GenerateMermaid(List<CallGraphEdge> edges)
     {
@@ -151,8 +154,6 @@ public class CodeAnalyzer
 
     private static string SanitizeMermaid(string text)
         => text.Replace("\"", "'").Replace("<", "&lt;").Replace(">", "&gt;");
-
-    // ─── Directory filter ────────────────────────────────────────────────────
 
     private static bool IsInSkippedDirectory(string filePath)
     {

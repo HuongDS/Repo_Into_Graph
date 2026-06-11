@@ -8,4 +8,6 @@ public class CallGraphEdge
     public required string CalleeMethod { get; set; }
     /// <summary>Language/framework the edge was extracted from (e.g. "C# (.NET)", "Java (Spring Boot)").</summary>
     public string? Language { get; set; }
+    public string? CallerDisplayName { get; set; }
+    public string? CalleeDisplayName { get; set; }
 }

@@ -12,8 +12,8 @@ using Repo_Into_Graph.Data;
 namespace Repo_Into_Graph.Migrations
 {
     [DbContext(typeof(AnalysisDbContext))]
-    [Migration("20260608112854_InitialCreate1")]
-    partial class InitialCreate1
+    [Migration("20260610095617_AddHttpVerbAndDisplayName")]
+    partial class AddHttpVerbAndDisplayName
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -58,12 +58,18 @@ namespace Repo_Into_Graph.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("CalleeDisplayName")
+                        .HasColumnType("text");
+
                     b.Property<string>("CalleeMethod")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("CallerClass")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CallerDisplayName")
                         .HasColumnType("text");
 
                     b.Property<string>("CallerMethod")
@@ -122,6 +128,12 @@ namespace Repo_Into_Graph.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HttpVerb")
+                        .HasColumnType("text");
 
                     b.Property<string>("MethodName")
                         .IsRequired()

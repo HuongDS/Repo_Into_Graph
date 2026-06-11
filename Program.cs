@@ -128,6 +128,8 @@ try
                 CallerMethod = edge.CallerMethod,
                 CalleeClass = edge.CalleeClass,
                 CalleeMethod = edge.CalleeMethod,
+                CallerDisplayName = edge.CallerDisplayName,
+                CalleeDisplayName = edge.CalleeDisplayName,
                 CreatedAt = DateTime.UtcNow
             }).ToList(),
             MethodSources = result.MethodSources.Select(source => new MethodSourceRecord
@@ -136,6 +138,8 @@ try
                 ClassName = source.ClassName,
                 MethodName = source.MethodName,
                 SourceCode = source.SourceCode,
+                HttpVerb = source.HttpVerb,
+                DisplayName = source.DisplayName,
                 CreatedAt = DateTime.UtcNow
             }).ToList()
         };
@@ -143,11 +147,11 @@ try
         await dbContext.AnalysisRuns.AddAsync(analysisRun);
         await dbContext.SaveChangesAsync();
         Console.WriteLine($"✅ Saved {result.CallGraph.Count} call graph edges and {result.MethodSources.Count} method source codes to PostgreSQL.");
-        
+
         var graphMapper = new GraphMapperService(dbContext);
         try
         {
-            string featuresJsonPath = "./template_feature.json"; 
+            string featuresJsonPath = "./template_feature.json";
 
             await graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, featuresJsonPath);
 

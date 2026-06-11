@@ -55,12 +55,18 @@ namespace Repo_Into_Graph.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("CalleeDisplayName")
+                        .HasColumnType("text");
+
                     b.Property<string>("CalleeMethod")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("CallerClass")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CallerDisplayName")
                         .HasColumnType("text");
 
                     b.Property<string>("CallerMethod")
@@ -119,6 +125,12 @@ namespace Repo_Into_Graph.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HttpVerb")
+                        .HasColumnType("text");
 
                     b.Property<string>("MethodName")
                         .IsRequired()

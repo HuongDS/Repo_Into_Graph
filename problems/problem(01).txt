@@ -1,0 +1,9 @@
+- method_sources: nơi lưu trữ src code, đơn giản vậy.
+- feature_records: bảng lưu những cái chức năng trong file templete.
+- feature_method_mappings: mỗi feature sẽ có những hàm nào liên quan. 1 FeatureId sẽ có nhiều methodId và ngược lại.
+
+(1)---> Vấn đề ở bảng call_graph_edges hiện tại chỉ có 1 record nên không truy vết được các hàm liên quan.
+
+(2)---> Bảng method_sources cũng chưa hoạt động đúng lắm, có các hàm bị trùng nhau vẫn chưa xử lý được, không lấy được tên interface.
+
+(3)---> File Templete đang sai vì 1 endpoint chỉ tương ứng với 1 hàm trong controller.

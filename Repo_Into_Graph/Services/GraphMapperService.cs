@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph.Data;
 using Repo_Into_Graph.Repo_Into_Graph.Data;
 using Repo_Into_Graph.Repo_Into_Graph.Models;
@@ -49,10 +49,46 @@ public class GraphMapperService
             .ToListAsync();
 
       
-        var methodLookup = methodSourcesInRam.ToLookup(
-            m => m.MethodName.Trim().ToLower(),
-            m => m.Id
-        );
+        // Load all call graph edges for this run
+        var callGraphEdges = await _context.Set<CallGraphEdgeRecord>()
+            .Where(e => e.AnalysisRunId == analysisRunId)
+            .ToListAsync();
+
+        var methodLookup = new Dictionary<string, List<Guid>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in methodSourcesInRam)
+        {
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrEmpty(m.DisplayName))
+            {
+                keys.Add(m.DisplayName.Trim());
+            }
+
+            if (!string.IsNullOrEmpty(m.HttpVerb))
+            {
+                keys.Add($"{m.HttpVerb} {m.MethodName}".Trim());
+            }
+
+            keys.Add(m.MethodName.Trim());
+
+            foreach (var key in keys)
+            {
+                if (!methodLookup.TryGetValue(key, out var list))
+                {
+                    list = new List<Guid>();
+                    methodLookup[key] = list;
+                }
+                list.Add(m.Id);
+            }
+        }
+
+        var methodBySignature = methodSourcesInRam
+            .GroupBy(m => $"{m.ClassName}::{m.MethodName}", StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var edgesByCaller = callGraphEdges
+            .GroupBy(e => $"{e.CallerClass}::{e.CallerMethod}", StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
         var featureLookup = featureRecords.ToDictionary(
             f => f.FeatureName.ToLower(),
@@ -67,25 +103,60 @@ public class GraphMapperService
 
             if (!featureLookup.TryGetValue(cleanFeatName, out Guid currentFeatureId)) continue;
 
+            var visitedMethodIds = new HashSet<Guid>();
+            var queue = new Queue<MethodSourceRecord>();
+
             foreach (var apiStr in featConfig.apis)
             {
-                var parts = apiStr.Trim().Split(' ');
-                string methodNameFromApi = parts.Length > 1 ? parts[1].Trim() : parts[0].Trim();
-                string cleanMethodName = methodNameFromApi.ToLower();
+                string cleanApiStr = apiStr.Trim();
 
-                if (methodLookup.Contains(cleanMethodName))
+                if (methodLookup.TryGetValue(cleanApiStr, out var methodSourceIds))
                 {
-                    foreach (var methodSourceId in methodLookup[cleanMethodName])
+                    foreach (var methodSourceId in methodSourceIds)
                     {
-                        mappingsToInsert.Add(new FeatureMethodMapping
+                        var startMethod = methodSourcesInRam.FirstOrDefault(m => m.Id == methodSourceId);
+                        if (startMethod != null && visitedMethodIds.Add(startMethod.Id))
                         {
-                            Id = Guid.NewGuid(),
-                            FeatureId = currentFeatureId,
-                            MethodSourceId = methodSourceId,
-                            MappedAt = DateTime.UtcNow
-                        });
+                            queue.Enqueue(startMethod);
+                        }
                     }
                 }
+            }
+
+            // Perform Breadth-First Search (BFS) to find transitively called methods in the call graph
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                var callerKey = $"{current.ClassName}::{current.MethodName}";
+
+                if (edgesByCaller.TryGetValue(callerKey, out var edges))
+                {
+                    foreach (var edge in edges)
+                    {
+                        var calleeKey = $"{edge.CalleeClass}::{edge.CalleeMethod}";
+                        if (methodBySignature.TryGetValue(calleeKey, out var callees))
+                        {
+                            foreach (var callee in callees)
+                            {
+                                if (visitedMethodIds.Add(callee.Id))
+                                {
+                                    queue.Enqueue(callee);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach (var methodSourceId in visitedMethodIds)
+            {
+                mappingsToInsert.Add(new FeatureMethodMapping
+                {
+                    Id = Guid.NewGuid(),
+                    FeatureId = currentFeatureId,
+                    MethodSourceId = methodSourceId,
+                    MappedAt = DateTime.UtcNow
+                });
             }
         }
 

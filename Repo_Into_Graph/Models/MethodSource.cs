@@ -7,4 +7,6 @@ public class MethodSource
     public required string SourceCode { get; set; }
     /// <summary>Language/framework the source was extracted from.</summary>
     public string? Language { get; set; }
+    public string? HttpVerb { get; set; }
+    public string? DisplayName { get; set; }
 }

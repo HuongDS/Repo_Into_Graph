@@ -103,6 +103,11 @@ public class CodeAnalyzer
             .DistinctBy(e => $"{e.CallerClass}::{e.CallerMethod}→{e.CalleeClass}::{e.CalleeMethod}")
             .ToList();
 
+        // Remove duplicate method sources
+        var uniqueSources = allSources
+            .DistinctBy(s => $"{s.ClassName}::{s.MethodName}::{s.SourceCode.Trim()}")
+            .ToList();
+
         // Generate Mermaid diagram
         var mermaid = GenerateMermaid(uniqueEdges);
 
@@ -110,7 +115,7 @@ public class CodeAnalyzer
         {
             CallGraph = uniqueEdges,
             MermaidCallGraph = mermaid,
-            MethodSources = allSources
+            MethodSources = uniqueSources
         };
     }
 
@@ -126,14 +131,15 @@ public class CodeAnalyzer
         var nodeIds = new Dictionary<string, string>();
         int nodeCounter = 0;
 
-        string GetNodeId(string className, string methodName)
+        string GetNodeId(string className, string methodName, string? displayName)
         {
             var key = $"{className}::{methodName}";
             if (!nodeIds.TryGetValue(key, out var id))
             {
                 id = $"N{nodeCounter++}";
                 nodeIds[key] = id;
-                var label = SanitizeMermaid($"{className}.{methodName}");
+                var methodLabel = string.IsNullOrEmpty(displayName) ? methodName : displayName;
+                var label = SanitizeMermaid($"{className}.{methodLabel}");
                 sb.AppendLine($"    {id}[\"{label}\"]");
             }
             return id;
@@ -141,8 +147,8 @@ public class CodeAnalyzer
 
         foreach (var edge in edges)
         {
-            var callerId = GetNodeId(edge.CallerClass, edge.CallerMethod);
-            var calleeId = GetNodeId(edge.CalleeClass, edge.CalleeMethod);
+            var callerId = GetNodeId(edge.CallerClass, edge.CallerMethod, edge.CallerDisplayName);
+            var calleeId = GetNodeId(edge.CalleeClass, edge.CalleeMethod, edge.CalleeDisplayName);
             sb.AppendLine($"    {callerId} --> {calleeId}");
         }
 

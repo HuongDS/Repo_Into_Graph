@@ -120,7 +120,9 @@ public class JavaParser : ILanguageParser
                     ClassName = currentClass,
                     MethodName = methodName,
                     SourceCode = methodBody,
-                    Language = LanguageName
+                    Language = LanguageName,
+                    HttpVerb = pendingHttpVerb,
+                    DisplayName = displayName
                 });
 
                 // Add entry node if it's an HTTP endpoint or Spring component method
@@ -131,13 +133,15 @@ public class JavaParser : ILanguageParser
                         CallerClass = currentClass,
                         CallerMethod = "__CLASS__",
                         CalleeClass = currentClass,
-                        CalleeMethod = displayName,
-                        Language = LanguageName
+                        CalleeMethod = methodName,
+                        Language = LanguageName,
+                        CallerDisplayName = "__CLASS__",
+                        CalleeDisplayName = displayName
                     });
                 }
 
                 // Extract calls from method body
-                ExtractMethodCalls(methodBody, currentClass, displayName, result);
+                ExtractMethodCalls(methodBody, currentClass, methodName, displayName, result);
 
                 pendingHttpVerb = null;
                 pendingAnnotation = null;
@@ -155,7 +159,7 @@ public class JavaParser : ILanguageParser
         return Task.FromResult(result);
     }
 
-    private void ExtractMethodCalls(string methodBody, string currentClass, string currentMethod, ExtractionResult result)
+    private void ExtractMethodCalls(string methodBody, string currentClass, string currentMethod, string currentMethodDisplay, ExtractionResult result)
     {
         var bodyLines = methodBody.Split('\n');
         foreach (var line in bodyLines)
@@ -180,7 +184,7 @@ public class JavaParser : ILanguageParser
                     ? currentClass
                     : InferClassName(objectName);
 
-                if (calleeClass == currentClass && calledMethod == currentMethod.Split(' ').Last()) continue;
+                if (calleeClass == currentClass && calledMethod == currentMethod) continue;
 
                 result.CallGraphEdges.Add(new CallGraphEdge
                 {
@@ -188,7 +192,9 @@ public class JavaParser : ILanguageParser
                     CallerMethod = currentMethod,
                     CalleeClass = calleeClass,
                     CalleeMethod = calledMethod,
-                    Language = LanguageName
+                    Language = LanguageName,
+                    CallerDisplayName = currentMethodDisplay,
+                    CalleeDisplayName = calledMethod
                 });
             }
         }

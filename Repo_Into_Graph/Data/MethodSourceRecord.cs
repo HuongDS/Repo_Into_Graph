@@ -10,6 +10,8 @@ public class MethodSourceRecord
     public string ClassName { get; set; } = string.Empty;
     public string MethodName { get; set; } = string.Empty;
     public string SourceCode { get; set; } = string.Empty;
+    public string? HttpVerb { get; set; }
+    public string? DisplayName { get; set; }
     public DateTime CreatedAt { get; set; }
     public AnalysisRun? AnalysisRun { get; set; }
     public List<FeatureMethodMapping> FeatureMethodMappings { get; set; } = new();

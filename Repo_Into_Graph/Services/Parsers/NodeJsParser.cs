@@ -124,7 +124,9 @@ public class NodeJsParser : ILanguageParser
                     CallerMethod = "__CLASS__",
                     CalleeClass = currentClass,
                     CalleeMethod = routeMethodName,
-                    Language = LanguageName
+                    Language = LanguageName,
+                    CallerDisplayName = "__CLASS__",
+                    CalleeDisplayName = routeMethodName
                 });
                 continue;
             }
@@ -150,7 +152,7 @@ public class NodeJsParser : ILanguageParser
                 var displayName = pendingNestVerb != null ? $"{pendingNestVerb} {funcName}" : funcName;
                 var body = ExtractBlock(lines, i);
 
-                AddMethodNode(result, currentClass, funcName, displayName, body);
+                AddMethodNode(result, currentClass, funcName, pendingNestVerb, displayName, body);
                 pendingNestVerb = null;
                 continue;
             }
@@ -165,7 +167,7 @@ public class NodeJsParser : ILanguageParser
                 var displayName = pendingNestVerb != null ? $"{pendingNestVerb} {funcName}" : funcName;
                 var body = ExtractBlock(lines, i);
 
-                AddMethodNode(result, currentClass, funcName, displayName, body);
+                AddMethodNode(result, currentClass, funcName, pendingNestVerb, displayName, body);
                 pendingNestVerb = null;
                 continue;
             }
@@ -182,7 +184,7 @@ public class NodeJsParser : ILanguageParser
                     var displayName = pendingNestVerb != null ? $"{pendingNestVerb} {methodName}" : methodName;
                     var body = ExtractBlock(lines, i);
 
-                    AddMethodNode(result, currentClass, methodName, displayName, body);
+                    AddMethodNode(result, currentClass, methodName, pendingNestVerb, displayName, body);
                     pendingNestVerb = null;
                     continue;
                 }
@@ -192,14 +194,16 @@ public class NodeJsParser : ILanguageParser
         return Task.FromResult(result);
     }
 
-    private void AddMethodNode(ExtractionResult result, string currentClass, string methodName, string displayName, string body)
+    private void AddMethodNode(ExtractionResult result, string currentClass, string methodName, string? httpVerb, string displayName, string body)
     {
         result.MethodSources.Add(new MethodSource
         {
             ClassName = currentClass,
             MethodName = methodName,
             SourceCode = body,
-            Language = LanguageName
+            Language = LanguageName,
+            HttpVerb = httpVerb,
+            DisplayName = displayName
         });
 
         result.CallGraphEdges.Add(new CallGraphEdge
@@ -207,14 +211,16 @@ public class NodeJsParser : ILanguageParser
             CallerClass = currentClass,
             CallerMethod = "__CLASS__",
             CalleeClass = currentClass,
-            CalleeMethod = displayName,
-            Language = LanguageName
+            CalleeMethod = methodName,
+            Language = LanguageName,
+            CallerDisplayName = "__CLASS__",
+            CalleeDisplayName = displayName
         });
 
-        ExtractCalls(body, currentClass, displayName, result);
+        ExtractCalls(body, currentClass, methodName, displayName, result);
     }
 
-    private void ExtractCalls(string body, string currentClass, string currentFunc, ExtractionResult result)
+    private void ExtractCalls(string body, string currentClass, string currentFunc, string currentFuncDisplay, ExtractionResult result)
     {
         foreach (var line in body.Split('\n'))
         {
@@ -236,7 +242,7 @@ public class NodeJsParser : ILanguageParser
                     ? currentClass
                     : ToPascalCase(objectName);
 
-                if (calleeClass == currentClass && calledFunc == currentFunc.Split(' ').Last()) continue;
+                if (calleeClass == currentClass && calledFunc == currentFunc) continue;
 
                 result.CallGraphEdges.Add(new CallGraphEdge
                 {
@@ -244,7 +250,9 @@ public class NodeJsParser : ILanguageParser
                     CallerMethod = currentFunc,
                     CalleeClass = calleeClass,
                     CalleeMethod = calledFunc,
-                    Language = LanguageName
+                    Language = LanguageName,
+                    CallerDisplayName = currentFuncDisplay,
+                    CalleeDisplayName = calledFunc
                 });
             }
         }

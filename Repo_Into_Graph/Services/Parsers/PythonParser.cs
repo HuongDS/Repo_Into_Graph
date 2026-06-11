@@ -117,7 +117,9 @@ public class PythonParser : ILanguageParser
                     ClassName = currentClass,
                     MethodName = funcName,
                     SourceCode = funcBody,
-                    Language = LanguageName
+                    Language = LanguageName,
+                    HttpVerb = pendingHttpVerb,
+                    DisplayName = displayName
                 });
 
                 // Add entry node for endpoints or public functions
@@ -128,13 +130,15 @@ public class PythonParser : ILanguageParser
                         CallerClass = currentClass,
                         CallerMethod = "__CLASS__",
                         CalleeClass = currentClass,
-                        CalleeMethod = displayName,
-                        Language = LanguageName
+                        CalleeMethod = funcName,
+                        Language = LanguageName,
+                        CallerDisplayName = "__CLASS__",
+                        CalleeDisplayName = displayName
                     });
                 }
 
                 // Extract calls from body
-                ExtractFunctionCalls(funcBody, currentClass, displayName, result);
+                ExtractFunctionCalls(funcBody, currentClass, funcName, displayName, result);
 
                 pendingHttpVerb = null;
                 continue;
@@ -148,7 +152,7 @@ public class PythonParser : ILanguageParser
         return Task.FromResult(result);
     }
 
-    private void ExtractFunctionCalls(string body, string currentClass, string currentFunc, ExtractionResult result)
+    private void ExtractFunctionCalls(string body, string currentClass, string currentFunc, string currentFuncDisplay, ExtractionResult result)
     {
         foreach (var line in body.Split('\n'))
         {
@@ -171,7 +175,7 @@ public class PythonParser : ILanguageParser
                     ? currentClass
                     : InferClassName(objectName);
 
-                if (calleeClass == currentClass && calledFunc == currentFunc.Split(' ').Last()) continue;
+                if (calleeClass == currentClass && calledFunc == currentFunc) continue;
 
                 result.CallGraphEdges.Add(new CallGraphEdge
                 {
@@ -179,7 +183,9 @@ public class PythonParser : ILanguageParser
                     CallerMethod = currentFunc,
                     CalleeClass = calleeClass,
                     CalleeMethod = calledFunc,
-                    Language = LanguageName
+                    Language = LanguageName,
+                    CallerDisplayName = currentFuncDisplay,
+                    CalleeDisplayName = calledFunc
                 });
             }
         }

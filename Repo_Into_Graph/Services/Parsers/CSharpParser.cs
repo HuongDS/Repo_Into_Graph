@@ -28,22 +28,99 @@ public class CSharpParser : ILanguageParser
         "System.Reflection"
     };
 
+    private static readonly HashSet<string> _skipDirs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "obj", "bin", "node_modules", ".git", ".github", ".vscode", ".idea",
+        "__pycache__", ".pytest_cache", ".mypy_cache", "venv", ".venv", "env",
+        "dist", "build", ".next", ".nuxt", "coverage", "migrations", "Migrations",
+        "target"
+    };
+
+    private Compilation? _compilation;
+    private readonly Dictionary<string, SyntaxTree> _syntaxTrees = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<IMethodSymbol, List<IMethodSymbol>>? _interfaceImplementationMap;
+    private readonly object _lock = new();
+
+    private static string? FindRepositoryRoot(string startPath)
+    {
+        var dir = Path.GetDirectoryName(startPath);
+        while (dir != null)
+        {
+            if (Directory.Exists(Path.Combine(dir, ".git")) || 
+                Directory.GetFiles(dir, "*.sln").Any() || 
+                Directory.GetFiles(dir, "*.csproj").Any())
+            {
+                return dir;
+            }
+            dir = Path.GetDirectoryName(dir);
+        }
+        return Path.GetDirectoryName(startPath);
+    }
+
+    private static bool IsInSkippedDirectory(string filePath)
+    {
+        var parts = filePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return parts.Any(part => _skipDirs.Contains(part));
+    }
+
+    private void InitializeCompilation(string filePath)
+    {
+        lock (_lock)
+        {
+            if (_compilation != null) return;
+
+            var rootDir = FindRepositoryRoot(filePath);
+            if (rootDir == null) return;
+
+            var csFiles = Directory.GetFiles(rootDir, "*.cs", SearchOption.AllDirectories)
+                .Where(f => !IsInSkippedDirectory(f))
+                .ToList();
+
+            var trees = new List<SyntaxTree>();
+            foreach (var file in csFiles)
+            {
+                try
+                {
+                    var code = File.ReadAllText(file);
+                    var tree = CSharpSyntaxTree.ParseText(code, path: file);
+                    _syntaxTrees[file] = tree;
+                    trees.Add(tree);
+                }
+                catch
+                {
+                    // Ignore read errors
+                }
+            }
+
+            _compilation = CSharpCompilation.Create("CSharpAnalysis")
+                .AddSyntaxTrees(trees)
+                .AddReferences(GetReferenceAssemblies());
+
+            _interfaceImplementationMap = BuildInterfaceImplementationMap(_compilation);
+        }
+    }
+
     public Task<ExtractionResult> ParseAsync(string filePath, string sourceCode)
     {
         var result = new ExtractionResult();
 
         try
         {
-            var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
-            var compilation = CSharpCompilation.Create("TempAnalysis")
-                .AddSyntaxTrees(syntaxTree)
-                .AddReferences(GetReferenceAssemblies());
+            InitializeCompilation(filePath);
 
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var interfaceImplementationMap = BuildInterfaceImplementationMap(compilation);
+            if (_compilation == null)
+                return Task.FromResult(result);
 
+            if (!_syntaxTrees.TryGetValue(filePath, out var syntaxTree))
+            {
+                syntaxTree = CSharpSyntaxTree.ParseText(sourceCode, path: filePath);
+                _compilation = _compilation.AddSyntaxTrees(syntaxTree);
+                _syntaxTrees[filePath] = syntaxTree;
+            }
+
+            var semanticModel = _compilation.GetSemanticModel(syntaxTree);
             var root = (CompilationUnitSyntax)syntaxTree.GetRoot();
-            var visitor = new CallGraphVisitor(semanticModel, _standardNamespaces, interfaceImplementationMap, LanguageName);
+            var visitor = new CallGraphVisitor(semanticModel, _standardNamespaces, _interfaceImplementationMap, LanguageName);
             visitor.Visit(root);
 
             result.CallGraphEdges = visitor.CallGraphEdges;
@@ -59,16 +136,21 @@ public class CSharpParser : ILanguageParser
 
     private static List<MetadataReference> GetReferenceAssemblies()
     {
-        var references = new List<MetadataReference>
+        var references = new List<MetadataReference>();
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location)
-        };
-
-        var runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location) ?? string.Empty;
-        var coreLibPath = Path.Combine(runtimePath, "System.Runtime.dll");
-        if (File.Exists(coreLibPath))
-            references.Add(MetadataReference.CreateFromFile(coreLibPath));
-
+            try
+            {
+                if (!assembly.IsCollectible && !string.IsNullOrEmpty(assembly.Location))
+                {
+                    references.Add(MetadataReference.CreateFromFile(assembly.Location));
+                }
+            }
+            catch
+            {
+                // Ignore assemblies that cannot be loaded
+            }
+        }
         return references;
     }
 
@@ -162,12 +244,41 @@ public class CSharpParser : ILanguageParser
             _currentClass = prev;
         }
 
+        public override void VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
+        {
+            var prev = _currentClass;
+            _currentClass = node.Identifier.Text;
+            base.VisitInterfaceDeclaration(node);
+            _currentClass = prev;
+        }
+
+        public override void VisitRecordDeclaration(RecordDeclarationSyntax node)
+        {
+            var prev = _currentClass;
+            _currentClass = node.Identifier.Text;
+            base.VisitRecordDeclaration(node);
+            _currentClass = prev;
+        }
+
+        public override void VisitStructDeclaration(StructDeclarationSyntax node)
+        {
+            var prev = _currentClass;
+            _currentClass = node.Identifier.Text;
+            base.VisitStructDeclaration(node);
+            _currentClass = prev;
+        }
+
         public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
         {
             var prevMethod = _currentMethod;
             var prevDisplay = _currentMethodDisplay;
             _currentMethod = node.Identifier.Text;
-            _currentMethodDisplay = GetMethodDisplayName(node);
+            var verb = node.AttributeLists
+                .SelectMany(a => a.Attributes)
+                .Select(a => GetHttpVerb(a.Name.ToString()))
+                .FirstOrDefault(v => !string.IsNullOrEmpty(v));
+            var displayName = string.IsNullOrEmpty(verb) ? _currentMethod : $"{verb} {_currentMethod}";
+            _currentMethodDisplay = displayName;
 
             if (!IsMigrationClass(_currentClass))
             {
@@ -176,7 +287,9 @@ public class CSharpParser : ILanguageParser
                     ClassName = _currentClass,
                     MethodName = _currentMethod,
                     SourceCode = node.ToString(),
-                    Language = _language
+                    Language = _language,
+                    HttpVerb = string.IsNullOrEmpty(verb) ? null : verb,
+                    DisplayName = displayName
                 });
 
                 if (ShouldIncludeMethodEntry(node))
@@ -186,8 +299,10 @@ public class CSharpParser : ILanguageParser
                         CallerClass = _currentClass,
                         CallerMethod = "__CLASS__",
                         CalleeClass = _currentClass,
-                        CalleeMethod = string.IsNullOrEmpty(_currentMethodDisplay) ? node.Identifier.Text : _currentMethodDisplay,
-                        Language = _language
+                        CalleeMethod = _currentMethod,
+                        Language = _language,
+                        CallerDisplayName = "__CLASS__",
+                        CalleeDisplayName = displayName
                     });
                 }
             }
@@ -214,10 +329,12 @@ public class CSharpParser : ILanguageParser
                         CallGraphEdges.Add(new CallGraphEdge
                         {
                             CallerClass = _currentClass,
-                            CallerMethod = string.IsNullOrEmpty(_currentMethodDisplay) ? _currentMethod : _currentMethodDisplay,
+                            CallerMethod = _currentMethod,
                             CalleeClass = calleeClass,
                             CalleeMethod = calleeName,
-                            Language = _language
+                            Language = _language,
+                            CallerDisplayName = _currentMethodDisplay,
+                            CalleeDisplayName = calleeName
                         });
 
                         AddImplementationEdges(methodSymbol);
@@ -258,7 +375,9 @@ public class CSharpParser : ILanguageParser
                         CallerMethod = interfaceMethod.Name,
                         CalleeClass = calleeClass,
                         CalleeMethod = impl.Name,
-                        Language = _language
+                        Language = _language,
+                        CallerDisplayName = interfaceMethod.Name,
+                        CalleeDisplayName = impl.Name
                     });
                 }
             }

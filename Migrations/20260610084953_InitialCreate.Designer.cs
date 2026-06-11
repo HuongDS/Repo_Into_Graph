@@ -12,7 +12,7 @@ using Repo_Into_Graph.Data;
 namespace Repo_Into_Graph.Migrations
 {
     [DbContext(typeof(AnalysisDbContext))]
-    [Migration("20260608111631_InitialCreate")]
+    [Migration("20260610084953_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -102,7 +102,7 @@ namespace Repo_Into_Graph.Migrations
 
                     b.HasIndex("AnalysisRunId");
 
-                    b.ToTable("FeatureRecords");
+                    b.ToTable("feature_records", (string)null);
                 });
 
             modelBuilder.Entity("Repo_Into_Graph.Data.MethodSourceRecord", b =>
@@ -159,7 +159,7 @@ namespace Repo_Into_Graph.Migrations
 
                     b.HasIndex("MethodSourceId");
 
-                    b.ToTable("FeatureMethodMappings");
+                    b.ToTable("feature_method_mappings", (string)null);
                 });
 
             modelBuilder.Entity("Repo_Into_Graph.Data.CallGraphEdgeRecord", b =>

@@ -8,6 +8,8 @@ public class CallGraphEdgeRecord
     public string CallerMethod { get; set; } = string.Empty;
     public string CalleeClass { get; set; } = string.Empty;
     public string CalleeMethod { get; set; } = string.Empty;
+    public string? CallerDisplayName { get; set; }
+    public string? CalleeDisplayName { get; set; }
     public DateTime CreatedAt { get; set; }
     public AnalysisRun? AnalysisRun { get; set; }
 }

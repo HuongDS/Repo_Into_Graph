@@ -166,13 +166,15 @@ public class CSharpParser : ILanguageParser
         {
             var prevMethod = _currentMethod;
             _currentMethod = node.Identifier.Text;
+            var parentType = node.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
 
-            if (!IsMigrationClass(_currentClass))
+            string actualClassName = parentType != null ? parentType.Identifier.Text.Trim() : _currentClass;
+            if (!IsMigrationClass(actualClassName))
             {
                 MethodSources.Add(new MethodSource
                 {
-                    ClassName = _currentClass,
-                    MethodName = _currentMethod, // Lưu tên thuần túy
+                    ClassName = actualClassName,
+                    MethodName = _currentMethod,
                     SourceCode = node.ToString(),
                     Language = _language
                 });

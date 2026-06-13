@@ -164,6 +164,7 @@ public class CSharpParser : ILanguageParser
 
         public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
         {
+            //update
             var prevMethod = _currentMethod;
             _currentMethod = node.Identifier.Text;
             var parentType = node.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();

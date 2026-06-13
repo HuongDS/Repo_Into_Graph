@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Repo_Into_Graph": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:55060;http://localhost:55061"
+    }
+  }
+}

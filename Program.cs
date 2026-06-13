@@ -3,6 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Repo_Into_Graph;
 using Repo_Into_Graph.Data;
 using Repo_Into_Graph.Services;
+using Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable;
+using Repo_Into_Graph.Repo_Into_Graph.Repository.Impl;
 
 string repositoryPath = string.Empty;
 if (File.Exists(".env"))
@@ -180,3 +182,92 @@ Console.WriteLine("   • output_graph.html       - Call graph visualization (HT
 Console.WriteLine("   • call_graph.html         - Call graph visualization (HTML)");
 Console.WriteLine();
 Console.WriteLine("💡 Tip: Open the HTML files in your browser for interactive visualization!");
+
+if (databaseReady)
+{
+    Console.WriteLine();
+    Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
+    Console.WriteLine("║                 INTERACTIVE CODE QUERY MENU                    ║");
+    Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
+    
+    var featureRepo = new FeatureRepository(dbContext);
+    ICodeQueryable codeQueryable = new CodeQueryable(featureRepo, dbContext);
+
+    bool exitMenu = false;
+    while (!exitMenu)
+    {
+        Console.WriteLine();
+        Console.WriteLine("--- MENU CHỨC NĂNG ---");
+        Console.WriteLine("1. Hiển thị danh sách tất cả Features");
+        Console.WriteLine("2. Xem Code Flow (luồng code) của Feature theo ID");
+        Console.WriteLine("3. Thoát");
+        Console.Write("Chọn chức năng (1-3): ");
+        string? choice = Console.ReadLine();
+
+        switch (choice)
+        {
+            case "1":
+                try
+                {
+                    var features = await codeQueryable.GetMethodNamesAsync(null);
+                    Console.WriteLine("\nDanh sách Features trong DB:");
+                    int idx = 1;
+                    foreach (var feat in features)
+                    {
+                        Console.WriteLine($"{idx++}. Tên: {feat.FeatureName} | ID: {feat.Id}");
+                    }
+                    if (idx == 1) Console.WriteLine("(Không có feature nào)");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Lỗi: {ex.Message}");
+                }
+                break;
+
+            case "2":
+                Console.Write("Nhập Guid ID của Feature: ");
+                string? guidInput = Console.ReadLine()?.Trim();
+                if (Guid.TryParse(guidInput, out Guid featureId))
+                {
+                    try
+                    {
+                        var flow = await codeQueryable.GetCodeFlowAsync(featureId);
+                        if (flow == null)
+                        {
+                            Console.WriteLine("❌ Không tìm thấy Feature tương ứng với ID đã nhập.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"\n--- LUỒNG CODE CỦA FEATURE: {flow.Feature.FeatureName} ---");
+                            Console.WriteLine($"ID: {flow.Feature.Id}");
+                            Console.WriteLine($"Danh sách các Method liên quan ({flow.Methods.Count}):");
+                            int mIdx = 1;
+                            foreach (var method in flow.Methods)
+                            {
+                                Console.WriteLine($"  {mIdx++}. Class: {method.ClassName} | Method: {method.MethodName}");
+                                Console.WriteLine("     [SOURCE CODE]:");
+                                Console.WriteLine(method.SourceCode);
+                                Console.WriteLine("     " + new string('-', 40));
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"❌ Lỗi truy vấn: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("❌ Định dạng GUID không hợp lệ!");
+                }
+                break;
+
+            case "3":
+                exitMenu = true;
+                break;
+            default:
+                Console.WriteLine("❌ Lựa chọn không hợp lệ!");
+                break;
+        }
+    }
+}

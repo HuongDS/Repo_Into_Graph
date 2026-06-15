@@ -18,11 +18,23 @@ if (File.Exists(".env"))
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Register HTTP Client Factory with HTTP/1.1 fallback policy to prevent HTTP/3 hang deadlocks
+builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName)
+    .ConfigureHttpClient(client =>
+    {
+        client.DefaultRequestVersion = System.Net.HttpVersion.Version11;
+        client.DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower;
+    });
+
+// Also register the named client "BaseModel" used by Mscc.GenerativeAI with the same HTTP/1.1 fallback policy
+builder.Services.AddHttpClient("BaseModel", client =>
+{
+    client.DefaultRequestVersion = System.Net.HttpVersion.Version11;
+    client.DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower;
+});
+
 // Register DB Context
 builder.Services.AddDbContext<AnalysisDbContext>();
-
-// Add HttpClient 
-builder.Services.AddHttpClient();
 
 // Register repositories & services under Dependency Injection
 builder.Services.AddScoped<IAnalysisRunRepository, AnalysisRunRepository>();

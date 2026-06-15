@@ -1,23 +1,29 @@
-﻿using System.Net.Http;
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
-using Mscc.GenerativeAI;
-using Mscc.GenerativeAI.Types;
+using Google.GenAI;
+using Google.GenAI.Types;
 using Repo_Into_Graph.Repo_Into_Graph.Dtos.QuestionGenerate;
 
 namespace Repo_Into_Graph.Repo_Into_Graph.Services.AI
 {
     public class AIService : IAIService
     {
-        private readonly GenerativeModel _model;
+        private readonly Client _client;
 
-        public AIService(IConfiguration configuration)
+        public AIService(IConfiguration configuration, IHttpClientFactory httpClientFactory)
         {
             var apiKey = configuration["GeminiConfig:ApiKey"];
-            var googleAI = new GoogleAI(apiKey: apiKey);
-            _model = googleAI.GenerativeModel(model: Model.Gemini20Flash);
+            var clientOptions = new ClientOptions
+            {
+                HttpClientFactory = () => httpClientFactory.CreateClient("BaseModel")
+            };
+            _client = new Client(apiKey: apiKey, clientOptions: clientOptions);
         }
 
         public async Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestions(int numberOfQuestions,
@@ -38,7 +44,6 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.AI
             }
             prompt.AppendLine();
             prompt.AppendLine("--- SOURCE CODE ---");
-            //prompt.AppendLine(codeBuilder);
             prompt.AppendLine("public int Add(int a, int b) { return a + b; }");
             prompt.AppendLine();
             prompt.AppendLine("--- CALL GRAPH CONTEXT ---");
@@ -49,12 +54,45 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.AI
             prompt.AppendLine("- \"suggestedAnswer\": (string) A concise, clear guide answer for the lecturer to grade the student.");
             prompt.AppendLine("- \"difficulty\": (string) The difficulty of this question (Easy, Medium, Hard).");
 
-            var response = await _model.GenerateContent(prompt.ToString());
+            int maxRetries = 3;
+            int delaySeconds = 3;
+            GenerateContentResponse? response = null;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    response = await _client.Models.GenerateContentAsync(
+                        model: "gemini-2.0-flash",
+                        contents: prompt.ToString()
+                    );
+                    break;
+                }
+                catch (ClientError ex) when (ex.StatusCode == 429 || ex.StatusCode == 503 || ex.StatusCode == 500)
+                {
+                    if (attempt == maxRetries)
+                    {
+                        throw new Exception($"Gemini API error (Status {ex.StatusCode}) after {maxRetries} attempts: {ex.Message}", ex);
+                    }
+                    Console.WriteLine($"⚠️ [AIService] Transient error {ex.StatusCode}. Retrying in {delaySeconds} seconds... (Attempt {attempt} of {maxRetries})");
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    delaySeconds *= 2;
+                }
+                catch (Exception ex) when (ex.Message.Contains("429") || ex.Message.Contains("Too Many Requests") || ex.Message.Contains("Quota Exceeded"))
+                {
+                    if (attempt == maxRetries)
+                    {
+                        throw new Exception($"Gemini API rate limit error after {maxRetries} attempts: {ex.Message}", ex);
+                    }
+                    Console.WriteLine($"⚠️ [AIService] Possible rate limit error. Retrying in {delaySeconds} seconds... (Attempt {attempt} of {maxRetries})");
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    delaySeconds *= 2;
+                }
+            }
 
             if (response == null || string.IsNullOrEmpty(response.Text))
                 throw new Exception("AI API did not return any text response.");
 
-            string responseString = response.Text;
             string aiJsonText = response.Text.Trim();
 
             if (aiJsonText.StartsWith("```json"))
@@ -77,11 +115,8 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.AI
             }
             catch (JsonException ex)
             {
-                throw new Exception($"AI trả về cấu trúc JSON không hợp lệ. Nội dung AI trả về: {aiJsonText}. Chi tiết lỗi: {ex.Message}");
+                throw new Exception($"AI trả về cấu trúc JSON không hợp lệ. Nội dung AI trả về: {aiJsonText}. Chi tiết lỗi: {ex.Message}", ex);
             }
         }
     }
 }
-
-
-

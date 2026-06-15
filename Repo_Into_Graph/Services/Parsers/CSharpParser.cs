@@ -180,6 +180,7 @@ public class CSharpParser : ILanguageParser
                     SourceCode = node.ToString(),
                     Language = _language
                 });
+         
             }
 
             base.VisitMethodDeclaration(node);

@@ -21,7 +21,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.AI
 
             var clientOptions = new ClientOptions
             {
-                HttpClientFactory = () => httpClientFactory.CreateClient() 
+                HttpClientFactory = () => httpClientFactory.CreateClient()
             };
 
             _client = new Client(apiKey: apiKey, clientOptions: clientOptions);
@@ -50,7 +50,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.AI
 
             prompt.AppendLine();
             prompt.AppendLine("--- SOURCE CODE ---");
-            prompt.AppendLine(codeBuilder); 
+            prompt.AppendLine(codeBuilder);
             prompt.AppendLine();
             prompt.AppendLine("--- CALL GRAPH CONTEXT ---");
             prompt.AppendLine(contextBuilder);

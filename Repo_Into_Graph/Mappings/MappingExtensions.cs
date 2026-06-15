@@ -1,6 +1,7 @@
-using Repo_Into_Graph.Data;
-using Repo_Into_Graph.Repo_Into_Graph.Data;
-using Repo_Into_Graph.Repo_Into_Graph.Dtos;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Feature;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Method;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Feature;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 
 namespace Repo_Into_Graph.Repo_Into_Graph.Mappings
 {

@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Repo_Into_Graph.Repo_Into_Graph.Dtos;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Code;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Feature;
 
 namespace Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable
 {

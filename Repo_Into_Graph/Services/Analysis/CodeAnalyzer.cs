@@ -2,9 +2,11 @@ using Repo_Into_Graph.Models;
 using Repo_Into_Graph.Services.Parsers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 
 
-namespace Repo_Into_Graph;
+namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis;
 
 public class CodeAnalyzer
 {

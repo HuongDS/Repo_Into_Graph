@@ -1,12 +1,17 @@
-using Repo_Into_Graph.Data;
-using Repo_Into_Graph.Repo_Into_Graph.Dtos;
+using Repo_Into_Graph.Models;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Feature;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
+using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
+using Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
+using Repo_Into_Graph.Services;
 using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Repo_Into_Graph.Services
+namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
 {
     public class AnalysisService : IAnalysisService
     {
@@ -62,12 +67,12 @@ namespace Repo_Into_Graph.Services
                 }
 
                 // Tạo AnalysisRun mới
-                var analysisRun = new AnalysisRun
+                var analysisRun = new Models.Analysis.AnalysisRun
                 {
                     Id = Guid.NewGuid(),
                     RepositoryPath = trimmedRepoPath,
                     CreatedAt = DateTime.UtcNow,
-                    CallGraphEdges = result.CallGraph.Select(edge => new CallGraphEdgeRecord
+                    CallGraphEdges = result.CallGraph.Select(edge => new CallGraphEdge
                     {
                         Id = Guid.NewGuid(),
                         CallerClass = edge.CallerClass,
@@ -91,7 +96,7 @@ namespace Repo_Into_Graph.Services
 
                 // Thực hiện ánh xạ đồ thị
                 string featuresJsonPath = "./template_feature.json";
-                if (System.IO.File.Exists(featuresJsonPath))
+                if (File.Exists(featuresJsonPath))
                 {
                     await _graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, featuresJsonPath);
                 }

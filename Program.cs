@@ -2,11 +2,14 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Repo_Into_Graph.Data;
-using Repo_Into_Graph.Services;
 using Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Impl;
+using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
+using Repo_Into_Graph.Repo_Into_Graph.Services.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
+using Repo_Into_Graph.Repo_Into_Graph.Services.QuestionGenerate;
+using Repo_Into_Graph.Repo_Into_Graph.Services.AI;
 
 if (File.Exists(".env"))
 {
@@ -17,6 +20,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Register DB Context
 builder.Services.AddDbContext<AnalysisDbContext>();
+
+// Add HttpClient 
+builder.Services.AddHttpClient();
 
 // Register repositories & services under Dependency Injection
 builder.Services.AddScoped<IAnalysisRunRepository, AnalysisRunRepository>();
@@ -30,6 +36,8 @@ builder.Services.AddScoped<ICodeQueryable, CodeQueryable>();
 builder.Services.AddScoped<GraphMapperService>();
 builder.Services.AddScoped<IGitService, GitService>();
 builder.Services.AddScoped<IAnalysisService, AnalysisService>();
+builder.Services.AddScoped<IQuestionGenerate, QuestionGenerate>();
+builder.Services.AddScoped<IAIService, AIService>();
 
 // Add support for controllers
 builder.Services.AddControllers();

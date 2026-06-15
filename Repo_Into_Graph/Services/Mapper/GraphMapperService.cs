@@ -1,10 +1,10 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Repo_Into_Graph.Data;
-using Repo_Into_Graph.Repo_Into_Graph.Data;
-using Repo_Into_Graph.Repo_Into_Graph.Models;
+using Repo_Into_Graph.Models;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Feature;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 using System.Text.Json;
 
-namespace Repo_Into_Graph.Services;
+namespace Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
 
 public class GraphMapperService
 {
@@ -42,7 +42,7 @@ public class GraphMapperService
             .Where(m => m.AnalysisRunId == analysisRunId)
             .ToListAsync();
 
-        var callGraphEdgesInRam = await _context.Set<CallGraphEdgeRecord>()
+        var callGraphEdgesInRam = await _context.Set<CallGraphEdge>()
             .Where(e => e.AnalysisRunId == analysisRunId)
             .ToListAsync();
 
@@ -121,7 +121,7 @@ public class GraphMapperService
 
     private void FindAllMethodsInSubTree(
         string rootKey,
-        ILookup<string, CallGraphEdgeRecord> graphLookup,
+        ILookup<string, CallGraphEdge> graphLookup,
         ILookup<string, Guid> methodIdLookup,
         ILookup<string, string> implementationLookup,
         HashSet<Guid> visitedMethodIds)

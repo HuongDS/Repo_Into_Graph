@@ -1,4 +1,3 @@
-using Repo_Into_Graph.Data;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
 using System;
 using System.Threading.Tasks;
@@ -21,19 +20,19 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Repository.Impl
             _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
-        public IAnalysisRunRepository AnalysisRuns => 
+        public IAnalysisRunRepository AnalysisRuns =>
             _analysisRuns ??= new AnalysisRunRepository(_context);
 
-        public ICallGraphEdgeRepository CallGraphEdges => 
+        public ICallGraphEdgeRepository CallGraphEdges =>
             _callGraphEdges ??= new CallGraphEdgeRepository(_context);
 
-        public IMethodSourceRepository MethodSources => 
+        public IMethodSourceRepository MethodSources =>
             _methodSources ??= new MethodSourceRepository(_context);
 
-        public IFeatureRepository Features => 
+        public IFeatureRepository Features =>
             _features ??= new FeatureRepository(_context);
 
-        public IFeatureMethodMappingRepository FeatureMethodMappings => 
+        public IFeatureMethodMappingRepository FeatureMethodMappings =>
             _featureMethodMappings ??= new FeatureMethodMappingRepository(_context);
 
         public async Task<int> SaveChangesAsync()

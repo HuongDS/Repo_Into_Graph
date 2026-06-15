@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Repo_Into_Graph.Models;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 using System;
 using System.Collections.Generic;
 using System.IO;

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Repo_Into_Graph.Repo_Into_Graph.Dtos
+namespace Repo_Into_Graph.Repo_Into_Graph.Dtos.Feature
 {
     public class FeatureViewDto
     {

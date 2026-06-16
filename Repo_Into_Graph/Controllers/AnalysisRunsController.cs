@@ -1,10 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph.Repo_Into_Graph.Dtos.Analysis;
-using Repo_Into_Graph.Repo_Into_Graph.Models.Analysis;
-using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
+using Repo_Into_Graph.Repo_Into_Graph.Services.Analysis;
 using System;
-using System.Linq;
 using System.Threading.Tasks;
 
 namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
@@ -17,15 +14,16 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
     [Route("api/analysis-runs")]
     public class AnalysisRunsController : ControllerBase
     {
-        private readonly IUnitOfWork _unitOfWork;
+        private readonly IAnalysisRunService _analysisRunService;
 
-        public AnalysisRunsController(IUnitOfWork unitOfWork)
+        public AnalysisRunsController(IAnalysisRunService analysisRunService)
         {
-            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+            _analysisRunService = analysisRunService
+                ?? throw new ArgumentNullException(nameof(analysisRunService));
         }
 
         // ─────────────────────────────────────────────────────────────────────────
-        // GET /api/analysis-runs?page=1&pageSize=10&repoOwner=...&repoLanguage=...
+        // GET /api/analysis-runs?page=1&pageSize=10&repoOwner=...&repoName=...
         // ─────────────────────────────────────────────────────────────────────────
         /// <summary>
         /// Lấy danh sách analysis runs có phân trang và lọc theo thông tin repository.
@@ -39,45 +37,10 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
             [FromQuery] string? repoLanguage = null,
             [FromQuery] bool? isPublic = null)
         {
-            if (page < 1) page = 1;
-            if (pageSize < 1 || pageSize > 100) pageSize = 10;
+            var result = await _analysisRunService.GetPagedAsync(
+                page, pageSize, repoOwner, repoName, repoLanguage, isPublic);
 
-            // Lấy IQueryable để áp dụng filter + pagination hiệu quả
-            IQueryable<AnalysisRun> query = _unitOfWork.AnalysisRuns
-                .AsQueryable()
-                .OrderByDescending(x => x.CreatedAt);
-
-            // Áp dụng bộ lọc
-            if (!string.IsNullOrWhiteSpace(repoOwner))
-                query = query.Where(x => x.RepoOwner != null &&
-                                         x.RepoOwner.ToLower().Contains(repoOwner.ToLower()));
-
-            if (!string.IsNullOrWhiteSpace(repoName))
-                query = query.Where(x => x.RepoName != null &&
-                                         x.RepoName.ToLower().Contains(repoName.ToLower()));
-
-            if (!string.IsNullOrWhiteSpace(repoLanguage))
-                query = query.Where(x => x.RepoLanguage != null &&
-                                         x.RepoLanguage.ToLower().Contains(repoLanguage.ToLower()));
-
-            if (isPublic.HasValue)
-                query = query.Where(x => x.IsPublic == isPublic.Value);
-
-            var totalCount = await query.CountAsync();
-
-            var items = await query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .Select(x => ToDto(x))
-                .ToListAsync();
-
-            return Ok(new PagedResult<AnalysisRunDto>
-            {
-                Items = items,
-                Page = page,
-                PageSize = pageSize,
-                TotalCount = totalCount
-            });
+            return Ok(result);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -89,11 +52,11 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
         [HttpGet("{id:guid}")]
         public async Task<ActionResult<AnalysisRunDto>> GetById(Guid id)
         {
-            var entity = await _unitOfWork.AnalysisRuns.GetByIdAsync(id);
-            if (entity is null)
+            var dto = await _analysisRunService.GetByIdAsync(id);
+            if (dto is null)
                 return NotFound(new { error = $"Không tìm thấy AnalysisRun với ID: {id}" });
 
-            return Ok(ToDto(entity));
+            return Ok(dto);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -108,25 +71,9 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            var entity = new AnalysisRun
-            {
-                Id             = Guid.NewGuid(),
-                RepositoryPath = request.RepositoryPath.Trim(),
-                CreatedAt      = DateTime.UtcNow,
-                RepoName       = request.RepoName?.Trim(),
-                RepoOwner      = request.RepoOwner?.Trim(),
-                RepoDescription = request.RepoDescription?.Trim(),
-                RepoUrl        = request.RepoUrl?.Trim(),
-                RepoLanguage   = request.RepoLanguage?.Trim(),
-                RepoStars      = request.RepoStars,
-                IsPublic       = request.IsPublic,
-                RepoUpdatedAt  = request.RepoUpdatedAt
-            };
+            var dto = await _analysisRunService.CreateAsync(request);
 
-            await _unitOfWork.AnalysisRuns.AddAsync(entity);
-            await _unitOfWork.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, ToDto(entity));
+            return CreatedAtAction(nameof(GetById), new { id = dto.Id }, dto);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -136,37 +83,18 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
         /// Cập nhật thông tin repository metadata của một analysis run.
         /// </summary>
         [HttpPut("{id:guid}")]
-        public async Task<ActionResult<AnalysisRunDto>> Update(Guid id, [FromBody] UpdateAnalysisRunRequest request)
+        public async Task<ActionResult<AnalysisRunDto>> Update(
+            Guid id,
+            [FromBody] UpdateAnalysisRunRequest request)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            var entity = await _unitOfWork.AnalysisRuns.GetByIdAsync(id);
-            if (entity is null)
+            var dto = await _analysisRunService.UpdateAsync(id, request);
+            if (dto is null)
                 return NotFound(new { error = $"Không tìm thấy AnalysisRun với ID: {id}" });
 
-            // Chỉ ghi đè khi giá trị được truyền lên (khác null)
-            if (request.RepoName is not null)
-                entity.RepoName = request.RepoName.Trim();
-            if (request.RepoOwner is not null)
-                entity.RepoOwner = request.RepoOwner.Trim();
-            if (request.RepoDescription is not null)
-                entity.RepoDescription = request.RepoDescription.Trim();
-            if (request.RepoUrl is not null)
-                entity.RepoUrl = request.RepoUrl.Trim();
-            if (request.RepoLanguage is not null)
-                entity.RepoLanguage = request.RepoLanguage.Trim();
-            if (request.RepoStars is not null)
-                entity.RepoStars = request.RepoStars;
-            if (request.IsPublic is not null)
-                entity.IsPublic = request.IsPublic;
-            if (request.RepoUpdatedAt is not null)
-                entity.RepoUpdatedAt = request.RepoUpdatedAt;
-
-            _unitOfWork.AnalysisRuns.Update(entity);
-            await _unitOfWork.SaveChangesAsync();
-
-            return Ok(ToDto(entity));
+            return Ok(dto);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -178,32 +106,11 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            var entity = await _unitOfWork.AnalysisRuns.GetByIdAsync(id);
-            if (entity is null)
+            var deleted = await _analysisRunService.DeleteAsync(id);
+            if (!deleted)
                 return NotFound(new { error = $"Không tìm thấy AnalysisRun với ID: {id}" });
-
-            _unitOfWork.AnalysisRuns.Delete(entity);
-            await _unitOfWork.SaveChangesAsync();
 
             return NoContent();
         }
-
-        // ─────────────────────────────────────────────────────────────────────────
-        // Private helper
-        // ─────────────────────────────────────────────────────────────────────────
-        private static AnalysisRunDto ToDto(AnalysisRun x) => new()
-        {
-            Id              = x.Id,
-            RepositoryPath  = x.RepositoryPath,
-            CreatedAt       = x.CreatedAt,
-            RepoName        = x.RepoName,
-            RepoOwner       = x.RepoOwner,
-            RepoDescription = x.RepoDescription,
-            RepoUrl         = x.RepoUrl,
-            RepoLanguage    = x.RepoLanguage,
-            RepoStars       = x.RepoStars,
-            IsPublic        = x.IsPublic,
-            RepoUpdatedAt   = x.RepoUpdatedAt
-        };
     }
 }

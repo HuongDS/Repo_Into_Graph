@@ -137,12 +137,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
                 }
 
                 // Phân tích và lưu Business Flows
-                var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
-                if (businessFlows.Any())
-                {
-                    await _context.BusinessFlows.AddRangeAsync(businessFlows);
-                    await _context.SaveChangesAsync();
-                }
+               
 
                 // Thực hiện ánh xạ đồ thị
                 // Ưu tiên đọc template_feature.json từ bên trong repository được phân tích,

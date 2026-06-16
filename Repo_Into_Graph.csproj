@@ -37,8 +37,4 @@
     </None>
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Repo_Into_Graph\Services\DataFlowParser\" />
-  </ItemGroup>
-
 </Project>

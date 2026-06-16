@@ -37,6 +37,17 @@ public class AnalysisDbContext : DbContext
             entity.HasKey(x => x.Id);
             entity.Property(x => x.RepositoryPath).IsRequired();
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+
+            // Repository metadata columns
+            entity.Property(x => x.RepoName).HasMaxLength(255);
+            entity.Property(x => x.RepoOwner).HasMaxLength(255);
+            entity.Property(x => x.RepoDescription).HasMaxLength(1000);
+            entity.Property(x => x.RepoUrl).HasMaxLength(500);
+            entity.Property(x => x.RepoLanguage).HasMaxLength(100);
+            entity.Property(x => x.RepoStars);
+            entity.Property(x => x.IsPublic);
+            entity.Property(x => x.RepoUpdatedAt);
+
             entity.HasMany(x => x.CallGraphEdges)
                 .WithOne(x => x.AnalysisRun!)
                 .HasForeignKey(x => x.AnalysisRunId)

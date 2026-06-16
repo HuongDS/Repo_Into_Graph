@@ -19,6 +19,11 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Repository.Impl
             _dbSet = _context.Set<T>();
         }
 
+        public IQueryable<T> AsQueryable()
+        {
+            return _dbSet.AsQueryable();
+        }
+
         public async Task<IEnumerable<T>> GetAllAsync()
         {
             return await _dbSet.ToListAsync();

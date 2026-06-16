@@ -49,6 +49,7 @@ builder.Services.AddScoped<ICodeQueryable, CodeQueryable>();
 builder.Services.AddScoped<GraphMapperService>();
 builder.Services.AddScoped<IGitService, GitService>();
 builder.Services.AddScoped<IAnalysisService, AnalysisService>();
+builder.Services.AddScoped<IAnalysisRunService, AnalysisRunService>();
 builder.Services.AddScoped<Repo_Into_Graph.Repo_Into_Graph.Services.DataFlowParser.BusinessFlowParser>();
 builder.Services.AddScoped<IQuestionGenerate, QuestionGenerate>();
 builder.Services.AddScoped<IAIService, AIService>();

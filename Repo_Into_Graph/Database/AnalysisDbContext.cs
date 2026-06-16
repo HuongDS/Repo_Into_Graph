@@ -21,7 +21,7 @@ public class AnalysisDbContext : DbContext
     public DbSet<AnalysisRun> AnalysisRuns { get; set; }
     public DbSet<CallGraphEdge> CallGraphEdges { get; set; }
     public DbSet<MethodSourceRecord> MethodSources { get; set; }
-    public DbSet<DataFlowEdge> DataFlowEdges { get; set; }
+   // public DbSet<DataFlowEdge> DataFlowEdges { get; set; }
 
     public DbSet<FeatureRecord> FeatureRecords { get; set; }
     public DbSet<FeatureMethodMapping> FeatureMethodMappings { get; set; }

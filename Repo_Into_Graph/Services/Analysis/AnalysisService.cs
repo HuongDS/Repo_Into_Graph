@@ -116,11 +116,11 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
                     var methodDataFlows = _dataFlowParser.ParseIntraMethodDataFlow(analysisRun.Id, source.ClassName, source.MethodName, source.SourceCode);
                     allIntraEdges.AddRange(methodDataFlows);
                 }
-                if(allIntraEdges.Any())
-                {
-                    await _context.DataFlowEdges.AddRangeAsync(allIntraEdges);
-                    await _context.SaveChangesAsync();
-                }
+                //if(allIntraEdges.Any())
+                //{
+                //    await _context.DataFlowEdges.AddRangeAsync(allIntraEdges);
+                //    await _context.SaveChangesAsync();
+                //}
                 // Phân tích và lưu Business Flows
                 var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
                 if (businessFlows.Any())

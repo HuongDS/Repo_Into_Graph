@@ -5,6 +5,7 @@ using Repo_Into_Graph.Repo_Into_Graph.Models.Analysis;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Feature;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 using Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows;
+using Repo_Into_Graph.Repo_Into_Graph.Models.FewShot;
 
 public class AnalysisDbContext : DbContext
 {
@@ -25,6 +26,8 @@ public class AnalysisDbContext : DbContext
 
     public DbSet<BusinessFlow> BusinessFlows { get; set; }
     public DbSet<BusinessFlowStep> BusinessFlowSteps { get; set; }
+
+    public DbSet<FewShotExample> FewShotExamples { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -122,6 +125,19 @@ public class AnalysisDbContext : DbContext
             entity.Property(x => x.CalleeMethod).IsRequired();
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             entity.HasIndex(x => x.BusinessFlowId);
+        });
+
+        modelBuilder.Entity<FewShotExample>(entity =>
+        {
+            entity.ToTable("few_shot_examples");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Question).IsRequired();
+            entity.Property(x => x.SuggestedAnswer).IsRequired();
+            entity.Property(x => x.Difficulty).IsRequired().HasMaxLength(20);
+            entity.Property(x => x.Tag).HasMaxLength(100);
+            entity.Property(x => x.Description);
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            entity.HasIndex(x => x.Difficulty);
         });
     }
 

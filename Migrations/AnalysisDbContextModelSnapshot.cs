@@ -411,6 +411,17 @@ namespace Repo_Into_Graph.Migrations
                     b.Navigation("AnalysisRun");
                 });
 
+            modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlow", b =>
+                {
+                    b.HasOne("AnalysisRun", "AnalysisRun")
+                        .WithMany("BusinessFlows")
+                        .HasForeignKey("AnalysisRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AnalysisRun");
+                });
+
             modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlowStep", b =>
                 {
                     b.HasOne("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlow", "BusinessFlow")

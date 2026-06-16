@@ -80,6 +80,16 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.AI
                 ResponseMimeType = "application/json"
             };
 
+            var config = new GenerateContentConfig
+            {
+                SystemInstruction = new Content
+                {
+                    Parts = [new Part { Text = systemInstruction }]
+                },
+                Temperature = 0.3f,
+                ResponseMimeType = "application/json"
+            };
+
             int maxRetries = 3;
             int delaySeconds = 3;
             GenerateContentResponse? response = null;

@@ -14,6 +14,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Repository.Impl
         private IMethodSourceRepository? _methodSources;
         private IFeatureRepository? _features;
         private IFeatureMethodMappingRepository? _featureMethodMappings;
+        private IFewShotExampleRepository? _fewShotExamples;
 
         public UnitOfWork(AnalysisDbContext context)
         {
@@ -34,6 +35,9 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Repository.Impl
 
         public IFeatureMethodMappingRepository FeatureMethodMappings =>
             _featureMethodMappings ??= new FeatureMethodMappingRepository(_context);
+
+        public IFewShotExampleRepository FewShotExamples =>
+            _fewShotExamples ??= new FewShotExampleRepository(_context);
 
         public async Task<int> SaveChangesAsync()
         {

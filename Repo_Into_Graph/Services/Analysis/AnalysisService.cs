@@ -7,6 +7,7 @@ using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
 using Repo_Into_Graph.Repo_Into_Graph.Services.DataFlowParser;
 using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
 using Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
+using Repo_Into_Graph.Repo_Into_Graph.Services.DataFlowParser;
 using Repo_Into_Graph.Services;
 using System;
 using System.IO;
@@ -131,6 +132,14 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
                     {
                         flow.DataFlowMermaidGraph = _businessCallDataFlowGenerator.GenerateCallDataFlow(flow, methodSourcesList, allIntraEdges);
                     }
+                    await _context.BusinessFlows.AddRangeAsync(businessFlows);
+                    await _context.SaveChangesAsync();
+                }
+
+                // Phân tích và lưu Business Flows
+                var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
+                if (businessFlows.Any())
+                {
                     await _context.BusinessFlows.AddRangeAsync(businessFlows);
                     await _context.SaveChangesAsync();
                 }

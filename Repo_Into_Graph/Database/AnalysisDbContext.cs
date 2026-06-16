@@ -7,6 +7,7 @@ using Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Feature;
 using Repo_Into_Graph.Repo_Into_Graph.Models.FewShot;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
+using Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows;
 
 public class AnalysisDbContext : DbContext
 {

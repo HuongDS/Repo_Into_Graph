@@ -11,6 +11,8 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows
         public string Name { get; set; } = string.Empty;
         public string EntryPoint { get; set; } = string.Empty;
         public string MermaidGraph { get; set; } = string.Empty;
+
+        public string DataFlowMermaidGraph { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
 
         public AnalysisRun? AnalysisRun { get; set; }

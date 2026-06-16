@@ -1,11 +1,12 @@
 using Repo_Into_Graph.Models;
 using Repo_Into_Graph.Repo_Into_Graph.Dtos.Analysis;
 using Repo_Into_Graph.Repo_Into_Graph.Dtos.Feature;
+using Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlow;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
+using Repo_Into_Graph.Repo_Into_Graph.Services.DataFlowParser;
 using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
 using Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
-using Repo_Into_Graph.Repo_Into_Graph.Services.DataFlowParser;
 using Repo_Into_Graph.Services;
 using System;
 using System.IO;
@@ -21,19 +22,25 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
         private readonly IGitService _gitService;
         private readonly AnalysisDbContext _context;
         private readonly BusinessFlowParser _businessFlowParser;
+        private readonly DataFlowParseService _dataFlowParser;
+        private readonly BusinessCallDataFlowGenerator _businessCallDataFlowGenerator;
 
         public AnalysisService(
             IUnitOfWork unitOfWork,
             GraphMapperService graphMapper,
             IGitService gitService,
             AnalysisDbContext context,
-            BusinessFlowParser businessFlowParser)
+            BusinessFlowParser businessFlowParser,
+            BusinessCallDataFlowGenerator businessCallDataFlowGenerator,
+            DataFlowParseService dataFlowParser)
         {
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _graphMapper = graphMapper ?? throw new ArgumentNullException(nameof(graphMapper));
             _gitService = gitService ?? throw new ArgumentNullException(nameof(gitService));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _businessFlowParser = businessFlowParser ?? throw new ArgumentNullException(nameof(businessFlowParser));
+            _dataFlowParser = dataFlowParser ?? throw new ArgumentNullException(nameof(dataFlowParser));
+            _businessCallDataFlowGenerator = businessCallDataFlowGenerator ?? throw new ArgumentNullException(nameof(businessCallDataFlowGenerator));
         }
 
         public async Task<AnalysisResponseDto> AnalyzeRepositoryAsync(string repositoryPath, string? outputDir)
@@ -77,7 +84,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
                 }
 
                 // Tạo AnalysisRun mới
-                var analysisRun = new Models.Analysis.AnalysisRun
+                var analysisRun = new AnalysisRun
                 {
                     Id = Guid.NewGuid(),
                     RepositoryPath = trimmedRepoPath,
@@ -100,14 +107,30 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
                         CreatedAt = DateTime.UtcNow
                     }).ToList()
                 };
-
+               
                 await _unitOfWork.AnalysisRuns.AddAsync(analysisRun);
                 await _unitOfWork.SaveChangesAsync();
-
+                var allIntraEdges = new List<DataFlowEdge>();
+                foreach (var source in analysisRun.MethodSources)
+                {
+                    var methodDataFlows = _dataFlowParser.ParseIntraMethodDataFlow(analysisRun.Id, source.ClassName, source.MethodName, source.SourceCode);
+                    allIntraEdges.AddRange(methodDataFlows);
+                }
+                if(allIntraEdges.Any())
+                {
+                    await _context.DataFlowEdges.AddRangeAsync(allIntraEdges);
+                    await _context.SaveChangesAsync();
+                }
                 // Phân tích và lưu Business Flows
                 var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
                 if (businessFlows.Any())
                 {
+               
+                    var methodSourcesList = analysisRun.MethodSources.ToList();
+                    foreach (var flow in businessFlows)
+                    {
+                        flow.DataFlowMermaidGraph = _businessCallDataFlowGenerator.GenerateCallDataFlow(flow, methodSourcesList, allIntraEdges);
+                    }
                     await _context.BusinessFlows.AddRangeAsync(businessFlows);
                     await _context.SaveChangesAsync();
                 }

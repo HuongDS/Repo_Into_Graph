@@ -42,6 +42,7 @@ builder.Services.AddScoped<ICallGraphEdgeRepository, CallGraphEdgeRepository>();
 builder.Services.AddScoped<IMethodSourceRepository, MethodSourceRepository>();
 builder.Services.AddScoped<IFeatureRepository, FeatureRepository>();
 builder.Services.AddScoped<IFeatureMethodMappingRepository, FeatureMethodMappingRepository>();
+builder.Services.AddScoped<IFewShotExampleRepository, FewShotExampleRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddScoped<ICodeQueryable, CodeQueryable>();

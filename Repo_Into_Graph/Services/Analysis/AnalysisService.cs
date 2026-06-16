@@ -113,7 +113,14 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
                 }
 
                 // Thực hiện ánh xạ đồ thị
-                string featuresJsonPath = "./template_feature.json";
+                // Ưu tiên đọc template_feature.json từ bên trong repository được phân tích,
+                // nếu không có thì fallback về file local của server
+                string featuresJsonPath = Path.Combine(targetPath, "template_feature.json");
+                if (!File.Exists(featuresJsonPath))
+                {
+                    featuresJsonPath = "./template_feature.json";
+                }
+
                 if (File.Exists(featuresJsonPath))
                 {
                     await _graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, featuresJsonPath);

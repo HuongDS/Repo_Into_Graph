@@ -5,6 +5,7 @@ using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
 using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
 using Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
+using Repo_Into_Graph.Repo_Into_Graph.Services.DataFlowParser;
 using Repo_Into_Graph.Services;
 using System;
 using System.IO;
@@ -18,12 +19,21 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
         private readonly IUnitOfWork _unitOfWork;
         private readonly GraphMapperService _graphMapper;
         private readonly IGitService _gitService;
+        private readonly AnalysisDbContext _context;
+        private readonly BusinessFlowParser _businessFlowParser;
 
-        public AnalysisService(IUnitOfWork unitOfWork, GraphMapperService graphMapper, IGitService gitService)
+        public AnalysisService(
+            IUnitOfWork unitOfWork,
+            GraphMapperService graphMapper,
+            IGitService gitService,
+            AnalysisDbContext context,
+            BusinessFlowParser businessFlowParser)
         {
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _graphMapper = graphMapper ?? throw new ArgumentNullException(nameof(graphMapper));
             _gitService = gitService ?? throw new ArgumentNullException(nameof(gitService));
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _businessFlowParser = businessFlowParser ?? throw new ArgumentNullException(nameof(businessFlowParser));
         }
 
         public async Task<AnalysisResponseDto> AnalyzeRepositoryAsync(string repositoryPath, string? outputDir)
@@ -93,6 +103,14 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
 
                 await _unitOfWork.AnalysisRuns.AddAsync(analysisRun);
                 await _unitOfWork.SaveChangesAsync();
+
+                // Phân tích và lưu Business Flows
+                var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
+                if (businessFlows.Any())
+                {
+                    await _context.BusinessFlows.AddRangeAsync(businessFlows);
+                    await _context.SaveChangesAsync();
+                }
 
                 // Thực hiện ánh xạ đồ thị
                 string featuresJsonPath = "./template_feature.json";

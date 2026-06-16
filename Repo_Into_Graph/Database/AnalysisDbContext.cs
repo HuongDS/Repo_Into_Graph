@@ -4,7 +4,7 @@ using Repo_Into_Graph.Models;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Analysis;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Feature;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
-
+using Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows;
 
 public class AnalysisDbContext : DbContext
 {
@@ -23,6 +23,9 @@ public class AnalysisDbContext : DbContext
     public DbSet<FeatureRecord> FeatureRecords { get; set; }
     public DbSet<FeatureMethodMapping> FeatureMethodMappings { get; set; }
 
+    public DbSet<BusinessFlow> BusinessFlows { get; set; }
+    public DbSet<BusinessFlowStep> BusinessFlowSteps { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AnalysisRun>(entity =>
@@ -36,6 +39,10 @@ public class AnalysisDbContext : DbContext
                 .HasForeignKey(x => x.AnalysisRunId)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasMany(x => x.MethodSources)
+                .WithOne(x => x.AnalysisRun!)
+                .HasForeignKey(x => x.AnalysisRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(x => x.BusinessFlows)
                 .WithOne(x => x.AnalysisRun!)
                 .HasForeignKey(x => x.AnalysisRunId)
                 .OnDelete(DeleteBehavior.Cascade);
@@ -91,7 +98,31 @@ public class AnalysisDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<BusinessFlow>(entity =>
+        {
+            entity.ToTable("business_flows");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).IsRequired();
+            entity.Property(x => x.EntryPoint).IsRequired();
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            entity.HasMany(x => x.Steps)
+                .WithOne(x => x.BusinessFlow!)
+                .HasForeignKey(x => x.BusinessFlowId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => x.AnalysisRunId);
+        });
 
+        modelBuilder.Entity<BusinessFlowStep>(entity =>
+        {
+            entity.ToTable("business_flow_steps");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.CallerClass).IsRequired();
+            entity.Property(x => x.CallerMethod).IsRequired();
+            entity.Property(x => x.CalleeClass).IsRequired();
+            entity.Property(x => x.CalleeMethod).IsRequired();
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            entity.HasIndex(x => x.BusinessFlowId);
+        });
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

@@ -36,7 +36,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.AI
             var systemInstruction = """
             Bạn là một AI trợ lý thiết kế riêng cho giảng viên đại học để chấm thi vấn đáp (viva/oral exam) các đồ án lập trình của sinh viên.
             Nhiệm vụ của bạn là phân tích mã nguồn và đồ thị cuộc gọi (call graph) được cung cấp để tạo ra danh sách câu hỏi.
-            Các câu hỏi phải kiểm tra được độ hiểu sâu của sinh viên về logic code, kiến trúc, lựa chọn thiết kế, luồng dữ liệu (data flow) và xử lý ngoại lệ (error handling).
+            Các câu hỏi phải kiểm tra được độ hiểu sâu của sinh viên về luồng nghiệp vụ.
             """;
 
             var prompt = new StringBuilder();

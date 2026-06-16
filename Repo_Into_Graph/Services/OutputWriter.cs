@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using Repo_Into_Graph.Models;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Analysis;
 
 namespace Repo_Into_Graph.Services;
 

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Repo_Into_Graph.Models;
+using global::Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 
 namespace Repo_Into_Graph.Services.Parsers;
 

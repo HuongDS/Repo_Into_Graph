@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace Repo_Into_Graph.Services
+namespace Repo_Into_Graph.Repo_Into_Graph.Services.GitService
 {
     public class GitService : IGitService
     {

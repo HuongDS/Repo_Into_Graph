@@ -1,7 +1,8 @@
-using Repo_Into_Graph.Repo_Into_Graph.Data;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Feature;
 using System;
 
-namespace Repo_Into_Graph.Data;
+namespace Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 
 public class MethodSourceRecord
 {

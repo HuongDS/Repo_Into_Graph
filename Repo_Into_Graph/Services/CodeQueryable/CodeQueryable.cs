@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Repo_Into_Graph.Data;
-using Repo_Into_Graph.Repo_Into_Graph.Dtos;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
 using Repo_Into_Graph.Repo_Into_Graph.Mappings;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Code;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Feature;
 
 namespace Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable
 {

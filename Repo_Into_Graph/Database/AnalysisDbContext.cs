@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Repo_Into_Graph.Repo_Into_Graph.Data;
+using Repo_Into_Graph.Models;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Feature;
+using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 
-namespace Repo_Into_Graph.Data;
 
 public class AnalysisDbContext : DbContext
 {
@@ -15,7 +17,7 @@ public class AnalysisDbContext : DbContext
     }
 
     public DbSet<AnalysisRun> AnalysisRuns { get; set; }
-    public DbSet<CallGraphEdgeRecord> CallGraphEdges { get; set; }
+    public DbSet<CallGraphEdge> CallGraphEdges { get; set; }
     public DbSet<MethodSourceRecord> MethodSources { get; set; }
 
     public DbSet<FeatureRecord> FeatureRecords { get; set; }
@@ -39,7 +41,7 @@ public class AnalysisDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<CallGraphEdgeRecord>(entity =>
+        modelBuilder.Entity<CallGraphEdge>(entity =>
         {
             entity.ToTable("call_graph_edges");
             entity.HasKey(x => x.Id);
@@ -70,12 +72,12 @@ public class AnalysisDbContext : DbContext
             entity.HasOne(d => d.Feature)
                 .WithMany(p => p.FeatureMethodMappings)
                 .HasForeignKey(d => d.FeatureId)
-                .OnDelete(DeleteBehavior.Cascade); 
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(d => d.MethodSource)
                 .WithMany(p => p.FeatureMethodMappings)
                 .HasForeignKey(d => d.MethodSourceId)
-                .OnDelete(DeleteBehavior.Cascade); 
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<FeatureRecord>(entity =>

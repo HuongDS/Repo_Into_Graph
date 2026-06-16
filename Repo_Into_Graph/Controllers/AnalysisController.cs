@@ -1,8 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
-using Repo_Into_Graph.Services;
-using Repo_Into_Graph.Repo_Into_Graph.Dtos;
 using System;
 using System.Threading.Tasks;
+using Repo_Into_Graph.Repo_Into_Graph.Services.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Feature;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Analysis;
 
 namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
 {

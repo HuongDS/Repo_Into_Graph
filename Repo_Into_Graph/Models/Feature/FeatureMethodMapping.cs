@@ -1,11 +1,11 @@
-﻿using Repo_Into_Graph.Data;
+﻿using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Repo_Into_Graph.Repo_Into_Graph.Data
+namespace Repo_Into_Graph.Repo_Into_Graph.Models.Feature
 {
     public class FeatureMethodMapping
     {

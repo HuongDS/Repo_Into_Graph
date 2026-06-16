@@ -1,10 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable;
-using Repo_Into_Graph.Repo_Into_Graph.Dtos;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Code;
+using Repo_Into_Graph.Repo_Into_Graph.Dtos.Feature;
 
 namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
 {

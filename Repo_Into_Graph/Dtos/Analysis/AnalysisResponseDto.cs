@@ -1,6 +1,6 @@
 using System;
 
-namespace Repo_Into_Graph.Repo_Into_Graph.Dtos
+namespace Repo_Into_Graph.Repo_Into_Graph.Dtos.Analysis
 {
     public class AnalysisResponseDto
     {

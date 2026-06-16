@@ -2,11 +2,14 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Repo_Into_Graph.Data;
-using Repo_Into_Graph.Services;
 using Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Impl;
+using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
+using Repo_Into_Graph.Repo_Into_Graph.Services.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
+using Repo_Into_Graph.Repo_Into_Graph.Services.QuestionGenerate;
+using Repo_Into_Graph.Repo_Into_Graph.Services.AI;
 
 if (File.Exists(".env"))
 {
@@ -14,6 +17,21 @@ if (File.Exists(".env"))
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Register HTTP Client Factory with HTTP/1.1 fallback policy to prevent HTTP/3 hang deadlocks
+builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName)
+    .ConfigureHttpClient(client =>
+    {
+        client.DefaultRequestVersion = System.Net.HttpVersion.Version11;
+        client.DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower;
+    });
+
+// Also register the named client "BaseModel" used by Mscc.GenerativeAI with the same HTTP/1.1 fallback policy
+builder.Services.AddHttpClient("BaseModel", client =>
+{
+    client.DefaultRequestVersion = System.Net.HttpVersion.Version11;
+    client.DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower;
+});
 
 // Register DB Context
 builder.Services.AddDbContext<AnalysisDbContext>();
@@ -30,6 +48,8 @@ builder.Services.AddScoped<ICodeQueryable, CodeQueryable>();
 builder.Services.AddScoped<GraphMapperService>();
 builder.Services.AddScoped<IGitService, GitService>();
 builder.Services.AddScoped<IAnalysisService, AnalysisService>();
+builder.Services.AddScoped<IQuestionGenerate, QuestionGenerate>();
+builder.Services.AddScoped<IAIService, AIService>();
 
 // Add support for controllers
 builder.Services.AddControllers();

@@ -1,4 +1,4 @@
-namespace Repo_Into_Graph.Models;
+namespace Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 
 public class MethodSource
 {

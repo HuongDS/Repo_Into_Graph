@@ -66,36 +66,36 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.QuestionGenerate
             // 3. Get all call graph edges related to this feature's classes
             var classNames = methodSources.Select(m => m.ClassName.Trim().ToLower()).Distinct().ToList();
 
-            //var callGraphEdges = await _context.CallGraphEdges
-            //    .Where(e => e.AnalysisRunId == feature.AnalysisRunId &&
-            //                (classNames.Contains(e.CallerClass.Trim().ToLower()) ||
-            //                 classNames.Contains(e.CalleeClass.Trim().ToLower())))
-            //    .ToListAsync();
+            var callGraphEdges = await _context.CallGraphEdges
+                .Where(e => e.AnalysisRunId == feature.AnalysisRunId &&
+                            (classNames.Contains(e.CallerClass.Trim().ToLower()) ||
+                             classNames.Contains(e.CalleeClass.Trim().ToLower())))
+                .ToListAsync();
 
             var contextBuilder = new StringBuilder();
             contextBuilder.AppendLine("Call Graph Relationships:");
-            //if (callGraphEdges.Any())
-            //{
-            //    foreach (var edge in callGraphEdges)
-            //    {
-            //        contextBuilder.AppendLine($"- {edge.CallerClass}.{edge.CallerMethod} calls {edge.CalleeClass}.{edge.CalleeMethod}");
-            //    }
-            //}
-            //else
-            //{
-            //    contextBuilder.AppendLine("No call graph relationships found in database.");
-            //}
-            //if (callGraphEdges.Any())
-            //{
-            //    foreach (var edge in callGraphEdges)
-            //    {
-            //        contextBuilder.AppendLine($"- {edge.CallerClass}.{edge.CallerMethod} calls {edge.CalleeClass}.{edge.CalleeMethod}");
-            //    }
-            //}
-            //else
-            //{
-            //    contextBuilder.AppendLine("No call graph relationships found in database.");
-            //}
+            if (callGraphEdges.Any())
+            {
+                foreach (var edge in callGraphEdges)
+                {
+                    contextBuilder.AppendLine($"- {edge.CallerClass}.{edge.CallerMethod} calls {edge.CalleeClass}.{edge.CalleeMethod}");
+                }
+            }
+            else
+            {
+                contextBuilder.AppendLine("No call graph relationships found in database.");
+            }
+            if (callGraphEdges.Any())
+            {
+                foreach (var edge in callGraphEdges)
+                {
+                    contextBuilder.AppendLine($"- {edge.CallerClass}.{edge.CallerMethod} calls {edge.CalleeClass}.{edge.CalleeMethod}");
+                }
+            }
+            else
+            {
+                contextBuilder.AppendLine("No call graph relationships found in database.");
+            }
 
             // Limit number of questions
             int numberOfQuestions = request.NumberOfQuestions;

@@ -100,40 +100,21 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
         }
 
         // ─────────────────────────────────────────────────────────────────────────
-        // DELETE /api/analysis-runs/{id}
-        // ─────────────────────────────────────────────────────────────────────────
-        /// <summary>
-        /// Xóa một analysis run (cascade xóa các bảng liên quan).
-        /// </summary>
-        [HttpDelete("{id:guid}")]
-        public async Task<IActionResult> Delete(Guid id)
-        {
-            var deleted = await _analysisRunService.DeleteAsync(id);
-            if (!deleted)
-                return NotFound(new { error = $"Không tìm thấy AnalysisRun với ID: {id}" });
-
-            _unitOfWork.AnalysisRuns.Delete(entity);
-            await _unitOfWork.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        // ─────────────────────────────────────────────────────────────────────────
         // Private helper
         // ─────────────────────────────────────────────────────────────────────────
         private static AnalysisRunDto ToDto(AnalysisRun x) => new()
         {
-            Id              = x.Id,
-            RepositoryPath  = x.RepositoryPath,
-            CreatedAt       = x.CreatedAt,
-            RepoName        = x.RepoName,
-            RepoOwner       = x.RepoOwner,
+            Id = x.Id,
+            RepositoryPath = x.RepositoryPath,
+            CreatedAt = x.CreatedAt,
+            RepoName = x.RepoName,
+            RepoOwner = x.RepoOwner,
             RepoDescription = x.RepoDescription,
-            RepoUrl         = x.RepoUrl,
-            RepoLanguage    = x.RepoLanguage,
-            RepoStars       = x.RepoStars,
-            IsPublic        = x.IsPublic,
-            RepoUpdatedAt   = x.RepoUpdatedAt
+            RepoUrl = x.RepoUrl,
+            RepoLanguage = x.RepoLanguage,
+            RepoStars = x.RepoStars,
+            IsPublic = x.IsPublic,
+            RepoUpdatedAt = x.RepoUpdatedAt
         };
     }
 }

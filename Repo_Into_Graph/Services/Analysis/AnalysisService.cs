@@ -108,7 +108,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
                         CreatedAt = DateTime.UtcNow
                     }).ToList()
                 };
-               
+
                 await _unitOfWork.AnalysisRuns.AddAsync(analysisRun);
                 await _unitOfWork.SaveChangesAsync();
                 var allIntraEdges = new List<DataFlowEdge>();
@@ -126,23 +126,12 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Services.Analysis
                 var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
                 if (businessFlows.Any())
                 {
-               
+
                     var methodSourcesList = analysisRun.MethodSources.ToList();
                     foreach (var flow in businessFlows)
                     {
                         flow.DataFlowMermaidGraph = _businessCallDataFlowGenerator.GenerateCallDataFlow(flow, methodSourcesList, allIntraEdges);
                     }
-                    await _context.BusinessFlows.AddRangeAsync(businessFlows);
-                    await _context.SaveChangesAsync();
-                }
-
-                // Phân tích và lưu Business Flows
-               
-
-                // Phân tích và lưu Business Flows
-                var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
-                if (businessFlows.Any())
-                {
                     await _context.BusinessFlows.AddRangeAsync(businessFlows);
                     await _context.SaveChangesAsync();
                 }

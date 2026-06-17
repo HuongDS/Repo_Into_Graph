@@ -15,6 +15,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Repository.Impl
         private IFeatureRepository? _features;
         private IFeatureMethodMappingRepository? _featureMethodMappings;
         private IFewShotExampleRepository? _fewShotExamples;
+        private IBusinessFlowRepository? _businessFlows;
 
         public UnitOfWork(AnalysisDbContext context)
         {
@@ -38,6 +39,9 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Repository.Impl
 
         public IFewShotExampleRepository FewShotExamples =>
             _fewShotExamples ??= new FewShotExampleRepository(_context);
+
+        public IBusinessFlowRepository BusinessFlows =>
+            _businessFlows ??= new BusinessFlowRepository(_context);
 
         public async Task<int> SaveChangesAsync()
         {

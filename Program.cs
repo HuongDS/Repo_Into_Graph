@@ -2,14 +2,15 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable;
-using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
 using Repo_Into_Graph.Repo_Into_Graph.Repository.Impl;
-using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
+using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
+using Repo_Into_Graph.Repo_Into_Graph.Services.AI;
 using Repo_Into_Graph.Repo_Into_Graph.Services.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable;
+using Repo_Into_Graph.Repo_Into_Graph.Services.DataFlowParser;
+using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
 using Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
 using Repo_Into_Graph.Repo_Into_Graph.Services.QuestionGenerate;
-using Repo_Into_Graph.Repo_Into_Graph.Services.AI;
 
 if (File.Exists(".env"))
 {
@@ -53,7 +54,8 @@ builder.Services.AddScoped<IAnalysisRunService, AnalysisRunService>();
 builder.Services.AddScoped<Repo_Into_Graph.Repo_Into_Graph.Services.DataFlowParser.BusinessFlowParser>();
 builder.Services.AddScoped<IQuestionGenerate, QuestionGenerate>();
 builder.Services.AddScoped<IAIService, AIService>();
-
+builder.Services.AddScoped<DataFlowParseService>();
+builder.Services.AddScoped<BusinessCallDataFlowGenerator>();
 // Add support for controllers
 builder.Services.AddControllers();
 

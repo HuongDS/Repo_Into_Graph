@@ -2,7 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Repo_Into_Graph.Models;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Analysis;
+using Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlow;
+using Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Feature;
+using Repo_Into_Graph.Repo_Into_Graph.Models.FewShot;
 using Repo_Into_Graph.Repo_Into_Graph.Models.Method;
 using Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows;
 using Repo_Into_Graph.Repo_Into_Graph.Models.FewShot;
@@ -20,6 +23,7 @@ public class AnalysisDbContext : DbContext
     public DbSet<AnalysisRun> AnalysisRuns { get; set; }
     public DbSet<CallGraphEdge> CallGraphEdges { get; set; }
     public DbSet<MethodSourceRecord> MethodSources { get; set; }
+   // public DbSet<DataFlowEdge> DataFlowEdges { get; set; }
 
     public DbSet<FeatureRecord> FeatureRecords { get; set; }
     public DbSet<FeatureMethodMapping> FeatureMethodMappings { get; set; }

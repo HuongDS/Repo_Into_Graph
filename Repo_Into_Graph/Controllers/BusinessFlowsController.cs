@@ -56,6 +56,7 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
                 flow.EntryPoint,
                 flow.MermaidGraph,
                 flow.CreatedAt,
+                flow.DataFlowMermaidGraph,
                 Steps = flow.Steps.OrderBy(s => s.StepOrder).Select(s => new
                 {
                     s.Id,

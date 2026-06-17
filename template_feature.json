@@ -1,11 +1,53 @@
 [
-    {
-        "feature_name": "Quản lý Đặt lịch hẹn",
-        "apis": [
-            {
-                "controller": "AppointmentController",
-                "method": "POST BookAppointment"
-            }
-        ]
-    }
+  {
+    "feature_name": "Quản lý đấu giá cơ bản",
+    "apis": [
+      {
+        "controller": "AuctionController",
+        "method": "GET GetAuctions"
+      },
+      {
+        "controller": "AuctionController",
+        "method": "GET GetAuction"
+      },
+      {
+        "controller": "AuctionController",
+        "method": "POST CreateAuction"
+      },
+      {
+        "controller": "AuctionController",
+        "method": "PUT UpdateAuction"
+      },
+      {
+        "controller": "AuctionController",
+        "method": "DELETE DeleteAuction"
+      }
+    ]
+  },
+  {
+    "feature_name": "Xuất nhập dữ liệu Excel",
+    "apis": [
+      {
+        "controller": "AuctionController",
+        "method": "GET ExportAuctionsToExcel"
+      },
+      {
+        "controller": "AuctionController",
+        "method": "GET ExportTemplate"
+      },
+      {
+        "controller": "AuctionController",
+        "method": "POST ImportAuctions"
+      }
+    ]
+  },
+  {
+    "feature_name": "Tìm kiếm nâng cao",
+    "apis": [
+      {
+        "controller": "SearchController",
+        "method": "GET Search"
+      }
+    ]
+  }
 ]

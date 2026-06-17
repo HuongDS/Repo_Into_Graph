@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph.Repo_Into_Graph.Dtos.Analysis;
 using Repo_Into_Graph.Repo_Into_Graph.Services.Analysis;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
@@ -110,7 +112,28 @@ namespace Repo_Into_Graph.Repo_Into_Graph.Controllers
             if (!deleted)
                 return NotFound(new { error = $"Không tìm thấy AnalysisRun với ID: {id}" });
 
+            _unitOfWork.AnalysisRuns.Delete(entity);
+            await _unitOfWork.SaveChangesAsync();
+
             return NoContent();
         }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Private helper
+        // ─────────────────────────────────────────────────────────────────────────
+        private static AnalysisRunDto ToDto(AnalysisRun x) => new()
+        {
+            Id              = x.Id,
+            RepositoryPath  = x.RepositoryPath,
+            CreatedAt       = x.CreatedAt,
+            RepoName        = x.RepoName,
+            RepoOwner       = x.RepoOwner,
+            RepoDescription = x.RepoDescription,
+            RepoUrl         = x.RepoUrl,
+            RepoLanguage    = x.RepoLanguage,
+            RepoStars       = x.RepoStars,
+            IsPublic        = x.IsPublic,
+            RepoUpdatedAt   = x.RepoUpdatedAt
+        };
     }
 }

@@ -2,14 +2,19 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Repo_Into_Graph.Repo_Into_Graph.Services.CodeQueryable;
-using Repo_Into_Graph.Repo_Into_Graph.Repository.Interface;
-using Repo_Into_Graph.Repo_Into_Graph.Repository.Impl;
-using Repo_Into_Graph.Repo_Into_Graph.Services.GitService;
-using Repo_Into_Graph.Repo_Into_Graph.Services.Analysis;
-using Repo_Into_Graph.Repo_Into_Graph.Services.Mapper;
-using Repo_Into_Graph.Repo_Into_Graph.Services.QuestionGenerate;
-using Repo_Into_Graph.Repo_Into_Graph.Services.AI;
+using Repo_Into_Graph_DataAccess.Repository.Impl;
+using Repo_Into_Graph_DataAccess.Repository.Interface;
+using Repo_Into_Graph_Application.Services.AI;
+using Repo_Into_Graph_Application.Services.Analysis;
+using Repo_Into_Graph_Application.Services.BusinessFlows;
+using Repo_Into_Graph_Application.Services.CodeQueryable;
+using Repo_Into_Graph_Application.Services.DataFlowParser;
+using Repo_Into_Graph_Application.Services.FewShot;
+using Repo_Into_Graph_Application.Services.GitService;
+using Repo_Into_Graph_Application.Services.Mapper;
+using Repo_Into_Graph_Application.Services.QuestionGenerate;
+using Repo_Into_Graph_API.Exceptions;
+using Repo_Into_Graph_DataAccess.Database;
 
 if (File.Exists(".env"))
 {
@@ -17,6 +22,10 @@ if (File.Exists(".env"))
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ── Global Exception Handler ──────────────────────────────────────────────────
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 // Register HTTP Client Factory with HTTP/1.1 fallback policy to prevent HTTP/3 hang deadlocks
 builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName)
@@ -42,14 +51,22 @@ builder.Services.AddScoped<ICallGraphEdgeRepository, CallGraphEdgeRepository>();
 builder.Services.AddScoped<IMethodSourceRepository, MethodSourceRepository>();
 builder.Services.AddScoped<IFeatureRepository, FeatureRepository>();
 builder.Services.AddScoped<IFeatureMethodMappingRepository, FeatureMethodMappingRepository>();
+builder.Services.AddScoped<IFewShotExampleRepository, FewShotExampleRepository>();
+builder.Services.AddScoped<IBusinessFlowRepository, BusinessFlowRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddScoped<ICodeQueryable, CodeQueryable>();
 builder.Services.AddScoped<GraphMapperService>();
 builder.Services.AddScoped<IGitService, GitService>();
 builder.Services.AddScoped<IAnalysisService, AnalysisService>();
+builder.Services.AddScoped<IAnalysisRunService, AnalysisRunService>();
+builder.Services.AddScoped<IBusinessFlowService, BusinessFlowService>();
+builder.Services.AddScoped<IFewShotService, FewShotService>();
+builder.Services.AddScoped<BusinessFlowParser>();
 builder.Services.AddScoped<IQuestionGenerate, QuestionGenerate>();
 builder.Services.AddScoped<IAIService, AIService>();
+builder.Services.AddScoped<DataFlowParseService>();
+builder.Services.AddScoped<BusinessCallDataFlowGenerator>();
 
 // Add support for controllers
 builder.Services.AddControllers();
@@ -71,6 +88,9 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// ── Global Exception Handler middleware (phải đứng đầu pipeline) ──────────────
+app.UseExceptionHandler();
+
 // Migrate Database on startup
 using (var scope = app.Services.CreateScope())
 {
@@ -82,6 +102,7 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
+        // Startup migration failure — chỉ log, không crash (giữ nguyên hành vi cũ)
         Console.WriteLine($"❌ Cannot prepare PostgreSQL schema: {ex.Message}");
     }
 }
@@ -100,3 +121,5 @@ app.UseCors("AllowAll");
 app.MapControllers();
 
 app.Run();
+
+

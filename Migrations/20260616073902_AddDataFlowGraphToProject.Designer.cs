@@ -3,6 +3,7 @@ using Repo_Into_Graph_DataAccess.Database;
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Repo_Into_Graph.Migrations
 {
     [DbContext(typeof(AnalysisDbContext))]
-    partial class AnalysisDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260616073902_AddDataFlowGraphToProject")]
+    partial class AddDataFlowGraphToProject
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -111,6 +114,43 @@ namespace Repo_Into_Graph.Migrations
                     b.ToTable("call_graph_edges", (string)null);
                 });
 
+            modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlow.DataFlowEdge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AnalysisRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ClassName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MethodName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RelationType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceToken")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TargetToken")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DataFlowEdges");
+                });
+
             modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -128,152 +168,6 @@ namespace Repo_Into_Graph.Migrations
                     b.Property<string>("DataFlowMermaidGraph")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<string>("EntryPoint")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("MermaidGraph")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AnalysisRunId");
-
-                    b.ToTable("business_flows", (string)null);
-                });
-
-            modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlowStep", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BusinessFlowId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CalleeClass")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("CalleeMethod")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("CallerClass")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("CallerMethod")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<int>("StepOrder")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BusinessFlowId");
-
-                    b.ToTable("business_flow_steps", (string)null);
-                });
-
-            modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlow", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AnalysisRunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("EntryPoint")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("MermaidGraph")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AnalysisRunId");
-
-                    b.ToTable("business_flows", (string)null);
-                });
-
-            modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlowStep", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BusinessFlowId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CalleeClass")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("CalleeMethod")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("CallerClass")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("CallerMethod")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<int>("StepOrder")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BusinessFlowId");
-
-                    b.ToTable("business_flow_steps", (string)null);
-                });
-
-            modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlow", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AnalysisRunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("now()");
 
                     b.Property<string>("EntryPoint")
                         .IsRequired()
@@ -456,28 +350,6 @@ namespace Repo_Into_Graph.Migrations
                 {
                     b.HasOne("AnalysisRun", "AnalysisRun")
                         .WithMany("CallGraphEdges")
-                        .HasForeignKey("AnalysisRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AnalysisRun");
-                });
-
-            modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlow", b =>
-                {
-                    b.HasOne("Repo_Into_Graph.Repo_Into_Graph.Models.Analysis.AnalysisRun", "AnalysisRun")
-                        .WithMany("BusinessFlows")
-                        .HasForeignKey("AnalysisRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AnalysisRun");
-                });
-
-            modelBuilder.Entity("Repo_Into_Graph.Repo_Into_Graph.Models.BusinessFlows.BusinessFlow", b =>
-                {
-                    b.HasOne("AnalysisRun", "AnalysisRun")
-                        .WithMany("BusinessFlows")
                         .HasForeignKey("AnalysisRunId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

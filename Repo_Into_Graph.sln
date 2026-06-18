@@ -3,11 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.37111.16
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Repo_Into_Graph_API", "Repo_Into_Graph_API.csproj", "{27E78DEC-1332-45F6-AB19-527BEA53CA3F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Repo_Into_Graph_API", "Repo_Into_Graph_API\Repo_Into_Graph_API.csproj", "{A6A06F51-8E5D-40D4-0E90-4A1581195D67}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Repo_Into_Graph_Application", "..\Repo_Into_Graph_Application\Repo_Into_Graph_Application.csproj", "{20A6F947-A2F0-420A-8CCF-ECED5B3803C1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Repo_Into_Graph_Application", "Repo_Into_Graph_Application\Repo_Into_Graph_Application.csproj", "{35010E23-B0E4-74D6-4903-BA2484AEE8E0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Repo_Into_Graph_DataAccess", "..\Repo_Into_Graph_DataAccess\Repo_Into_Graph_DataAccess.csproj", "{632E31E1-D809-4291-ABCA-0C4FBDB4377B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Repo_Into_Graph_DataAccess", "Repo_Into_Graph_DataAccess\Repo_Into_Graph_DataAccess.csproj", "{2D137D22-D5F5-5C6D-48FE-18F9F496C002}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,18 +15,18 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{27E78DEC-1332-45F6-AB19-527BEA53CA3F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{27E78DEC-1332-45F6-AB19-527BEA53CA3F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{27E78DEC-1332-45F6-AB19-527BEA53CA3F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{27E78DEC-1332-45F6-AB19-527BEA53CA3F}.Release|Any CPU.Build.0 = Release|Any CPU
-		{20A6F947-A2F0-420A-8CCF-ECED5B3803C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{20A6F947-A2F0-420A-8CCF-ECED5B3803C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{20A6F947-A2F0-420A-8CCF-ECED5B3803C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{20A6F947-A2F0-420A-8CCF-ECED5B3803C1}.Release|Any CPU.Build.0 = Release|Any CPU
-		{632E31E1-D809-4291-ABCA-0C4FBDB4377B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{632E31E1-D809-4291-ABCA-0C4FBDB4377B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{632E31E1-D809-4291-ABCA-0C4FBDB4377B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{632E31E1-D809-4291-ABCA-0C4FBDB4377B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A6A06F51-8E5D-40D4-0E90-4A1581195D67}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A6A06F51-8E5D-40D4-0E90-4A1581195D67}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A6A06F51-8E5D-40D4-0E90-4A1581195D67}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A6A06F51-8E5D-40D4-0E90-4A1581195D67}.Release|Any CPU.Build.0 = Release|Any CPU
+		{35010E23-B0E4-74D6-4903-BA2484AEE8E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35010E23-B0E4-74D6-4903-BA2484AEE8E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35010E23-B0E4-74D6-4903-BA2484AEE8E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35010E23-B0E4-74D6-4903-BA2484AEE8E0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D137D22-D5F5-5C6D-48FE-18F9F496C002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D137D22-D5F5-5C6D-48FE-18F9F496C002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D137D22-D5F5-5C6D-48FE-18F9F496C002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D137D22-D5F5-5C6D-48FE-18F9F496C002}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

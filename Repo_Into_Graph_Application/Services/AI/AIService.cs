@@ -173,10 +173,10 @@ QUY TẮC CẤM (CRITICAL CONSTRAINTS):
             prompt.Append(stepLines);
             prompt.AppendLine();
 
-            if (!string.IsNullOrWhiteSpace(businessFlow.MermaidGraph))
+            if (!string.IsNullOrWhiteSpace(businessFlow.DataFlowMermaidGraph))
             {
-                prompt.AppendLine("--- MERMAID DIAGRAM (Biểu đồ luồng) ---");
-                prompt.AppendLine(businessFlow.MermaidGraph);
+                prompt.AppendLine("--- DATA FLOW MERMAID DIAGRAM (Biểu đồ luồng) ---");
+                prompt.AppendLine(businessFlow.DataFlowMermaidGraph);
                 prompt.AppendLine();
             }
 

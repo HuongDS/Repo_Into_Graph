@@ -13,6 +13,7 @@ using Repo_Into_Graph_Application.Exceptions;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_Application.Services.AI;
+using Repo_Into_Graph_Application.Dtos.QuestionEvalution;
 
 namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 {
@@ -25,6 +26,11 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _aIService = aIService;
+        }
+
+        public async Task<IEnumerable<QuestionEvaluationResultDto>> EvaluateQuestionsAsync(string dataFlowMermaidGraph, string codeBuilder, IEnumerable<GeneratedQuestionDto> generatedQuestions)
+        {
+            return await _aIService.EvaluateQuestionsAsync(dataFlowMermaidGraph, codeBuilder, generatedQuestions);
         }
 
         public async Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestionsAsync(GenerateQuestionsRequest request)
@@ -117,6 +123,10 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 difficulty        : request.Difficulty,
                 additionalContext : request.AdditionalContext,
                 fewShotExamples   : (IEnumerable<FewShotExample>?)fewShotExamples);
+            var evaluationResults = await _aIService.EvaluateQuestionsAsync(
+                dataFlowMermaidGraph: businessFlow.DataFlowMermaidGraph,
+                codeBuilder: null,
+                generatedQuestions: questions);
 
             return new GenerateQuestionsFromFlowResponse
             {

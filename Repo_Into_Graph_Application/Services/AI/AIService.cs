@@ -11,6 +11,8 @@ using Google.GenAI.Types;
 using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
 using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
+using Repo_Into_Graph_Application.Dtos.QuestionEvalution;
+
 
 namespace Repo_Into_Graph_Application.Services.AI
 {
@@ -29,6 +31,101 @@ namespace Repo_Into_Graph_Application.Services.AI
 
             _client = new Client(apiKey: apiKey, clientOptions: clientOptions);
         }
+
+        public async Task<IEnumerable<QuestionEvaluationResultDto>> EvaluateQuestionsAsync(string dataFlowMermaidGraph, string codeBuilder, IEnumerable<GeneratedQuestionDto> generatedQuestions)
+        {
+            if (generatedQuestions == null || !generatedQuestions.Any())
+                return new List<QuestionEvaluationResultDto>();
+
+            var systemInstruction = """
+            Bạn là một Chuyên gia Kiểm định Chất lượng Phần mềm (Senior QA Engineer) và là Hội đồng Thẩm định AI phục vụ cho Đề tài Nghiên cứu Khoa học.
+            Nhiệm vụ của bạn là phân tích mã nguồn (Source Code) và biểu đồ luồng dữ liệu (Data Flow Mermaid) được cung cấp để làm CHÂN LÝ (Ground Truth).
+            Sau đó, hãy đánh giá chất lượng các cặp Câu hỏi (question) và Câu trả lời gợi ý (suggestedAnswer) được sinh ra tự động từ hệ thống xem có khớp với Chân lý hay không.
+            
+            Hãy duyệt qua từng câu hỏi trong danh sách và chấm điểm từ 1 đến 10 dựa trên 3 tiêu chí cốt lõi:
+            1. factual_correctness: Độ chính xác thực tế của câu trả lời so với Logic xử lý trong Source Code và luồng đi của Data Flow Mermaid.
+            2. relevance_completeness: Điểm độ liên quan, giải quyết trọn vẹn câu hỏi, không viết dài dòng lan man.
+            3. technical_clarity: Việc sử dụng chính xác các thuật ngữ công nghệ chuyên ngành (ví dụ: batch insert, validation rules, commit...).
+            """;
+
+            string questionsJsonContext = JsonSerializer.Serialize(generatedQuestions, new JsonSerializerOptions { WriteIndented = true });
+
+            var prompt = new StringBuilder();
+            prompt.AppendLine("--- SOURCE CODE CHI TIẾT (GROUND TRUTH) ---");
+            prompt.AppendLine(codeBuilder);
+            prompt.AppendLine();
+
+            prompt.AppendLine("--- BIỂU ĐỒ LUỒNG ĐỐI CHIẾU (DATA FLOW MERMAID) ---");
+            prompt.AppendLine(dataFlowMermaidGraph);
+            prompt.AppendLine();
+
+            prompt.AppendLine("--- DANH SÁCH CẶP CÂU HỎI VÀ CÂU TRẢ LỜI CẦN CHẤM ĐIỂM ---");
+            prompt.AppendLine(questionsJsonContext);
+            prompt.AppendLine();
+            prompt.AppendLine("Hãy đánh giá toàn bộ các câu hỏi trên. Xuất ra kết quả là một JSON Array với cấu trúc chứa các thuộc tính: question, suggestedAnswer, scores (gồm factual_correctness, relevance_completeness, technical_clarity, average_total_score), và evaluation_details (gồm factual_correctness_reason, relevance_completeness_reason, technical_clarity_reason).");
+
+            var config = new GenerateContentConfig
+            {
+                SystemInstruction = new Content
+                {
+                    Parts = [new Part { Text = systemInstruction }]
+                },
+                Temperature = 0.15f,
+                ResponseMimeType = "application/json"
+            };
+
+            int maxRetries = 3;
+            int delaySeconds = 3;
+            GenerateContentResponse? response = null;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    response = await _client.Models.GenerateContentAsync(
+                        model: "gemini-3.1-flash-lite",
+                        contents: prompt.ToString(),
+                        config: config
+                    );
+                    break;
+                }
+                catch (ClientError ex) when (ex.StatusCode == 429 || ex.StatusCode == 503 || ex.StatusCode == 500)
+                {
+                    if (attempt == maxRetries) throw;
+                    Console.WriteLine($"⚠️ [AiJudge] Transient error {ex.StatusCode}. Retrying in {delaySeconds}s... (Attempt {attempt}/{maxRetries})");
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    delaySeconds *= 2;
+                }
+                catch (Exception ex) when (ex.Message.Contains("429") || ex.Message.Contains("Too Many Requests"))
+                {
+                    if (attempt == maxRetries) throw;
+                    Console.WriteLine($"⚠️ [AiJudge] Rate limit error. Retrying in {delaySeconds}s... (Attempt {attempt}/{maxRetries})");
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    delaySeconds *= 2;
+                }
+            }
+
+            if (response == null || string.IsNullOrEmpty(response.Text))
+                throw new Exception("AI Judge API did not return any evaluation text response.");
+
+            string aiJsonText = response.Text.Trim();
+
+            aiJsonText = aiJsonText.Replace("```json", "").Replace("```", "").Trim();
+
+            try
+            {
+                var evaluationResults = JsonSerializer.Deserialize<List<QuestionEvaluationResultDto>>(aiJsonText, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+                return evaluationResults ?? new List<QuestionEvaluationResultDto>();
+            }
+            catch (JsonException ex)
+            {
+                throw new Exception($"AI Judge trả về cấu trúc JSON không khớp với DTO đánh giá. Nội dung: {aiJsonText}. Chi tiết lỗi: {ex.Message}", ex);
+            }
+        }
+        
 
         public async Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestions(
             int numberOfQuestions,

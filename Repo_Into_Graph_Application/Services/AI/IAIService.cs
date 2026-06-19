@@ -1,8 +1,7 @@
+using Repo_Into_Graph_Application.Dtos.QuestionEvalution;
 using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
 using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace Repo_Into_Graph_Application.Services.AI
 {
@@ -20,6 +19,14 @@ namespace Repo_Into_Graph_Application.Services.AI
             string difficulty,
             string? additionalContext = null,
             IEnumerable<FewShotExample>? fewShotExamples = null);
+
+        Task<IEnumerable<QuestionEvaluationResultDto>> EvaluateQuestionsAsync(
+            string dataFlowMermaidGraph,
+            string codeBuilder, 
+            IEnumerable<GeneratedQuestionDto> generatedQuestions);
+
+
+
     }
 }
 

@@ -2,15 +2,13 @@ using Repo_Into_Graph_DataAccess.Database;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_DataAccess.Models.Analysis;
 using Repo_Into_Graph_Application.Dtos.Analysis;
-using Repo_Into_Graph_Application.Dtos.Feature;
 using Repo_Into_Graph_Application.Exceptions;
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using Repo_Into_Graph_DataAccess.Models.Feature;
 using Repo_Into_Graph_DataAccess.Models.Method;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
 using Repo_Into_Graph_Application.Services.DataFlowParser;
 using Repo_Into_Graph_Application.Services.GitService;
 using Repo_Into_Graph_Application.Services.Mapper;
-using Repo_Into_Graph_Application.Services.DataFlowParser;
 using Repo_Into_Graph_Application.Services;
 using System;
 using System.IO;
@@ -83,8 +81,8 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 {
                     _unitOfWork.AnalysisRuns.DeleteRange(existingRuns);
                     _unitOfWork.MethodSources.DeleteRange(existingRuns.SelectMany(r => r.MethodSources));
-                    _unitOfWork.BusinessFlows.DeleteRange(existingRuns.SelectMany(r => r.BusinessFlows));
                     _unitOfWork.Features.DeleteRange(existingRuns.SelectMany(r => r.Features));
+                    _unitOfWork.Businesses.DeleteRange(existingRuns.SelectMany(r => r.Businesses));
                     _unitOfWork.CallGraphEdges.DeleteRange(existingRuns.SelectMany(r => r.CallGraphEdges));
                     await _unitOfWork.SaveChangesAsync();
                 }
@@ -127,33 +125,39 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 //    await _context.DataFlowEdges.AddRangeAsync(allIntraEdges);
                 //    await _context.SaveChangesAsync();
                 //}
-                // Phân tích và lưu Business Flows
-                var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
-                if (businessFlows.Any())
+                // Phan tich va luu Features (luong xu ly)
+                var features = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
+                if (features.Any())
                 {
-
                     var methodSourcesList = analysisRun.MethodSources.ToList();
-                    foreach (var flow in businessFlows)
+                    foreach (var flow in features)
                     {
                         flow.DataFlowMermaidGraph = _businessCallDataFlowGenerator.GenerateCallDataFlow(flow, methodSourcesList, allIntraEdges);
                     }
-                    await _context.BusinessFlows.AddRangeAsync(businessFlows);
+                    await _context.Features.AddRangeAsync(features);
                     await _context.SaveChangesAsync();
                 }
 
-                // Thực hiện ánh xạ đồ thị
-                // Ưu tiên đọc template_feature.json từ bên trong repository được phân tích,
-                // nếu không có thì fallback về file local của server
-                string featuresJsonPath = Path.Combine(targetPath, "template_feature.json");
-                if (!File.Exists(featuresJsonPath))
+                // Thuc hien anh xa do thi voi Business (doc tu template_business.json)
+                // Uu tien doc template_business.json tu ben trong repository duoc phan tich,
+                // neu khong co thi fallback ve file local cua server
+                string businessJsonPath = Path.Combine(targetPath, "template_business.json");
+                Console.WriteLine($"[DEBUG] Đang tìm kiếm file template tại: {businessJsonPath}");
+                
+                if (!File.Exists(businessJsonPath))
                 {
-                    featuresJsonPath = "./template_feature.json";
+                    Console.WriteLine($"[DEBUG] Không tìm thấy file ở targetPath. Đang tìm file dự phòng...");
+                    businessJsonPath = "template_business.json";
+                    Console.WriteLine("Ahihihihi1");
                 }
 
-                if (File.Exists(featuresJsonPath))
+
+                if (File.Exists(businessJsonPath))
                 {
-                    await _graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, featuresJsonPath);
+                    await _graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, businessJsonPath);
+
                 }
+
 
                 // Xuất file output
                 var outputJsonPath = Path.Combine(targetOutputDir, "output_graph.json");

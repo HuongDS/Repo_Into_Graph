@@ -1,56 +1,51 @@
 using Microsoft.AspNetCore.Mvc;
-using Repo_Into_Graph_Application.Services.CodeQueryable;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Repo_Into_Graph_Application.Dtos.Code;
+using Repo_Into_Graph_Application.Services.Features;
 using Repo_Into_Graph_Application.Dtos.Feature;
+using System;
+using System.Threading.Tasks;
 
 namespace Repo_Into_Graph_API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/features")]
     public class FeaturesController : ControllerBase
     {
-        private readonly ICodeQueryable _codeQueryable;
+        private readonly IFeatureService _featureService;
 
-        public FeaturesController(ICodeQueryable codeQueryable)
+        public FeaturesController(IFeatureService featureService)
         {
-            _codeQueryable = codeQueryable ?? throw new ArgumentNullException(nameof(codeQueryable));
+            _featureService = featureService
+                ?? throw new ArgumentNullException(nameof(featureService));
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<FeatureViewDto>>> GetAll()
+        public async Task<ActionResult<FeaturePagedResult>> GetAll(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] Guid? analysisRunId = null,
+            [FromQuery] string? name = null)
         {
-            var features = await _codeQueryable.GetMethodNamesAsync(null);
+            var result = await _featureService.GetPagedAsync(
+                page, pageSize, analysisRunId, name);
+
+            return Ok(result);
+        }
+
+        [HttpGet("by-analysis-run/{analysisRunId:guid}")]
+        public async Task<ActionResult<System.Collections.Generic.IEnumerable<FeatureDetailDto>>> GetByAnalysisRun(Guid analysisRunId)
+        {
+            var features = await _featureService.GetAllByAnalysisRunAsync(analysisRunId);
             return Ok(features);
         }
 
         [HttpGet("{id:guid}")]
-        public async Task<ActionResult<FeatureViewDto>> GetById(Guid id)
+        public async Task<ActionResult<FeatureDetailDto>> GetById(Guid id)
         {
-            var features = await _codeQueryable.GetMethodNamesAsync(id);
-            var feature = features.FirstOrDefault();
-            if (feature == null)
-            {
-                return NotFound(new { message = $"Không tìm thấy Feature với ID: {id}" });
-            }
-            return Ok(feature);
-        }
+            var dto = await _featureService.GetByIdAsync(id);
+            if (dto is null)
+                return NotFound(new { error = $"Không tìm thấy Feature với ID: {id}" });
 
-        [HttpGet("{id:guid}/codeflow")]
-        public async Task<ActionResult<CodeFlowDto>> GetCodeFlow(Guid id)
-        {
-            var codeFlow = await _codeQueryable.GetCodeFlowAsync(id);
-            if (codeFlow == null)
-            {
-                return NotFound(new { message = $"Không tìm thấy Code Flow của Feature với ID: {id}" });
-            }
-            return Ok(codeFlow);
+            return Ok(dto);
         }
     }
 }
-
-
-

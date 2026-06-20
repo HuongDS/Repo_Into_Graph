@@ -1,26 +1,26 @@
 using Microsoft.EntityFrameworkCore;
-using Repo_Into_Graph_Application.Dtos.BusinessFlow;
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using Repo_Into_Graph_Application.Dtos.Feature;
+using Repo_Into_Graph_DataAccess.Models.Feature;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Repo_Into_Graph_Application.Services.BusinessFlows
+namespace Repo_Into_Graph_Application.Services.Features
 {
-    public class BusinessFlowService : IBusinessFlowService
+    public class FeatureService : IFeatureService
     {
         private readonly IUnitOfWork _unitOfWork;
 
-        public BusinessFlowService(IUnitOfWork unitOfWork)
+        public FeatureService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         }
 
         // ─── GET paged ────────────────────────────────────────────────────────────
 
-        public async Task<BusinessFlowPagedResult> GetPagedAsync(
+        public async Task<FeaturePagedResult> GetPagedAsync(
             int page,
             int pageSize,
             Guid? analysisRunId,
@@ -29,7 +29,7 @@ namespace Repo_Into_Graph_Application.Services.BusinessFlows
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 10;
 
-            IQueryable<BusinessFlow> query = _unitOfWork.BusinessFlows
+            IQueryable<Feature> query = _unitOfWork.Features
                 .AsQueryable()
                 .OrderByDescending(x => x.CreatedAt);
 
@@ -44,7 +44,7 @@ namespace Repo_Into_Graph_Application.Services.BusinessFlows
             var items = await query
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(x => new BusinessFlowSummaryDto
+                .Select(x => new FeatureSummaryDto
                 {
                     Id            = x.Id,
                     AnalysisRunId = x.AnalysisRunId,
@@ -55,7 +55,7 @@ namespace Repo_Into_Graph_Application.Services.BusinessFlows
                 })
                 .ToListAsync();
 
-            return new BusinessFlowPagedResult
+            return new FeaturePagedResult
             {
                 Items      = items,
                 Page       = page,
@@ -66,62 +66,57 @@ namespace Repo_Into_Graph_Application.Services.BusinessFlows
 
         // ─── GET all by analysisRunId ─────────────────────────────────────────────
 
-        public async Task<IEnumerable<BusinessFlowDetailDto>> GetAllByAnalysisRunAsync(Guid analysisRunId)
+        public async Task<IEnumerable<FeatureDetailDto>> GetAllByAnalysisRunAsync(Guid analysisRunId)
         {
-            var flows = await _unitOfWork.BusinessFlows
+            var features = await _unitOfWork.Features
                 .AsQueryable()
                 .Where(x => x.AnalysisRunId == analysisRunId)
                 .Include(x => x.Steps)
                 .OrderBy(x => x.Name)
                 .ToListAsync();
 
-            return flows.Select(ToDetailDto).ToList();
+            return features.Select(ToDetailDto).ToList();
         }
 
         // ─── GET by ID ────────────────────────────────────────────────────────────
 
-        public async Task<BusinessFlowDetailDto?> GetByIdAsync(Guid id)
+        public async Task<FeatureDetailDto?> GetByIdAsync(Guid id)
         {
-            var flow = await _unitOfWork.BusinessFlows
+            var feature = await _unitOfWork.Features
                 .AsQueryable()
                 .Include(x => x.Steps)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
-            return flow is null ? null : ToDetailDto(flow);
+            return feature is null ? null : ToDetailDto(feature);
         }
 
         // ─── Private mappers ──────────────────────────────────────────────────────
 
-        private static BusinessFlowDetailDto ToDetailDto(BusinessFlow flow) => new()
+        private static FeatureDetailDto ToDetailDto(Feature feature) => new()
         {
-            Id                  = flow.Id,
-            AnalysisRunId       = flow.AnalysisRunId,
-            Name                = flow.Name,
-            EntryPoint          = flow.EntryPoint,
-            CreatedAt           = flow.CreatedAt,
-            MermaidGraph        = flow.MermaidGraph,
-            DataFlowMermaidGraph = flow.DataFlowMermaidGraph,
-            Steps = flow.Steps
+            Id                   = feature.Id,
+            AnalysisRunId        = feature.AnalysisRunId,
+            Name                 = feature.Name,
+            EntryPoint           = feature.EntryPoint,
+            CreatedAt            = feature.CreatedAt,
+            MermaidGraph         = feature.MermaidGraph,
+            DataFlowMermaidGraph = feature.DataFlowMermaidGraph,
+            Steps = feature.Steps
                 .OrderBy(s => s.StepOrder)
                 .Select(ToStepDto)
                 .ToList()
         };
 
-        private static BusinessFlowStepDto ToStepDto(BusinessFlowStep s) => new()
+        private static FeatureStepDto ToStepDto(FeatureStep s) => new()
         {
-            Id             = s.Id,
-            BusinessFlowId = s.BusinessFlowId,
-            StepOrder      = s.StepOrder,
-            CallerClass    = s.CallerClass,
-            CallerMethod   = s.CallerMethod,
-            CalleeClass    = s.CalleeClass,
-            CalleeMethod   = s.CalleeMethod,
-            CreatedAt      = s.CreatedAt
+            Id           = s.Id,
+            FeatureId    = s.FeatureId,
+            StepOrder    = s.StepOrder,
+            CallerClass  = s.CallerClass,
+            CallerMethod = s.CallerMethod,
+            CalleeClass  = s.CalleeClass,
+            CalleeMethod = s.CalleeMethod,
+            CreatedAt    = s.CreatedAt
         };
     }
 }
-
-
-
-
-

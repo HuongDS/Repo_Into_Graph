@@ -13,10 +13,11 @@ namespace Repo_Into_Graph_DataAccess.Repository.Impl
         private IAnalysisRunRepository? _analysisRuns;
         private ICallGraphEdgeRepository? _callGraphEdges;
         private IMethodSourceRepository? _methodSources;
+        private IBusinessRepository? _businesses;
+        private IBusinessMethodMappingRepository? _businessMethodMappings;
         private IFeatureRepository? _features;
-        private IFeatureMethodMappingRepository? _featureMethodMappings;
+        private IFeatureBusinessMappingRepository? _featureBusinessMappings;
         private IFewShotExampleRepository? _fewShotExamples;
-        private IBusinessFlowRepository? _businessFlows;
 
         public UnitOfWork(AnalysisDbContext context)
         {
@@ -32,17 +33,20 @@ namespace Repo_Into_Graph_DataAccess.Repository.Impl
         public IMethodSourceRepository MethodSources =>
             _methodSources ??= new MethodSourceRepository(_context);
 
+        public IBusinessRepository Businesses =>
+            _businesses ??= new BusinessRepository(_context);
+
+        public IBusinessMethodMappingRepository BusinessMethodMappings =>
+            _businessMethodMappings ??= new BusinessMethodMappingRepository(_context);
+
         public IFeatureRepository Features =>
             _features ??= new FeatureRepository(_context);
 
-        public IFeatureMethodMappingRepository FeatureMethodMappings =>
-            _featureMethodMappings ??= new FeatureMethodMappingRepository(_context);
+        public IFeatureBusinessMappingRepository FeatureBusinessMappings =>
+            _featureBusinessMappings ??= new FeatureBusinessMappingRepository(_context);
 
         public IFewShotExampleRepository FewShotExamples =>
             _fewShotExamples ??= new FewShotExampleRepository(_context);
-
-        public IBusinessFlowRepository BusinessFlows =>
-            _businessFlows ??= new BusinessFlowRepository(_context);
 
         public async Task<int> SaveChangesAsync()
         {
@@ -86,7 +90,3 @@ namespace Repo_Into_Graph_DataAccess.Repository.Impl
         }
     }
 }
-
-
-
-

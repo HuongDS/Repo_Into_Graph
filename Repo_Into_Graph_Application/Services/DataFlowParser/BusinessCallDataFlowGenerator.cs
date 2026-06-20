@@ -1,4 +1,5 @@
-﻿using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using Repo_Into_Graph_DataAccess.Models.Feature;
+using Repo_Into_Graph_DataAccess.Models.Analysis;
 using Repo_Into_Graph_DataAccess.Models.Method;
 using System.Linq;
 using System.Text;
@@ -14,7 +15,7 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
             _parserService = parserService;
         }
 
-        public string GenerateCallDataFlow(BusinessFlow businessFlow, List<MethodSourceRecord> allMethodSources, List<DataFlowEdge> allIntraEdges)
+        public string GenerateCallDataFlow(Feature feature, List<MethodSourceRecord> allMethodSources, List<DataFlowEdge> allIntraEdges)
         {
             var sb = new StringBuilder();
             sb.AppendLine("graph TD");
@@ -22,7 +23,7 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
             var renderedLines = new HashSet<string>();
             var declaredNodes = new HashSet<string>();
 
-            var orderedSteps = businessFlow.Steps.OrderBy(s => s.StepOrder).ToList();
+            var orderedSteps = feature.Steps.OrderBy(s => s.StepOrder).ToList();
             int orderCounter = 1;
 
             foreach (var step in orderedSteps)
@@ -49,7 +50,7 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
 
                 string targetCalleeClass = step.CalleeClass;
 
-                var nextBindingStep = businessFlow.Steps
+                var nextBindingStep = feature.Steps
                     .FirstOrDefault(s => s.StepOrder > step.StepOrder && s.CallerClass == step.CalleeClass && s.CallerMethod == step.CalleeMethod);
 
                 if (nextBindingStep != null)

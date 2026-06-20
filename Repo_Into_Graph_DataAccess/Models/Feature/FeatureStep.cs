@@ -1,22 +1,18 @@
 using System;
 
-namespace Repo_Into_Graph_DataAccess.Models.BusinessFlows
+namespace Repo_Into_Graph_DataAccess.Models.Feature
 {
-    public class BusinessFlowStep
+    public class FeatureStep
     {
         public Guid Id { get; set; }
-        public Guid BusinessFlowId { get; set; }
+        public Guid FeatureId { get; set; }
+        public int StepOrder { get; set; }
         public string CallerClass { get; set; } = string.Empty;
         public string CallerMethod { get; set; } = string.Empty;
         public string CalleeClass { get; set; } = string.Empty;
         public string CalleeMethod { get; set; } = string.Empty;
-        public int StepOrder { get; set; }
         public DateTime CreatedAt { get; set; }
 
-        public BusinessFlow? BusinessFlow { get; set; }
+        public Feature? Feature { get; set; }
     }
 }
-
-
-
-

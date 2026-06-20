@@ -1,7 +1,7 @@
 
 
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
 using Repo_Into_Graph_DataAccess.Models.Feature;
+using Repo_Into_Graph_DataAccess.Models.Business;
 using Repo_Into_Graph_DataAccess.Models.Method;
 
 namespace Repo_Into_Graph_DataAccess.Models.Analysis;
@@ -24,8 +24,8 @@ public class AnalysisRun
 
     public List<CallGraphEdge> CallGraphEdges { get; set; } = new();
     public List<MethodSourceRecord> MethodSources { get; set; } = new();
-    public List<FeatureRecord> Features { get; set; } = new();
-    public List<BusinessFlow> BusinessFlows { get; set; } = new();
+    public List<Business.Business> Businesses { get; set; } = new();
+    public List<Feature.Feature> Features { get; set; } = new();
 }
 
 

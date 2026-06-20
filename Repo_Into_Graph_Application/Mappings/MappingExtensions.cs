@@ -1,20 +1,20 @@
-using Repo_Into_Graph_DataAccess.Models.Feature;
+using Repo_Into_Graph_DataAccess.Models.Business;
 using Repo_Into_Graph_DataAccess.Models.Method;
-using Repo_Into_Graph_Application.Dtos.Feature;
+using Repo_Into_Graph_Application.Dtos.Business;
 using Repo_Into_Graph_Application.Dtos.Method;
 
 namespace Repo_Into_Graph_Application.Mappings
 {
     public static class MappingExtensions
     {
-        public static FeatureViewDto ToDto(this FeatureRecord record)
+        public static BusinessViewDto ToDto(this Business record)
         {
             if (record == null) return null!;
-            return new FeatureViewDto
+            return new BusinessViewDto
             {
                 Id = record.Id,
                 AnalysisRunId = record.AnalysisRunId,
-                FeatureName = record.FeatureName,
+                BusinessName = record.BusinessName,
                 CreatedAt = record.CreatedAt
             };
         }
@@ -32,8 +32,3 @@ namespace Repo_Into_Graph_Application.Mappings
         }
     }
 }
-
-
-
-
-

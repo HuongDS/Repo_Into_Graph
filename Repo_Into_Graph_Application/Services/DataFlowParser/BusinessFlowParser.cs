@@ -1,5 +1,5 @@
 using Repo_Into_Graph_DataAccess.Models;
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using Repo_Into_Graph_DataAccess.Models.Feature;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,12 +9,12 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
 {
     public class BusinessFlowParser
     {
-        public List<BusinessFlow> ParseBusinessFlows(Guid analysisRunId, List<CallGraphEdge> edges)
+        public List<Feature> ParseBusinessFlows(Guid analysisRunId, List<CallGraphEdge> edges)
         {
-            var businessFlows = new List<BusinessFlow>();
+            var features = new List<Feature>();
 
             if (edges == null || !edges.Any())
-                return businessFlows;
+                return features;
 
             // 1. Group edges by Caller (Class::Method)
             var graphLookup = edges.ToLookup(
@@ -35,7 +35,7 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                 var flowName = $"{start.Class}.{start.Method}";
                 var entryPoint = $"{start.Class}.{start.Method}";
 
-                var steps = new List<BusinessFlowStep>();
+                var steps = new List<FeatureStep>();
                 var visited = new HashSet<string>();
                 int order = 1;
 
@@ -56,10 +56,10 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                         {
                             var calleeKey = $"{edge.CalleeClass.Trim().ToLower()}::{edge.CalleeMethod.Trim().ToLower()}";
 
-                            steps.Add(new BusinessFlowStep
+                            steps.Add(new FeatureStep
                             {
                                 Id = Guid.NewGuid(),
-                                BusinessFlowId = flowId,
+                                FeatureId = flowId,
                                 CallerClass = edge.CallerClass,
                                 CallerMethod = edge.CallerMethod,
                                 CalleeClass = edge.CalleeClass,
@@ -82,7 +82,7 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                 if (steps.Any())
                 {
                     var mermaid = GenerateMermaidForFlow(flowEdges);
-                    businessFlows.Add(new BusinessFlow
+                    features.Add(new Feature
                     {
                         Id = flowId,
                         AnalysisRunId = analysisRunId,
@@ -95,7 +95,7 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                 }
             }
 
-            return businessFlows;
+            return features;
         }
 
         private string GenerateMermaidForFlow(List<(string From, string To)> edges)

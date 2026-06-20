@@ -33,80 +33,58 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             return await _aIService.EvaluateQuestionsAsync(dataFlowMermaidGraph, codeBuilder, generatedQuestions);
         }
 
-        public async Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestionsAsync(GenerateQuestionsRequest request)
+        public async Task<GenerateQuestionsResponse> GenerateQuestionsAsync(GenerateQuestionsRequest request)
         {
             if (request == null)
                 throw new BadRequestException("Yêu cầu không được để trống.");
 
-            var feature = await _context.FeatureRecords.FindAsync(request.FeatureId);
-            if (feature == null)
+            // 1. Load Feature (Context luồng, Steps, Mermaid)
+            var featureModel = await _context.Features
+                .Include(f => f.Steps)
+                .FirstOrDefaultAsync(f => f.Id == request.FeatureId);
+
+            if (featureModel == null)
                 throw new NotFoundException("Feature", request.FeatureId);
 
-            var featureMappings = await _context.FeatureMethodMappings
-                .Include(fmm => fmm.MethodSource)
-                .Where(fmm => fmm.FeatureId == request.FeatureId)
+            // 2. Load các Business được map với Feature này
+            var featureBusinessMappings = await _context.FeatureBusinessMappings
+                .Where(m => m.FeatureId == request.FeatureId)
+                .Select(m => m.BusinessId)
                 .ToListAsync();
 
-            var methodSources = featureMappings
-                .Where(fmm => fmm.MethodSource != null)
-                .Select(fmm => fmm.MethodSource!)
+            // 3. Load Source Code (MethodSource) từ các Business đó
+            var businessMethodMappings = await _context.BusinessMethodMappings
+                .Include(m => m.MethodSource)
+                .Where(m => featureBusinessMappings.Contains(m.BusinessId))
+                .ToListAsync();
+
+            var methodSources = businessMethodMappings
+                .Where(m => m.MethodSource != null)
+                .Select(m => m.MethodSource!)
+                .DistinctBy(m => m.Id)
                 .ToList();
 
-            if (!methodSources.Any())
-                throw new UnprocessableException("Feature này không có đoạn code logic nào được ánh xạ trong hệ thống.");
-
             var codeBuilder = new StringBuilder();
-            foreach (var method in methodSources)
+            if (methodSources.Any())
             {
-                codeBuilder.AppendLine($"// Class: {method.ClassName}, Method: {method.MethodName}");
-                codeBuilder.AppendLine(method.SourceCode);
-                codeBuilder.AppendLine();
+                foreach (var method in methodSources)
+                {
+                    codeBuilder.AppendLine($"// Class: {method.ClassName}, Method: {method.MethodName}");
+                    codeBuilder.AppendLine(method.SourceCode);
+                    codeBuilder.AppendLine();
+                }
+            }
+            else
+            {
+                codeBuilder.AppendLine("// Không tìm thấy Source Code nào được map cho Feature này.");
             }
 
-            var classNames = methodSources.Select(m => m.ClassName.Trim().ToLower()).Distinct().ToList();
-
-            var callGraphEdges = await _context.CallGraphEdges
-                .Where(e => e.AnalysisRunId == feature.AnalysisRunId &&
-                            (classNames.Contains(e.CallerClass.Trim().ToLower()) ||
-                             classNames.Contains(e.CalleeClass.Trim().ToLower())))
-                .ToListAsync();
-
-            var contextBuilder = new StringBuilder();
-            contextBuilder.AppendLine("Call Graph Relationships:");
-            if (callGraphEdges.Any())
-                foreach (var edge in callGraphEdges)
-                    contextBuilder.AppendLine($"- {edge.CallerClass}.{edge.CallerMethod} calls {edge.CalleeClass}.{edge.CalleeMethod}");
-            else
-                contextBuilder.AppendLine("No call graph relationships found in database.");
-
-            int numberOfQuestions = request.NumberOfQuestions;
-            if (numberOfQuestions <= 0 || numberOfQuestions > 20)
-                numberOfQuestions = 5;
-
-            return await _aIService.GenerateQuestions(numberOfQuestions, request, codeBuilder.ToString(), contextBuilder.ToString());
-        }
-
-        // ─── Generate from Business Flow ─────────────────────────────────────────
-
-        public async Task<GenerateQuestionsFromFlowResponse> GenerateQuestionsFromFlowAsync(
-            GenerateQuestionsFromFlowRequest request)
-        {
-            // Load BusinessFlow cùng Steps từ DB
-            var businessFlow = await _context.BusinessFlows
-                .Include(f => f.Steps)
-                .FirstOrDefaultAsync(f => f.Id == request.BusinessFlowId);
-
-            if (businessFlow == null)
-                throw new NotFoundException("Business Flow", request.BusinessFlowId);
-
-            // Load few-shot examples: ưu tiên theo danh sách ID, nếu không có thì lọc theo difficulty
+            // 4. Load few-shot examples
             IEnumerable<FewShotExample>? fewShotExamples = null;
-
             if (request.FewShotExampleIds != null && request.FewShotExampleIds.Count > 0)
             {
-                var ids = request.FewShotExampleIds;
                 fewShotExamples = await _context.FewShotExamples
-                    .Where(e => ids.Contains(e.Id))
+                    .Where(e => request.FewShotExampleIds.Contains(e.Id))
                     .ToListAsync();
             }
             else if (!string.IsNullOrWhiteSpace(request.Difficulty))
@@ -117,25 +95,33 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                     .ToListAsync();
             }
 
-            var questions = await _aIService.GenerateQuestionsFromBusinessFlowAsync(
-                businessFlow      : businessFlow,
-                numberOfQuestions : request.NumberOfQuestions,
-                difficulty        : request.Difficulty,
-                additionalContext : request.AdditionalContext,
-                fewShotExamples   : (IEnumerable<FewShotExample>?)fewShotExamples);
+            int numberOfQuestions = request.NumberOfQuestions;
+            if (numberOfQuestions <= 0 || numberOfQuestions > 20)
+                numberOfQuestions = 5;
+
+            // 5. Generate Questions
+            var questions = await _aIService.GenerateUnifiedQuestionsAsync(
+                feature: featureModel,
+                codeBuilder: codeBuilder.ToString(),
+                numberOfQuestions: numberOfQuestions,
+                difficulty: request.Difficulty,
+                additionalContext: request.Description,
+                fewShotExamples: fewShotExamples);
+
+            // 6. Evaluate Questions
             var evaluationResults = await _aIService.EvaluateQuestionsAsync(
-                dataFlowMermaidGraph: businessFlow.DataFlowMermaidGraph,
-                codeBuilder: null,
+                dataFlowMermaidGraph: featureModel.DataFlowMermaidGraph ?? string.Empty,
+                codeBuilder: codeBuilder.ToString(),
                 generatedQuestions: questions);
 
-            return new GenerateQuestionsFromFlowResponse
+            return new GenerateQuestionsResponse
             {
-                BusinessFlowId   = businessFlow.Id,
-                BusinessFlowName = businessFlow.Name,
-                EntryPoint       = businessFlow.EntryPoint,
-                TotalSteps       = businessFlow.Steps?.Count ?? 0,
-                FewShotUsed      = fewShotExamples?.Count() ?? 0,
-                Questions        = questions
+                FeatureId   = featureModel.Id,
+                FeatureName = featureModel.Name,
+                EntryPoint  = featureModel.EntryPoint,
+                TotalSteps  = featureModel.Steps?.Count ?? 0,
+                FewShotUsed = fewShotExamples?.Count() ?? 0,
+                EvaluatedQuestions = evaluationResults
             };
         }
     }

@@ -1,18 +1,17 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 
-namespace Repo_Into_Graph_Application.Dtos.BusinessFlow
+namespace Repo_Into_Graph_Application.Dtos.Feature
 {
     // ─── Step DTO ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Thông tin một bước trong business flow.
+    /// Thông tin một bước trong feature (luồng phân tích).
     /// </summary>
-    public class BusinessFlowStepDto
+    public class FeatureStepDto
     {
         public Guid Id { get; set; }
-        public Guid BusinessFlowId { get; set; }
+        public Guid FeatureId { get; set; }
         public int StepOrder { get; set; }
         public string CallerClass { get; set; } = string.Empty;
         public string CallerMethod { get; set; } = string.Empty;
@@ -31,9 +30,9 @@ namespace Repo_Into_Graph_Application.Dtos.BusinessFlow
     // ─── Summary DTO (list) ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Thông tin tóm tắt của một BusinessFlow dùng trong danh sách (không kèm steps).
+    /// Thông tin tóm tắt của một Feature dùng trong danh sách (không kèm steps).
     /// </summary>
-    public class BusinessFlowSummaryDto
+    public class FeatureSummaryDto
     {
         public Guid Id { get; set; }
         public Guid AnalysisRunId { get; set; }
@@ -46,10 +45,10 @@ namespace Repo_Into_Graph_Application.Dtos.BusinessFlow
     // ─── Detail DTO (single) ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Thông tin đầy đủ của một BusinessFlow kèm steps và mermaid graphs.
+    /// Thông tin đầy đủ của một Feature kèm steps và mermaid graphs.
     /// Frontend có thể dùng MermaidGraph / DataFlowMermaidGraph để render trực tiếp.
     /// </summary>
-    public class BusinessFlowDetailDto
+    public class FeatureDetailDto
     {
         public Guid Id { get; set; }
         public Guid AnalysisRunId { get; set; }
@@ -58,7 +57,7 @@ namespace Repo_Into_Graph_Application.Dtos.BusinessFlow
         public DateTime CreatedAt { get; set; }
 
         // ── Steps ─────────────────────────────────────────────────────────────
-        public List<BusinessFlowStepDto> Steps { get; set; } = new();
+        public List<FeatureStepDto> Steps { get; set; } = new();
 
         // ── Mermaid graphs ────────────────────────────────────────────────────
         /// <summary>
@@ -73,7 +72,7 @@ namespace Repo_Into_Graph_Application.Dtos.BusinessFlow
 
         // ── Computed helpers for frontend ─────────────────────────────────────
         /// <summary>
-        /// Tổng số bước trong flow.
+        /// Tổng số bước trong feature.
         /// </summary>
         public int StepCount => Steps.Count;
 
@@ -91,12 +90,12 @@ namespace Repo_Into_Graph_Application.Dtos.BusinessFlow
     // ─── Paged result ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Kết quả phân trang cho BusinessFlowSummaryDto.
+    /// Kết quả phân trang cho FeatureSummaryDto.
     /// </summary>
-    public class BusinessFlowPagedResult
+    public class FeaturePagedResult
     {
-        public IEnumerable<BusinessFlowSummaryDto> Items { get; set; }
-            = Enumerable.Empty<BusinessFlowSummaryDto>();
+        public IEnumerable<FeatureSummaryDto> Items { get; set; }
+            = System.Linq.Enumerable.Empty<FeatureSummaryDto>();
         public int Page { get; set; }
         public int PageSize { get; set; }
         public int TotalCount { get; set; }
@@ -105,8 +104,3 @@ namespace Repo_Into_Graph_Application.Dtos.BusinessFlow
         public bool HasNextPage => Page < TotalPages;
     }
 }
-
-
-
-
-

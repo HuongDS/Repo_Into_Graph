@@ -19,21 +19,12 @@ namespace Repo_Into_Graph_API.Controllers
         }
 
         [HttpPost("generate")]
-        public async Task<IActionResult> GenerateQuestions([FromBody] GenerateQuestionsRequest request)
-        {
-            var result = await _questionGenerate.GenerateQuestionsAsync(request);
-            return Ok(result);
-        }
-
-        [HttpPost("generate/from-business-flow")]
-        public async Task<IActionResult> GenerateQuestionsFromBusinessFlow(
-            [FromBody] GenerateQuestionsFromFlowRequest request)
+        public async Task<IActionResult> GenerateUnifiedQuestions([FromBody] GenerateQuestionsRequest request)
         {
             if (request.NumberOfQuestions <= 0)
                 throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
 
-            var result = await _questionGenerate.GenerateQuestionsFromFlowAsync(request);
-             
+            var result = await _questionGenerate.GenerateQuestionsAsync(request);
             return Ok(result);
         }
     }

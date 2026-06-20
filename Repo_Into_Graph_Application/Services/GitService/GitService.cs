@@ -55,10 +55,25 @@ namespace Repo_Into_Graph_Application.Services.GitService
             return trimmed;
         }
 
+        private string ExtractSubfolderPath(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+            
+            // Match GitHub URL: https://github.com/owner/repo/tree/branch/subfolder
+            var githubMatch = Regex.Match(url.Trim(), @"^https?://github\.com/[^/]+/[^/]+/tree/[^/]+/(.+)$", RegexOptions.IgnoreCase);
+            if (githubMatch.Success)
+            {
+                return githubMatch.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar);
+            }
+            return string.Empty;
+        }
+
         public async Task<string> CloneRepositoryAsync(string gitUrl)
         {
+            string subfolder = ExtractSubfolderPath(gitUrl);
+            
             // Normalize URL từ trình duyệt (GitHub/GitLab browser link) sang git clone URL
-            gitUrl = NormalizeGitUrl(gitUrl);
+            string cloneUrl = NormalizeGitUrl(gitUrl);
 
             string tempDirName = $"temp_cloned_{Guid.NewGuid()}";
             string targetPath = Path.Combine(Directory.GetCurrentDirectory(), "temp_repos", tempDirName);
@@ -68,7 +83,7 @@ namespace Repo_Into_Graph_Application.Services.GitService
             {
                 using var process = new Process();
                 process.StartInfo.FileName = "git";
-                process.StartInfo.Arguments = $"clone --depth 1 \"{gitUrl}\" \"{targetPath}\"";
+                process.StartInfo.Arguments = $"clone --depth 1 \"{cloneUrl}\" \"{targetPath}\"";
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
                 process.StartInfo.UseShellExecute = false;
@@ -86,6 +101,15 @@ namespace Repo_Into_Graph_Application.Services.GitService
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"Lỗi khi thực thi git clone: {ex.Message}", ex);
+            }
+
+            if (!string.IsNullOrEmpty(subfolder))
+            {
+                string fullSubfolderPath = Path.Combine(targetPath, subfolder);
+                if (Directory.Exists(fullSubfolderPath))
+                {
+                    return fullSubfolderPath;
+                }
             }
 
             return targetPath;

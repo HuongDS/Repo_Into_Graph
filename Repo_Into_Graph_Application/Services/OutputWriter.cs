@@ -6,6 +6,7 @@ namespace Repo_Into_Graph_Application.Services;
 
 public class OutputWriter
 {
+    //test
     public static async Task WriteJsonAsync(string outputPath, AnalysisResult result)
     {
         var options = new JsonSerializerOptions

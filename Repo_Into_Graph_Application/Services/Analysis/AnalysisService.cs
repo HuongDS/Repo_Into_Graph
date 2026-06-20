@@ -76,13 +76,16 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 var analyzer = new CodeAnalyzer(targetPath);
                 var result = await analyzer.AnalyzeAsync();
 
-                // Xóa các lượt phân tích cũ cho repository này
                 var existingRuns = await _unitOfWork.AnalysisRuns
                     .FindAsync(r => r.RepositoryPath.ToLower() == trimmedRepoPath.ToLower());
 
                 if (existingRuns.Any())
                 {
                     _unitOfWork.AnalysisRuns.DeleteRange(existingRuns);
+                    _unitOfWork.MethodSources.DeleteRange(existingRuns.SelectMany(r => r.MethodSources));
+                    _unitOfWork.BusinessFlows.DeleteRange(existingRuns.SelectMany(r => r.BusinessFlows));
+                    _unitOfWork.Features.DeleteRange(existingRuns.SelectMany(r => r.Features));
+                    _unitOfWork.CallGraphEdges.DeleteRange(existingRuns.SelectMany(r => r.CallGraphEdges));
                     await _unitOfWork.SaveChangesAsync();
                 }
 

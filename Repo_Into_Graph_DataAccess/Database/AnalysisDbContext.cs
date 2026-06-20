@@ -140,6 +140,7 @@ public class AnalysisDbContext : DbContext
             entity.Property(x => x.CalleeMethod).IsRequired();
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             entity.HasIndex(x => x.BusinessFlowId);
+            
         });
 
         modelBuilder.Entity<FewShotExample>(entity =>

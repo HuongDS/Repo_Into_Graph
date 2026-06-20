@@ -33,6 +33,7 @@ namespace Repo_Into_Graph_API.Controllers
                 throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
 
             var result = await _questionGenerate.GenerateQuestionsFromFlowAsync(request);
+             
             return Ok(result);
         }
     }

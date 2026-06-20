@@ -8,12 +8,13 @@ namespace Repo_Into_Graph_Application.Services.AI
     public interface IAIService
     {
         /// <summary>
-        /// Sinh câu hỏi vấn đáp dựa trên một Feature (gồm Source Code và Business Flow Context).
+        /// Sinh câu hỏi vấn đáp dựa trên một Business (gồm Source Code và Business Flow Context).
         /// Cung cấp một cái nhìn toàn diện (Unified) cho mô hình AI để ra câu hỏi chất lượng nhất.
         /// </summary>
         Task<IEnumerable<GeneratedQuestionDto>> GenerateUnifiedQuestionsAsync(
-            FeatureModel feature,
+            string businessName,
             string codeBuilder,
+            string contextBuilder,
             int numberOfQuestions,
             string difficulty,
             string? additionalContext = null,

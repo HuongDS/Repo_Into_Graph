@@ -128,15 +128,14 @@ namespace Repo_Into_Graph_Application.Services.AI
         
 
         public async Task<IEnumerable<GeneratedQuestionDto>> GenerateUnifiedQuestionsAsync(
-            FeatureModel feature,
+            string businessName,
             string codeBuilder,
+            string contextBuilder,
             int numberOfQuestions,
             string difficulty,
             string? additionalContext = null,
             IEnumerable<FewShotExample>? fewShotExamples = null)
         {
-            if (feature == null) throw new ArgumentNullException(nameof(feature));
-
             var systemInstruction = @"
             Bạn là một Technical Leader, Senior Business Analyst (BA) và Solution Architect chuyên nghiệp thiết kế riêng cho giảng viên đại học để chấm thi vấn đáp (viva/oral exam) các đồ án lập trình của sinh viên.
             Nhiệm vụ của bạn là phân tích MÃ NGUỒN CHI TIẾT (Source Code) kết hợp với LUỒNG NGHIỆP VỤ (Business Flow, Call Graph, Mermaid) được cung cấp để TRÍCH XUẤT LUỒNG NGHIỆP VỤ và tạo ra danh sách câu hỏi.
@@ -153,40 +152,18 @@ namespace Repo_Into_Graph_Application.Services.AI
             - Phải trả về mảng JSON theo đúng định dạng được yêu cầu.
             ";
 
-            // Build the ordered call chain as a readable list
-            var stepLines = new StringBuilder();
-            if (feature.Steps != null && feature.Steps.Count > 0)
-            {
-                foreach (var step in feature.Steps.OrderBy(s => s.StepOrder))
-                {
-                    stepLines.AppendLine($"  [{step.StepOrder}] {step.CallerClass}.{step.CallerMethod} --> {step.CalleeClass}.{step.CalleeMethod}");
-                }
-            }
-            else
-            {
-                stepLines.AppendLine("  (Không có dữ liệu bước gọi)");
-            }
-
             var prompt = new StringBuilder();
             prompt.AppendLine($"Số câu hỏi cần sinh: {numberOfQuestions}");
             prompt.AppendLine($"Mức độ khó: {difficulty}");
             prompt.AppendLine();
 
-            prompt.AppendLine("--- THÔNG TIN BUSINESS FLOW CONTEXT ---");
-            prompt.AppendLine($"Tên luồng: {feature.Name}");
-            prompt.AppendLine($"Entry Point (API entry): {feature.EntryPoint}");
+            prompt.AppendLine("--- THÔNG TIN CHUNG ---");
+            prompt.AppendLine($"Tên Business: {businessName}");
             prompt.AppendLine();
             
-            prompt.AppendLine("--- CHUỖI BƯỚC GỌI (Call chain theo thứ tự) ---");
-            prompt.Append(stepLines);
+            prompt.AppendLine("--- THÔNG TIN BUSINESS FLOW CONTEXT ---");
+            prompt.AppendLine(contextBuilder);
             prompt.AppendLine();
-
-            if (!string.IsNullOrWhiteSpace(feature.DataFlowMermaidGraph))
-            {
-                prompt.AppendLine("--- DATA FLOW MERMAID DIAGRAM ---");
-                prompt.AppendLine(feature.DataFlowMermaidGraph);
-                prompt.AppendLine();
-            }
 
             prompt.AppendLine("--- SOURCE CODE CHI TIẾT (CODEBASE) ---");
             prompt.AppendLine(codeBuilder);

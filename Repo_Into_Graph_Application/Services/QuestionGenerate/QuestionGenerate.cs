@@ -38,24 +38,17 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             if (request == null)
                 throw new BadRequestException("Yêu cầu không được để trống.");
 
-            // 1. Load Feature (Context luồng, Steps, Mermaid)
-            var featureModel = await _context.Features
-                .Include(f => f.Steps)
-                .FirstOrDefaultAsync(f => f.Id == request.FeatureId);
+            // 1. Load Business
+            var businessModel = await _context.Businesses
+                .FirstOrDefaultAsync(b => b.Id == request.BusinessId);
 
-            if (featureModel == null)
-                throw new NotFoundException("Feature", request.FeatureId);
+            if (businessModel == null)
+                throw new NotFoundException("Business", request.BusinessId);
 
-            // 2. Load các Business được map với Feature này
-            var featureBusinessMappings = await _context.FeatureBusinessMappings
-                .Where(m => m.FeatureId == request.FeatureId)
-                .Select(m => m.BusinessId)
-                .ToListAsync();
-
-            // 3. Load Source Code (MethodSource) từ các Business đó
+            // 2. Load các Source Code (MethodSource) được map với Business này
             var businessMethodMappings = await _context.BusinessMethodMappings
                 .Include(m => m.MethodSource)
-                .Where(m => featureBusinessMappings.Contains(m.BusinessId))
+                .Where(m => m.BusinessId == request.BusinessId)
                 .ToListAsync();
 
             var methodSources = businessMethodMappings
@@ -76,7 +69,52 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             }
             else
             {
-                codeBuilder.AppendLine("// Không tìm thấy Source Code nào được map cho Feature này.");
+                codeBuilder.AppendLine("// Không tìm thấy Source Code nào được map cho Business này.");
+            }
+
+            // 3. Load các Feature (Luồng nghiệp vụ) được map với Business này
+            var featureBusinessMappings = await _context.FeatureBusinessMappings
+                .Where(m => m.BusinessId == request.BusinessId)
+                .Select(m => m.FeatureId)
+                .ToListAsync();
+
+            var features = await _context.Features
+                .Include(f => f.Steps)
+                .Where(f => featureBusinessMappings.Contains(f.Id))
+                .ToListAsync();
+
+            var contextBuilder = new StringBuilder();
+            if (features.Any())
+            {
+                foreach (var feature in features)
+                {
+                    contextBuilder.AppendLine($"### Tên luồng: {feature.Name}");
+                    contextBuilder.AppendLine($"Entry Point: {feature.EntryPoint}");
+                    
+                    contextBuilder.AppendLine("Chuỗi bước gọi (Call chain):");
+                    if (feature.Steps != null && feature.Steps.Count > 0)
+                    {
+                        foreach (var step in feature.Steps.OrderBy(s => s.StepOrder))
+                        {
+                            contextBuilder.AppendLine($"  [{step.StepOrder}] {step.CallerClass}.{step.CallerMethod} --> {step.CalleeClass}.{step.CalleeMethod}");
+                        }
+                    }
+                    else
+                    {
+                        contextBuilder.AppendLine("  (Không có dữ liệu bước gọi)");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(feature.DataFlowMermaidGraph))
+                    {
+                        contextBuilder.AppendLine("Mermaid Diagram:");
+                        contextBuilder.AppendLine(feature.DataFlowMermaidGraph);
+                    }
+                    contextBuilder.AppendLine();
+                }
+            }
+            else
+            {
+                contextBuilder.AppendLine("Không có luồng nghiệp vụ (Feature) nào được map với Business này.");
             }
 
             // 4. Load few-shot examples
@@ -101,26 +139,29 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 
             // 5. Generate Questions
             var questions = await _aIService.GenerateUnifiedQuestionsAsync(
-                feature: featureModel,
+                businessName: businessModel.BusinessName,
                 codeBuilder: codeBuilder.ToString(),
+                contextBuilder: contextBuilder.ToString(),
                 numberOfQuestions: numberOfQuestions,
                 difficulty: request.Difficulty,
                 additionalContext: request.Description,
                 fewShotExamples: fewShotExamples);
 
             // 6. Evaluate Questions
+            string aggregatedMermaid = string.Join("\n\n", features.Where(f => !string.IsNullOrWhiteSpace(f.DataFlowMermaidGraph)).Select(f => f.DataFlowMermaidGraph));
+
             var evaluationResults = await _aIService.EvaluateQuestionsAsync(
-                dataFlowMermaidGraph: featureModel.DataFlowMermaidGraph ?? string.Empty,
+                dataFlowMermaidGraph: aggregatedMermaid,
                 codeBuilder: codeBuilder.ToString(),
                 generatedQuestions: questions);
 
             return new GenerateQuestionsResponse
             {
-                FeatureId   = featureModel.Id,
-                FeatureName = featureModel.Name,
-                EntryPoint  = featureModel.EntryPoint,
-                TotalSteps  = featureModel.Steps?.Count ?? 0,
-                FewShotUsed = fewShotExamples?.Count() ?? 0,
+                BusinessId   = businessModel.Id,
+                BusinessName = businessModel.BusinessName,
+                EntryPoint   = string.Join(", ", features.Select(f => f.EntryPoint)),
+                TotalSteps   = features.Sum(f => f.Steps?.Count ?? 0),
+                FewShotUsed  = fewShotExamples?.Count() ?? 0,
                 EvaluatedQuestions = evaluationResults
             };
         }

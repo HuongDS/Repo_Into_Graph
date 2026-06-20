@@ -9,8 +9,8 @@ namespace Repo_Into_Graph_Application.Dtos.QuestionGenerate
     /// </summary>
     public class GenerateQuestionsResponse
     {
-        public Guid FeatureId { get; set; }
-        public string FeatureName { get; set; } = string.Empty;
+        public Guid BusinessId { get; set; }
+        public string BusinessName { get; set; } = string.Empty;
         public string EntryPoint { get; set; } = string.Empty;
         public int TotalSteps { get; set; }
         public int FewShotUsed { get; set; }

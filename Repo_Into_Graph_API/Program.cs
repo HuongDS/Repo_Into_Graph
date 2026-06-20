@@ -50,10 +50,10 @@ builder.Services.AddScoped<IAnalysisRunRepository, AnalysisRunRepository>();
 builder.Services.AddScoped<ICallGraphEdgeRepository, CallGraphEdgeRepository>();
 builder.Services.AddScoped<IMethodSourceRepository, MethodSourceRepository>();
 builder.Services.AddScoped<IBusinessRepository, BusinessRepository>();
-builder.Services.AddScoped<IBusinessMethodMappingRepository, BusinessMethodMappingRepository>();
-builder.Services.AddScoped<IFewShotExampleRepository, FewShotExampleRepository>();
+builder.Services.AddScoped<IFeatureMethodMappingRepository, FeatureMethodMappingRepository>();
 builder.Services.AddScoped<IFeatureRepository, FeatureRepository>();
 builder.Services.AddScoped<IFeatureBusinessMappingRepository, FeatureBusinessMappingRepository>();
+builder.Services.AddScoped<IFewShotExampleRepository, FewShotExampleRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddScoped<ICodeQueryable, CodeQueryable>();

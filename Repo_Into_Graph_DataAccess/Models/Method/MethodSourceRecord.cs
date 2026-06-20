@@ -13,7 +13,7 @@ public class MethodSourceRecord
     public string SourceCode { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public AnalysisRun? AnalysisRun { get; set; }
-    public List<BusinessMethodMapping> BusinessMethodMappings { get; set; } = new();
+    public List<Repo_Into_Graph_DataAccess.Models.Feature.FeatureMethodMapping> FeatureMethodMappings { get; set; } = new();
 }
 
 

@@ -18,5 +18,6 @@ namespace Repo_Into_Graph_DataAccess.Models.Feature
         public AnalysisRun? AnalysisRun { get; set; }
         public List<FeatureStep> Steps { get; set; } = new();
         public List<FeatureBusinessMapping> FeatureBusinessMappings { get; set; } = new();
+        public List<FeatureMethodMapping> FeatureMethodMappings { get; set; } = new();
     }
 }

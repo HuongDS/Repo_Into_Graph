@@ -27,7 +27,7 @@ public class AnalysisDbContext : DbContext
 
     // Business (nhom chuc nang tu template)
     public DbSet<BusinessModel> Businesses { get; set; }
-    public DbSet<BusinessMethodMapping> BusinessMethodMappings { get; set; }
+    public DbSet<FeatureMethodMapping> FeatureMethodMappings { get; set; }
 
     // Feature (luong xu ly duoc phan tich tu call graph)
     public DbSet<FeatureModel> Features { get; set; }
@@ -108,18 +108,18 @@ public class AnalysisDbContext : DbContext
             entity.HasIndex(e => e.AnalysisRunId);
         });
 
-        modelBuilder.Entity<BusinessMethodMapping>(entity =>
+        modelBuilder.Entity<FeatureMethodMapping>(entity =>
         {
-            entity.ToTable("business_method_mappings");
+            entity.ToTable("feature_method_mappings");
             entity.HasKey(e => e.Id);
 
-            entity.HasOne(d => d.Business)
-                .WithMany(p => p.BusinessMethodMappings)
-                .HasForeignKey(d => d.BusinessId)
+            entity.HasOne(d => d.Feature)
+                .WithMany(p => p.FeatureMethodMappings)
+                .HasForeignKey(d => d.FeatureId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(d => d.MethodSource)
-                .WithMany(p => p.BusinessMethodMappings)
+                .WithMany(p => p.FeatureMethodMappings)
                 .HasForeignKey(d => d.MethodSourceId)
                 .OnDelete(DeleteBehavior.Cascade);
         });

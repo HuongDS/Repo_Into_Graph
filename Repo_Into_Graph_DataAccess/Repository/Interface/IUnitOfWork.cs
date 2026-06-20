@@ -11,7 +11,7 @@ namespace Repo_Into_Graph_DataAccess.Repository.Interface
 
         // Business (nhóm chức năng từ template)
         IBusinessRepository Businesses { get; }
-        IBusinessMethodMappingRepository BusinessMethodMappings { get; }
+        IFeatureMethodMappingRepository FeatureMethodMappings { get; }
 
         // Feature (luồng phân tích từ call graph)
         IFeatureRepository Features { get; }

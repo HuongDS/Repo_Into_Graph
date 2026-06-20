@@ -14,7 +14,7 @@ namespace Repo_Into_Graph_DataAccess.Repository.Impl
         private ICallGraphEdgeRepository? _callGraphEdges;
         private IMethodSourceRepository? _methodSources;
         private IBusinessRepository? _businesses;
-        private IBusinessMethodMappingRepository? _businessMethodMappings;
+        private IFeatureMethodMappingRepository? _featureMethodMappings;
         private IFeatureRepository? _features;
         private IFeatureBusinessMappingRepository? _featureBusinessMappings;
         private IFewShotExampleRepository? _fewShotExamples;
@@ -36,8 +36,8 @@ namespace Repo_Into_Graph_DataAccess.Repository.Impl
         public IBusinessRepository Businesses =>
             _businesses ??= new BusinessRepository(_context);
 
-        public IBusinessMethodMappingRepository BusinessMethodMappings =>
-            _businessMethodMappings ??= new BusinessMethodMappingRepository(_context);
+        public IFeatureMethodMappingRepository FeatureMethodMappings =>
+            _featureMethodMappings ??= new FeatureMethodMappingRepository(_context);
 
         public IFeatureRepository Features =>
             _features ??= new FeatureRepository(_context);

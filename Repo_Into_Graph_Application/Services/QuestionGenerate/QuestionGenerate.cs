@@ -45,13 +45,24 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             if (businessModel == null)
                 throw new NotFoundException("Business", request.BusinessId);
 
-            // 2. Load các Source Code (MethodSource) được map với Business này
-            var businessMethodMappings = await _context.BusinessMethodMappings
-                .Include(m => m.MethodSource)
+            // 2. Load các Feature (Luồng nghiệp vụ) được map với Business này
+            var featureBusinessMappings = await _context.FeatureBusinessMappings
                 .Where(m => m.BusinessId == request.BusinessId)
+                .Select(m => m.FeatureId)
                 .ToListAsync();
 
-            var methodSources = businessMethodMappings
+            var features = await _context.Features
+                .Include(f => f.Steps)
+                .Where(f => featureBusinessMappings.Contains(f.Id))
+                .ToListAsync();
+
+            // 3. Load Source Code (MethodSource) từ các Feature đó
+            var featureMethodMappings = await _context.FeatureMethodMappings
+                .Include(m => m.MethodSource)
+                .Where(m => featureBusinessMappings.Contains(m.FeatureId))
+                .ToListAsync();
+
+            var methodSources = featureMethodMappings
                 .Where(m => m.MethodSource != null)
                 .Select(m => m.MethodSource!)
                 .DistinctBy(m => m.Id)
@@ -72,17 +83,6 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 codeBuilder.AppendLine("// Không tìm thấy Source Code nào được map cho Business này.");
             }
 
-            // 3. Load các Feature (Luồng nghiệp vụ) được map với Business này
-            var featureBusinessMappings = await _context.FeatureBusinessMappings
-                .Where(m => m.BusinessId == request.BusinessId)
-                .Select(m => m.FeatureId)
-                .ToListAsync();
-
-            var features = await _context.Features
-                .Include(f => f.Steps)
-                .Where(f => featureBusinessMappings.Contains(f.Id))
-                .ToListAsync();
-
             var contextBuilder = new StringBuilder();
             if (features.Any())
             {
@@ -90,7 +90,7 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 {
                     contextBuilder.AppendLine($"### Tên luồng: {feature.Name}");
                     contextBuilder.AppendLine($"Entry Point: {feature.EntryPoint}");
-                    
+
                     contextBuilder.AppendLine("Chuỗi bước gọi (Call chain):");
                     if (feature.Steps != null && feature.Steps.Count > 0)
                     {
@@ -157,11 +157,11 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 
             return new GenerateQuestionsResponse
             {
-                BusinessId   = businessModel.Id,
+                BusinessId = businessModel.Id,
                 BusinessName = businessModel.BusinessName,
-                EntryPoint   = string.Join(", ", features.Select(f => f.EntryPoint)),
-                TotalSteps   = features.Sum(f => f.Steps?.Count ?? 0),
-                FewShotUsed  = fewShotExamples?.Count() ?? 0,
+                EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
+                TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
+                FewShotUsed = fewShotExamples?.Count() ?? 0,
                 EvaluatedQuestions = evaluationResults
             };
         }

@@ -13,6 +13,5 @@ public class Business
 
     public AnalysisRun? AnalysisRun { get; set; }
 
-    public List<BusinessMethodMapping> BusinessMethodMappings { get; set; } = new();
     public List<FeatureBusinessMapping> FeatureBusinessMappings { get; set; } = new();
 }

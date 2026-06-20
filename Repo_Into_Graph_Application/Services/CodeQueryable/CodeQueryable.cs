@@ -39,19 +39,30 @@ namespace Repo_Into_Graph_Application.Services.CodeQueryable
         public async Task<CodeFlowDto?> GetCodeFlowAsync(Guid businessId)
         {
             var business = await _context.Businesses
-                .Include(b => b.BusinessMethodMappings)
-                .ThenInclude(bmm => bmm.MethodSource)
                 .FirstOrDefaultAsync(b => b.Id == businessId);
 
             if (business == null) return null;
 
+            var featureBusinessMappings = await _context.FeatureBusinessMappings
+                .Where(m => m.BusinessId == businessId)
+                .Select(m => m.FeatureId)
+                .ToListAsync();
+
+            var featureMethodMappings = await _context.FeatureMethodMappings
+                .Include(m => m.MethodSource)
+                .Where(m => featureBusinessMappings.Contains(m.FeatureId))
+                .ToListAsync();
+
+            var methods = featureMethodMappings
+                .Where(m => m.MethodSource != null)
+                .Select(m => m.MethodSource!)
+                .DistinctBy(m => m.Id)
+                .ToList();
+
             return new CodeFlowDto
             {
                 Business = business.ToDto(),
-                Methods = business.BusinessMethodMappings
-                    .Where(bmm => bmm.MethodSource != null)
-                    .Select(bmm => bmm.MethodSource!.ToDto())
-                    .ToList()
+                Methods = methods.Select(m => m.ToDto()).ToList()
             };
         }
     }

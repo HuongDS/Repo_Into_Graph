@@ -1,7 +1,8 @@
-﻿using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_DataAccess.Database;
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_DataAccess.Models.Business;
+using Repo_Into_Graph_DataAccess.Models.Feature;
 using Repo_Into_Graph_DataAccess.Models.Method;
 using System.Text.Json;
 
@@ -63,14 +64,19 @@ public class GraphMapperService
             b => b.Id
         );
 
-        var mappingsToInsert = new List<BusinessMethodMapping>();
+        var mappingsToInsert = new List<FeatureMethodMapping>();
+        var featureBusinessMappingsToInsert = new List<FeatureBusinessMapping>();
+
+        var featuresInRam = await _context.Set<Feature>()
+            .Where(f => f.AnalysisRunId == analysisRunId)
+            .ToListAsync();
+            
+        var mappedFeatureIds = new HashSet<Guid>();
 
         foreach (var bizConfig in businessData)
         {
             string cleanBizName = bizConfig.business_name.Trim().ToLower();
             if (!businessLookup.TryGetValue(cleanBizName, out Guid currentBusinessId)) continue;
-
-            var visitedMethodIds = new HashSet<Guid>();
 
             foreach (var api in bizConfig.apis)
             {
@@ -82,32 +88,58 @@ public class GraphMapperService
 
                 string rootKey = $"{controllerName.ToLower()}.{methodName.ToLower()}";
 
-                if (methodIdLookup.Contains(rootKey))
+                // Map Business to Feature
+                var matchedFeature = featuresInRam.FirstOrDefault(f => f.EntryPoint.ToLower().EndsWith(rootKey));
+                if (matchedFeature != null)
                 {
-                    foreach (var id in methodIdLookup[rootKey])
-                        visitedMethodIds.Add(id);
+                    featureBusinessMappingsToInsert.Add(new FeatureBusinessMapping
+                    {
+                        Id = Guid.NewGuid(),
+                        BusinessId = currentBusinessId,
+                        FeatureId = matchedFeature.Id,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    // If we haven't mapped this feature's methods yet, trace and map them
+                    if (!mappedFeatureIds.Contains(matchedFeature.Id))
+                    {
+                        mappedFeatureIds.Add(matchedFeature.Id);
+                        var visitedMethodIds = new HashSet<Guid>();
+
+                        if (methodIdLookup.Contains(rootKey))
+                        {
+                            foreach (var id in methodIdLookup[rootKey])
+                                visitedMethodIds.Add(id);
+                        }
+
+                        FindAllMethodsInSubTree(rootKey, graphLookup, methodIdLookup, implementationLookup, visitedMethodIds);
+
+                        foreach (var methodSourceId in visitedMethodIds)
+                        {
+                            mappingsToInsert.Add(new FeatureMethodMapping
+                            {
+                                Id = Guid.NewGuid(),
+                                FeatureId = matchedFeature.Id,
+                                MethodSourceId = methodSourceId,
+                                MappedAt = DateTime.UtcNow
+                            });
+                        }
+                    }
                 }
-
-                FindAllMethodsInSubTree(rootKey, graphLookup, methodIdLookup, implementationLookup, visitedMethodIds);
             }
+        }
 
-            foreach (var methodSourceId in visitedMethodIds)
-            {
-                mappingsToInsert.Add(new BusinessMethodMapping
-                {
-                    Id = Guid.NewGuid(),
-                    BusinessId = currentBusinessId,
-                    MethodSourceId = methodSourceId,
-                    MappedAt = DateTime.UtcNow
-                });
-            }
+        if (featureBusinessMappingsToInsert.Any())
+        {
+            await _context.Set<FeatureBusinessMapping>().AddRangeAsync(featureBusinessMappingsToInsert);
         }
 
         if (mappingsToInsert.Any())
         {
-            await _context.Set<BusinessMethodMapping>().AddRangeAsync(mappingsToInsert);
-            await _context.SaveChangesAsync();
+            await _context.Set<FeatureMethodMapping>().AddRangeAsync(mappingsToInsert);
         }
+        
+        await _context.SaveChangesAsync();
     }
 
     private void FindAllMethodsInSubTree(

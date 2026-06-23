@@ -89,24 +89,24 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 foreach (var feature in features)
                 {
                     contextBuilder.AppendLine($"### Tên luồng: {feature.Name}");
-                    contextBuilder.AppendLine($"Entry Point: {feature.EntryPoint}");
+                    //contextBuilder.AppendLine($"Entry Point: {feature.EntryPoint}");
 
-                    contextBuilder.AppendLine("Chuỗi bước gọi (Call chain):");
-                    if (feature.Steps != null && feature.Steps.Count > 0)
-                    {
-                        foreach (var step in feature.Steps.OrderBy(s => s.StepOrder))
-                        {
-                            contextBuilder.AppendLine($"  [{step.StepOrder}] {step.CallerClass}.{step.CallerMethod} --> {step.CalleeClass}.{step.CalleeMethod}");
-                        }
-                    }
-                    else
-                    {
-                        contextBuilder.AppendLine("  (Không có dữ liệu bước gọi)");
-                    }
+                    //contextBuilder.AppendLine("Chuỗi bước gọi (Call chain):");
+                    //if (feature.Steps != null && feature.Steps.Count > 0)
+                    //{
+                    //    foreach (var step in feature.Steps.OrderBy(s => s.StepOrder))
+                    //    {
+                    //        contextBuilder.AppendLine($"  [{step.StepOrder}] {step.CallerClass}.{step.CallerMethod} --> {step.CalleeClass}.{step.CalleeMethod}");
+                    //    }
+                    //}
+                    //else
+                    //{
+                    //    contextBuilder.AppendLine("  (Không có dữ liệu bước gọi)");
+                    //}
 
                     if (!string.IsNullOrWhiteSpace(feature.DataFlowMermaidGraph))
                     {
-                        contextBuilder.AppendLine("Mermaid Diagram:");
+                        contextBuilder.AppendLine("Data Mermaid Diagram:");
                         contextBuilder.AppendLine(feature.DataFlowMermaidGraph);
                     }
                     contextBuilder.AppendLine();
@@ -148,12 +148,12 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 fewShotExamples: fewShotExamples);
 
             // 6. Evaluate Questions
-            string aggregatedMermaid = string.Join("\n\n", features.Where(f => !string.IsNullOrWhiteSpace(f.DataFlowMermaidGraph)).Select(f => f.DataFlowMermaidGraph));
+            //string aggregatedMermaid = string.Join("\n\n", features.Where(f => !string.IsNullOrWhiteSpace(f.DataFlowMermaidGraph)).Select(f => f.DataFlowMermaidGraph));
 
-            var evaluationResults = await _aIService.EvaluateQuestionsAsync(
-                dataFlowMermaidGraph: aggregatedMermaid,
-                codeBuilder: codeBuilder.ToString(),
-                generatedQuestions: questions);
+            //var evaluationResults = await _aIService.EvaluateQuestionsAsync(
+            //    dataFlowMermaidGraph: aggregatedMermaid,
+            //    codeBuilder: codeBuilder.ToString(),
+            //    generatedQuestions: questions);
 
             return new GenerateQuestionsResponse
             {
@@ -162,7 +162,8 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
                 TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
                 FewShotUsed = fewShotExamples?.Count() ?? 0,
-                EvaluatedQuestions = evaluationResults
+                //EvaluatedQuestions = evaluationResults
+                GeneratedQuestionDtos = questions
             };
         }
     }

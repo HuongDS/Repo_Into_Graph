@@ -1,10 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
+
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Google.GenAI;
 using Google.GenAI.Types;
@@ -12,6 +8,9 @@ using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
 using FeatureModel = Repo_Into_Graph_DataAccess.Models.Feature.Feature;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_Application.Dtos.QuestionEvalution;
+using Type = Google.GenAI.Types.Type;
+
+
 
 
 namespace Repo_Into_Graph_Application.Services.AI
@@ -38,15 +37,15 @@ namespace Repo_Into_Graph_Application.Services.AI
                 return new List<QuestionEvaluationResultDto>();
 
             var systemInstruction = """
-            Bạn là một Chuyên gia Kiểm định Chất lượng Phần mềm (Senior QA Engineer) và là Hội đồng Thẩm định AI phục vụ cho Đề tài Nghiên cứu Khoa học.
-            Nhiệm vụ của bạn là phân tích mã nguồn (Source Code) và biểu đồ luồng dữ liệu (Data Flow Mermaid) được cung cấp để làm CHÂN LÝ (Ground Truth).
-            Sau đó, hãy đánh giá chất lượng các cặp Câu hỏi (question) và Câu trả lời gợi ý (suggestedAnswer) được sinh ra tự động từ hệ thống xem có khớp với Chân lý hay không.
-            
-            Hãy duyệt qua từng câu hỏi trong danh sách và chấm điểm từ 1 đến 10 dựa trên 3 tiêu chí cốt lõi:
-            1. factual_correctness: Độ chính xác thực tế của câu trả lời so với Logic xử lý trong Source Code và luồng đi của Data Flow Mermaid.
-            2. relevance_completeness: Điểm độ liên quan, giải quyết trọn vẹn câu hỏi, không viết dài dòng lan man.
-            3. technical_clarity: Việc sử dụng chính xác các thuật ngữ công nghệ chuyên ngành (ví dụ: batch insert, validation rules, commit...).
-            """;
+    Bạn là một Chuyên gia Kiểm định Chất lượng Phần mềm (Senior QA Engineer) và là Hội đồng Thẩm định AI phục vụ cho Đề tài Nghiên cứu Khoa học.
+    Nhiệm vụ của bạn là phân tích mã nguồn (Source Code) và biểu đồ luồng dữ liệu (Data Flow Mermaid) được cung cấp để làm CHÂN LÝ (Ground Truth).
+    Sau đó, hãy đánh giá chất lượng các cặp Câu hỏi (question) và Câu trả lời gợi ý (suggestedAnswer) được sinh ra tự động từ hệ thống xem có khớp với Chân lý hay không.
+                
+    Hãy duyệt qua từng câu hỏi trong danh sách và chấm điểm từ 1 đến 10 dựa trên 3 tiêu chí cốt lõi:
+    1. factualCorrectness: Độ chính xác thực tế của câu trả lời so với Logic xử lý trong Source Code và luồng đi của Data Flow Mermaid.
+    2. relevanceCompleteness: Điểm độ liên quan, giải quyết trọn vẹn câu hỏi, không viết dài dòng lan man.
+    3. technicalClarity: Việc sử dụng chính xác các thuật ngữ công nghệ chuyên ngành (ví dụ: batch insert, validation rules, commit...).
+    """;
 
             string questionsJsonContext = JsonSerializer.Serialize(generatedQuestions, new JsonSerializerOptions { WriteIndented = true });
 
@@ -62,16 +61,61 @@ namespace Repo_Into_Graph_Application.Services.AI
             prompt.AppendLine("--- DANH SÁCH CẶP CÂU HỎI VÀ CÂU TRẢ LỜI CẦN CHẤM ĐIỂM ---");
             prompt.AppendLine(questionsJsonContext);
             prompt.AppendLine();
-            prompt.AppendLine("Hãy đánh giá toàn bộ các câu hỏi trên. Xuất ra kết quả là một JSON Array với cấu trúc chứa các thuộc tính: question, suggestedAnswer, scores (gồm factual_correctness, relevance_completeness, technical_clarity, average_total_score), và evaluation_details (gồm factual_correctness_reason, relevance_completeness_reason, technical_clarity_reason).");
 
+            // Chuẩn hóa lại Prompt theo CamelCase đồng bộ với DTO C#
+            prompt.AppendLine("Hãy đánh giá toàn bộ các câu hỏi trên. Xuất ra kết quả BẮT BUỘC là một JSON Array chứa các thuộc tính: question, suggestedAnswer, scores (gồm factualCorrectness, relevanceCompleteness, technicalClarity, averageTotalScore), và evaluationDetails (gồm factualCorrectnessReason, relevanceCompletenessReason, technicalClarityReason). KHÔNG bọc ngoài bằng bất kỳ key nào khác.");
+
+            // Cấu hình Config nâng cấp cho Gemini Pro kèm ResponseSchema
             var config = new GenerateContentConfig
             {
                 SystemInstruction = new Content
                 {
                     Parts = [new Part { Text = systemInstruction }]
                 },
-                Temperature = 0.15f,
-                ResponseMimeType = "application/json"
+                Temperature = 0.2f, // Hạ xuống 0.2 để kết quả chấm điểm mang tính nhất quán và kỷ luật hơn
+                ResponseMimeType = "application/json",
+                ResponseSchema = new Schema
+                {
+                    Type = Type.Array,
+                    Items = new Schema
+                    {
+                        Type = Type.Object,
+                        Properties = new Dictionary<string, Schema>
+                {
+                    { "question", new Schema { Type = Type.String } },
+                    { "suggestedAnswer", new Schema { Type = Type.String, Nullable = true } },
+                    {
+                        "scores", new Schema
+                        {
+                            Type = Type.Object,
+                            Properties = new Dictionary<string, Schema>
+                            {
+                                { "factualCorrectness", new Schema { Type = Type.Integer } },
+                                { "relevanceCompleteness", new Schema { Type = Type.Integer } },
+                                { "technicalClarity", new Schema { Type = Type.Integer } },
+                                { "averageTotalScore", new Schema { Type = Type.Number } }
+                            },
+                            Required = ["factualCorrectness", "relevanceCompleteness", "technicalClarity", "averageTotalScore"]
+                        }
+                    },
+                    {
+                        "evaluationDetails", new Schema
+                        {
+                            Type = Type.Object,
+                            Nullable = true,
+                            Properties = new Dictionary<string, Schema>
+                            {
+                                { "factualCorrectnessReason", new Schema { Type = Type.String } },
+                                { "relevanceCompletenessReason", new Schema { Type = Type.String } },
+                                { "technicalClarityReason", new Schema { Type = Type.String } }
+                            },
+                            Required = ["factualCorrectnessReason", "relevanceCompletenessReason", "technicalClarityReason"]
+                        }
+                    }
+                },
+                        Required = ["question", "scores"]
+                    }
+                }
             };
 
             int maxRetries = 3;
@@ -83,7 +127,7 @@ namespace Repo_Into_Graph_Application.Services.AI
                 try
                 {
                     response = await _client.Models.GenerateContentAsync(
-                        model: "gemini-3.1-flash-lite",
+                        model: "gemini-3.1-pro",
                         contents: prompt.ToString(),
                         config: config
                     );
@@ -110,8 +154,6 @@ namespace Repo_Into_Graph_Application.Services.AI
 
             string aiJsonText = response.Text.Trim();
 
-            aiJsonText = aiJsonText.Replace("```json", "").Replace("```", "").Trim();
-
             try
             {
                 var evaluationResults = JsonSerializer.Deserialize<List<QuestionEvaluationResultDto>>(aiJsonText, new JsonSerializerOptions
@@ -125,7 +167,6 @@ namespace Repo_Into_Graph_Application.Services.AI
                 throw new Exception($"AI Judge trả về cấu trúc JSON không khớp với DTO đánh giá. Nội dung: {aiJsonText}. Chi tiết lỗi: {ex.Message}", ex);
             }
         }
-        
 
         public async Task<IEnumerable<GeneratedQuestionDto>> GenerateUnifiedQuestionsAsync(
             string businessName,
@@ -136,32 +177,45 @@ namespace Repo_Into_Graph_Application.Services.AI
             string? additionalContext = null,
             IEnumerable<FewShotExample>? fewShotExamples = null)
         {
-            var systemInstruction = @"
-            Bạn là một Technical Leader, Senior Business Analyst (BA) và Solution Architect chuyên nghiệp thiết kế riêng cho giảng viên đại học để chấm thi vấn đáp (viva/oral exam) các đồ án lập trình của sinh viên.
-            Nhiệm vụ của bạn là phân tích MÃ NGUỒN CHI TIẾT (Source Code) kết hợp với LUỒNG NGHIỆP VỤ (Business Flow, Call Graph, Mermaid) được cung cấp để TRÍCH XUẤT LUỒNG NGHIỆP VỤ và tạo ra danh sách câu hỏi.
-            Các câu hỏi phải kiểm tra được độ hiểu sâu của sinh viên về cả logic code và luồng nghiệp vụ.
+            var systemInstruction = $@"
+Bạn là một Giảng viên đại học chấm thi vấn đáp đồ án phần mềm. Nhiệm vụ của bạn là dựa vào Mã nguồn (Source Code) và Sơ đồ luồng (Mermaid Graph) để tìm ra các Quy tắc nghiệp vụ (Business Rules), sau đó đặt câu hỏi kiểm tra xem sinh viên có hiểu ""Hệ thống này vận hành trên thực tế như thế nào"" hay không.
 
-            HƯỚNG DẪN TẠO CÂU HỎI:
-            1. Hỏi về Luồng xử lý chức năng (Functional Flow): Các bước đi của dữ liệu từ khi tiếp nhận yêu cầu đến khi trả kết quả.
-            2. Hỏi về Quy tắc nghiệp vụ (Business Rules): Các điều kiện logic ràng buộc có trong source code.
-            3. Hỏi sâu về Kỹ thuật (Technical Detail): Mối quan hệ giữa các class/method trong Call Graph và tại sao lại thiết kế như vậy.
+YÊU CẦU BẮT BUỘC VỀ SỐ LƯỢNG VÀ ĐỘ KHÓ:
+- Bạn PHẢI tạo ra chính xác ĐÚNG {numberOfQuestions} câu hỏi. Không được tạo nhiều hơn hoặc ít hơn.
+- Tất cả các câu hỏi phải được thiết kế ở mức độ: {difficulty}. 
+  (Với mức độ ""Khó"", câu hỏi phải xoay quanh các lỗ hổng logic, kịch bản lỗi, hoặc bài toán đồng bộ dữ liệu giữa các phân hệ).
 
-            QUY TẮC CẤM (CRITICAL CONSTRAINTS):
-            - KHÔNG giải thích lặp lại cú pháp C# đơn thuần mà không gắn với nghiệp vụ.
-            - Trả về kết quả ngắn gọn, súc tích, tập trung vào giá trị cốt lõi.
-            - Phải trả về mảng JSON theo đúng định dạng được yêu cầu.
-            ";
+QUY TẮC ĐẶT CÂU HỎI VÀ TRẢ LỜI (THIẾT QUÂN LUẬT - NGHIÊM CẤM TỪ KHÓA KỸ THUẬT):
+1. NGÔN NGỮ THUỒN NGHIỆP VỤ (100% Business Language): Cả câu hỏi (question) và câu trả lời (suggestedAnswer) KHÔNG ĐƯỢC CHỨA bất kỳ từ khóa kỹ thuật, tên framework, hay cấu trúc code nào.
+   - CẤM DÙNG: Controller, Service, Repository, API, DTO, Entity, Database, DB, SQL, SaveChanges, Publish, Endpoint, Hub, RabbitMQ, MassTransit, Map/Mapper, Exception, Guid, Id, [Authorize], Identity, User, Filter, Include, Join...
+   - PHẢI DÙNG: Người bán, người mua, bài đấu giá, tài sản, mức giá, gian lận, lỗi hệ thống, mất dữ liệu, quyền hạn, thông báo cho phân hệ khác, đồng bộ thông tin...
+
+2. ĐẶT CÂU HỎI THEO DẠNG TÌNH HUỐNG THỰC TẾ (Scenario-based):
+   - Thay vì hỏi về code xử lý lỗi, hãy hỏi: ""Nếu hệ thống đang lưu thông tin bài đấu giá mới mà bị sập nguồn hoặc mất kết nối giữa chừng, điều gì xảy ra? Khách hàng có bị ảnh hưởng không?""
+   - Thay vì hỏi về quyền trong code, hãy hỏi: ""Cơ chế nào ngăn một người dùng bình thường tự ý vào sửa đổi hoặc xóa bài đấu giá của người khác trên sàn?""
+   - Thay vì hỏi về hàm lọc, hãy hỏi: ""Khi người mua tìm kiếm tài sản đấu giá, hệ thống đang ưu tiên hiển thị và lọc các sản phẩm theo những quy tắc cụ thể nào?""
+
+3. CẤU TRÚC CÂU TRẢ LỜI GỢI Ý (SUGGESTED ANSWER):
+   - Phải giải thích hoàn toàn bằng ngôn ngữ nghiệp vụ thực tế (Hệ thống xử lý logic gì, chặn ở bước nào, dữ liệu được đồng bộ đi đâu). 
+   - Tuyệt đối không đưa tên hàm hay tên file vào câu trả lời. Giảng viên chấm thi chỉ cần nghe sinh viên giải thích được bản chất logic nghiệp vụ là đủ.
+
+ĐỊNH DẠNG ĐẦU RA BẮT BUỘC:
+- Trả về một mảng JSON chứa các đối tượng có cấu trúc chính xác như sau:
+{{
+  ""question"": ""Câu hỏi nghiệp vụ ở đây"",
+  ""suggestedAnswer"": ""Câu trả lời bám sát logic nghiệp vụ ở đây"",
+  ""difficulty"": ""{difficulty}""
+}}
+";
 
             var prompt = new StringBuilder();
-            prompt.AppendLine($"Số câu hỏi cần sinh: {numberOfQuestions}");
-            prompt.AppendLine($"Mức độ khó: {difficulty}");
-            prompt.AppendLine();
+           
 
             prompt.AppendLine("--- THÔNG TIN CHUNG ---");
             prompt.AppendLine($"Tên Business: {businessName}");
             prompt.AppendLine();
             
-            prompt.AppendLine("--- THÔNG TIN BUSINESS FLOW CONTEXT ---");
+            prompt.AppendLine("--- THÔNG TIN DATA FLOW GRAPH ---");
             prompt.AppendLine(contextBuilder);
             prompt.AppendLine();
 
@@ -195,8 +249,8 @@ namespace Repo_Into_Graph_Application.Services.AI
                     prompt.AppendLine();
                 }
             }
+            prompt.AppendLine($"Hãy trả về chính xác ĐÚNG {numberOfQuestions} câu hỏi mức độ {difficulty} theo cấu trúc object gồm các key: question, suggestedAnswer, difficulty.");
 
-            prompt.AppendLine("Hãy trả về một danh sách các câu hỏi theo cấu trúc object gồm các key: question, suggestedAnswer, difficulty.");
 
             var config = new GenerateContentConfig
             {

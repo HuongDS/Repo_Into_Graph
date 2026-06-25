@@ -13,7 +13,7 @@ using Repo_Into_Graph_Application.Exceptions;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_Application.Services.AI;
-using Repo_Into_Graph_Application.Dtos.QuestionEvalution;
+using Repo_Into_Graph_Application.Services.Caculation;
 
 namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 {
@@ -21,17 +21,16 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
     {
         private readonly AnalysisDbContext _context;
         private readonly IAIService _aIService;
+        private readonly ICaculationService _caculationService;
 
-        public QuestionGenerate(AnalysisDbContext context, IAIService aIService)
+        public QuestionGenerate(AnalysisDbContext context, IAIService aIService, ICaculationService caculationService)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _aIService = aIService;
+            _caculationService = caculationService;
         }
 
-        public async Task<IEnumerable<QuestionEvaluationResultDto>> EvaluateQuestionsAsync(string dataFlowMermaidGraph, string codeBuilder, IEnumerable<GeneratedQuestionDto> generatedQuestions)
-        {
-            return await _aIService.EvaluateQuestionsAsync(dataFlowMermaidGraph, codeBuilder, generatedQuestions);
-        }
+        
 
         public async Task<GenerateQuestionsResponse> GenerateQuestionsAsync(GenerateQuestionsRequest request)
         {
@@ -145,15 +144,10 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 numberOfQuestions: numberOfQuestions,
                 difficulty: request.Difficulty,
                 additionalContext: request.Description,
+         
                 fewShotExamples: fewShotExamples);
 
-            // 6. Evaluate Questions
-            //string aggregatedMermaid = string.Join("\n\n", features.Where(f => !string.IsNullOrWhiteSpace(f.DataFlowMermaidGraph)).Select(f => f.DataFlowMermaidGraph));
-
-            //var evaluationResults = await _aIService.EvaluateQuestionsAsync(
-            //    dataFlowMermaidGraph: aggregatedMermaid,
-            //    codeBuilder: codeBuilder.ToString(),
-            //    generatedQuestions: questions);
+            var codeCoverage = await _caculationService.CalculateCodeCoverage(questions,request.BusinessId);
 
             return new GenerateQuestionsResponse
             {
@@ -162,8 +156,9 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
                 TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
                 FewShotUsed = fewShotExamples?.Count() ?? 0,
-                //EvaluatedQuestions = evaluationResults
-                GeneratedQuestionDtos = questions
+                GeneratedQuestionDtos= questions,
+                CodeCoverage = codeCoverage,
+
             };
         }
     }

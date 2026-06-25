@@ -1,4 +1,3 @@
-using Repo_Into_Graph_Application.Dtos.QuestionEvalution;
 using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
 using FeatureModel = Repo_Into_Graph_DataAccess.Models.Feature.Feature;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
@@ -18,12 +17,10 @@ namespace Repo_Into_Graph_Application.Services.AI
             int numberOfQuestions,
             string difficulty,
             string? additionalContext = null,
+            
             IEnumerable<FewShotExample>? fewShotExamples = null);
 
-        Task<IEnumerable<QuestionEvaluationResultDto>> EvaluateQuestionsAsync(
-            string dataFlowMermaidGraph,
-            string codeBuilder, 
-            IEnumerable<GeneratedQuestionDto> generatedQuestions);
+      
 
 
 

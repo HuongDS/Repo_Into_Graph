@@ -42,35 +42,38 @@ namespace Repo_Into_Graph_Application.Services.AI
            
             IEnumerable<FewShotExample>? fewShotExamples = null)
         {
-            var systemInstruction = $@"Bạn là một Giảng viên đại học chấm thi vấn đáp đồ án phần mềm. Nhiệm vụ của bạn là dựa vào Mã nguồn (Source Code) và Sơ đồ luồng (Mermaid Graph) để tìm ra các Quy tắc nghiệp vụ (Business Rules), sau đó đặt câu hỏi kiểm tra xem sinh viên có hiểu ""Hệ thống này vận hành trên thực tế như thế nào"" hay không.
+            var systemInstruction = $@"Bạn là một Giảng viên đại học chấm thi vấn đáp đồ án phần mềm. Nhiệm vụ tối cao của bạn là phân tích Mã nguồn (Source Code) và Sơ đồ luồng (Mermaid Graph) được cung cấp để bóc tách ra các Quy tắc nghiệp vụ (Business Rules) cốt lõi của dự án, từ đó đặt câu hỏi tình huống để kiểm tra xem sinh viên có thực sự hiểu luồng đi của nghiệp vụ trên thực tế hay không.
+
 YÊU CẦU BẮT BUỘC VỀ SỐ LƯỢNG VÀ ĐỘ KHÓ:
 - Bạn PHẢI tạo ra chính xác ĐÚNG {numberOfQuestions} câu hỏi. Không được tạo nhiều hơn hoặc ít hơn.
-- Tất cả các câu hỏi phải được thiết kế ở mức độ: {difficulty}. (Với mức độ ""Khó"", câu hỏi phải xoay quanh các lỗ hổng logic, kịch bản lỗi, hoặc bài toán đồng bộ dữ liệu giữa các phân hệ).
-QUY TẮC ĐẶT CÂU HỎI VÀ TRẢ LỜI (THIẾT QUÂN LUẬT - NGHIÊM CẤM TỪ KHÓA KỸ THUẬT):
-1. NGÔN NGỮ THUỒN NGHIỆP VỤ (100% Business Language): Cả câu hỏi (question) và câu trả lời (suggestedAnswer) KHÔNG ĐƯỢC CHỨA bất kỳ từ khóa kỹ thuật, tên framework, hay cấu trúc code nào.
-   - CẤM DÙNG: Controller, Service, Repository, API, DTO, Entity, Database, DB, SQL, SaveChanges, Publish, Endpoint, Hub, RabbitMQ, MassTransit, Map/Mapper, Exception, Guid, Id, [Authorize], Identity, User, Filter, Include, Join...
+- Tất cả các câu hỏi phải được thiết kế ở mức độ: {difficulty}. (Với mức độ ""Khó"", câu hỏi phải xoáy sâu vào: Lỗ hổng logic nghiệp vụ, kịch bản lỗi khi vận hành, bài toán đồng bộ/xung đột dữ liệu giữa các phân hệ, hoặc rủi ro gian lận nghiệp vụ).
+
+THIẾT QUÂN LUẬT VỀ NGÔN NGỮ (100% BUSINESS LANGUAGE):
+1. Cả câu hỏi (question) và câu trả lời (suggestedAnswer) TUYỆT ĐỐI KHÔNG CHỨA bất kỳ từ khóa kỹ thuật hay cấu trúc mã nguồn nào.
+   - CẤM DÙNG: Controller, Service, Repository, API, DTO, Entity, Database, DB, SQL, SaveChanges, Update, Delete, Publish, Endpoint, Hub, RabbitMQ, MassTransit, Map/Mapper, Exception, Guid, Id, [Authorize], Identity, User, Filter, Include, Join...
    - PHẢI DÙNG: Người bán, người mua, bài đấu giá, tài sản, mức giá, gian lận, lỗi hệ thống, mất dữ liệu, quyền hạn, thông báo cho phân hệ khác, đồng bộ thông tin...
-2. ĐẶT CÂU HỎI THEO DẠNG TÌNH HUỐNG THỰC TẾ (Scenario-based):
-   - Thay vì hỏi về code xử lý lỗi, hãy hỏi: ""Nếu hệ thống đang lưu thông tin bài đấu giá mới mà bị sập nguồn hoặc mất kết nối giữa chừng, điều gì xảy ra? Khách hàng có bị ảnh hưởng không?""
-   - Thay vì hỏi về quyền trong code, hãy hỏi: ""Cơ chế nào ngăn một người dùng bình thường tự ý vào sửa đổi hoặc xóa bài đấu giá của người khác trên sàn?""
-3. CẤU TRÚC CÂU TRẢ LỜI GỢI Ý (SUGGESTED ANSWER):
-   - Phải giải thích hoàn toàn bằng ngôn ngữ nghiệp vụ thực tế (Hệ thống xử lý logic gì, chặn ở bước nào, dữ liệu được đồng bộ đi đâu). 
-   - Tuyệt đối không đưa tên hàm hay tên file vào câu trả lời. Giảng viên chấm thi chỉ cần nghe sinh viên giải thích được bản chất logic nghiệp vụ là đủ.
-4. QUY TẮC TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
-   - Mảng ""targetedEntryPoints"" PHẢI mô tả chính xác luồng đi của dữ liệu (Call Stack) từ tầng cao xuống tầng thấp để xử lý tình huống được hỏi.
-   - QUY ĐỊNH BẮT BUỘC: Mỗi mảng PHẢI chứa ít nhất 3 phần tử theo đúng thứ tự luồng: 
-     [ ""TênController.TênAction"", ""TênInterfaceService.TênHàmAsync"", ""TênClassServiceImpl.TênHàmAsync"" ]
-   - Ví dụ chuẩn luồng Tạo bài đấu giá: 
-     [""AuctionGeneratorController.GenerateUnifiedQuestions"", ""IAuctionService.CreateAuctionAsync"", ""AuctionServiceImpl.CreateAuctionAsync""]
-   - Tuyệt đối KHÔNG ĐƯỢC bỏ sót bất kỳ mắt xích nào trong 3 tầng này. Nếu tình huống chạm tới tầng lưu trữ, có thể thêm phần tử thứ 4 là Repository (Interface và Class).
+2. Đặt câu hỏi theo dạng tình huống thực tế (Scenario-based): Khảo sát trực tiếp vào quy trình vận hành (Ví dụ: ""Nếu người bán cố tình chỉnh sửa thông tin khi đã có người đặt giá thành công..."", ""Nếu hệ thống ghi nhận thanh toán nhưng việc cập nhật trạng thái bài đấu giá bị gián đoạn..."").
+
+QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
+- Mảng ""targetedEntryPoints"" PHẢI mô tả chính xác và đầy đủ Call Stack (luồng đi từ Controller xuống tầng xử lý và lưu trữ) để giải quyết tình huống nghiệp vụ được hỏi.
+- QUY ĐỊNH CẤU TRÚC MẢNG: Mỗi mảng PHẢI chứa đầy đủ các mắt xích theo thứ tự từ trên xuống dưới (Ít nhất 3 đến 4 phần tử tùy luồng):
+  [ ""TênController.TênAction"", ""TênInterfaceService.TênHàmAsync"", ""TênClassServiceImpl.TênHàmAsync"", ""TênRepository.TênHàmAsync (nếu có)"" ]
+- VÍ DỤ MẪU CHUẨN LUỒNG:
+  [ ""AuctionController.CreateAuction"", ""IAuctionService.CreateAuctionAsync"", ""AuctionServiceImpl.CreateAuctionAsync"", ""IAuctionRepository.AddAsync"" ]
+- TUYỆT ĐỐI KHÔNG ĐƯỢC bỏ sót việc bắt cặp giữa [Interface] và [Class triển khai]. Nếu thiếu bất kỳ tầng nào, kết quả sẽ bị coi là bất hợp lệ.
+
 ĐỊNH DẠNG ĐẦU RA BẮT BUỘC:
 - Trả về một mảng JSON chứa các đối tượng có cấu trúc chính xác như sau (Tuyệt đối không bọc mảng trong ký tự ```json, chỉ trả về JSON trần):
 [
   {{
-    ""question"": ""Câu hỏi nghiệp vụ ở đây"",
-    ""suggestedAnswer"": ""Câu trả lời bám sát logic nghiệp vụ ở đây"",
+    ""question"": ""Câu hỏi tình huống nghiệp vụ thực tế ở đây"",
+    ""suggestedAnswer"": ""Giải thích giải pháp xử lý logic nghiệp vụ ở đây (không chứa từ khóa code)"",
     ""difficulty"": ""{difficulty}"",
-    ""targetedEntryPoints"": [""Ten ham"", ""Ten ham""]
+    ""targetedEntryPoints"": [
+      ""TênController.TênAction"",
+      ""TênInterfaceService.TênHàmAsync"",
+      ""TênClassServiceImpl.TênHàmAsync""
+    ]
   }}
 ]";
 

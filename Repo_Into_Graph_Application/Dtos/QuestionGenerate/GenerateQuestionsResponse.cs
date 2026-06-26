@@ -14,7 +14,11 @@ namespace Repo_Into_Graph_Application.Dtos.QuestionGenerate
         public string EntryPoint { get; set; } = string.Empty;
         public int TotalSteps { get; set; }
         public int FewShotUsed { get; set; }
-        public IEnumerable<Repo_Into_Graph_Application.Dtos.QuestionEvalution.QuestionEvaluationResultDto> EvaluatedQuestions { get; set; } = new List<Repo_Into_Graph_Application.Dtos.QuestionEvalution.QuestionEvaluationResultDto>();
+
+        //public QuestionEvaluationResultDto questionEvaluationResultDto { get; set; }
+        public IEnumerable<GeneratedQuestionDto> GeneratedQuestionDtos { get; set; }
+        public double CodeCoverage { get; set; }
+        // public IEnumerable<Repo_Into_Graph_Application.Dtos.QuestionEvalution.QuestionEvaluationResultDto> EvaluatedQuestions { get; set; } = new List<Repo_Into_Graph_Application.Dtos.QuestionEvalution.QuestionEvaluationResultDto>();
     }
 }
 

@@ -15,6 +15,7 @@ using Repo_Into_Graph_Application.Services.Mapper;
 using Repo_Into_Graph_Application.Services.QuestionGenerate;
 using Repo_Into_Graph_API.Exceptions;
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_Application.Services.Caculation;
 
 if (File.Exists(".env"))
 {
@@ -68,6 +69,7 @@ builder.Services.AddScoped<IQuestionGenerate, QuestionGenerate>();
 builder.Services.AddScoped<IAIService, AIService>();
 builder.Services.AddScoped<DataFlowParseService>();
 builder.Services.AddScoped<BusinessCallDataFlowGenerator>();
+builder.Services.AddScoped<ICaculationService, CaculationService>();
 
 // Add support for controllers
 builder.Services.AddControllers();

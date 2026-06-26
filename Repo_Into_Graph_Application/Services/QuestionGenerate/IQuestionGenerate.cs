@@ -7,7 +7,7 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
     public interface IQuestionGenerate
     {
         Task<GenerateQuestionsResponse> GenerateQuestionsAsync(GenerateQuestionsRequest request);
-
+        Task<GenerateQuestionsResponse> GenerateQuestionsFullAsync(GenerateQuestionFullRequest request);
     }
 }
 

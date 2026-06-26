@@ -76,8 +76,12 @@ namespace Repo_Into_Graph_Application.Services.GitService
             string cloneUrl = NormalizeGitUrl(gitUrl);
 
             string tempDirName = $"temp_cloned_{Guid.NewGuid()}";
-            string targetPath = Path.Combine(Directory.GetCurrentDirectory(), "temp_repos", tempDirName);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+
+     
+            string baseTempPath = Path.Combine(Path.GetTempPath(), "Repo_Into_Graph_API", "temp_repos");
+
+            string targetPath = Path.Combine(baseTempPath, tempDirName);
+            Directory.CreateDirectory(targetPath);
 
             try
             {

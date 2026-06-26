@@ -132,7 +132,7 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
             };
 
             int maxRetries = 5;
-            int delaySeconds = 5;
+            int delaySeconds = 3;
             GenerateContentResponse? response = null;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)

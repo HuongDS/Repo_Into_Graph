@@ -1,4 +1,14 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
+using Repo_Into_Graph_Application.Exceptions;
+using Repo_Into_Graph_Application.Services.AI;
+using Repo_Into_Graph_Application.Services.Analysis;
+using Repo_Into_Graph_Application.Services.Caculation;
+using Repo_Into_Graph_Application.Services.GitService;
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_DataAccess.Models;
+using Repo_Into_Graph_DataAccess.Models.FewShot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,14 +16,6 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
-using Repo_Into_Graph_Application.Exceptions;
-using Repo_Into_Graph_DataAccess.Models.FewShot;
-using Repo_Into_Graph_DataAccess.Models;
-using Repo_Into_Graph_Application.Services.AI;
-using Repo_Into_Graph_Application.Services.Caculation;
 
 namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 {
@@ -22,12 +24,15 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
         private readonly AnalysisDbContext _context;
         private readonly IAIService _aIService;
         private readonly ICaculationService _caculationService;
+        private readonly IGitService _gitService;
 
-        public QuestionGenerate(AnalysisDbContext context, IAIService aIService, ICaculationService caculationService)
+
+        public QuestionGenerate(AnalysisDbContext context, IAIService aIService, ICaculationService caculationService, IGitService gitService)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _aIService = aIService;
             _caculationService = caculationService;
+            _gitService = gitService;
         }
 
         
@@ -160,6 +165,46 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 CodeCoverage = codeCoverage,
 
             };
+        }
+
+        public async Task<GenerateQuestionsResponse> GenerateQuestionsFullAsync(GenerateQuestionFullRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Repo_path))
+                throw new BadRequestException("Đường dẫn repository hoặc URL git không được để trống.");
+
+            string trimmedRepoPath = request.Repo_path.Trim('"', ' ');
+            bool isGitUrl = _gitService.IsGitUrl(trimmedRepoPath);
+            string targetPath = trimmedRepoPath;
+            if (isGitUrl)
+            {
+                targetPath = await _gitService.CloneRepositoryAsync(trimmedRepoPath);
+               // isTempDirectory = true;
+            }
+            var analyzer = new CodeAnalyzer(targetPath);
+            var result = await analyzer.AnalyzeAsync();
+
+            var questions = await _aIService.GenerateUnifiedQuestionsAsync(
+               businessName: request.BusinessName,
+               codeBuilder: result.MethodSources.ToString(),
+               contextBuilder: "",
+               numberOfQuestions:request.NumberOfQuestions,
+               difficulty: request.Difficulty,
+               additionalContext: "",
+
+               fewShotExamples: new List<FewShotExample>() );
+
+
+            return new GenerateQuestionsResponse
+            {
+                
+                BusinessName = request.BusinessName,  
+                GeneratedQuestionDtos = questions,
+         
+            };
+
+
+
+
         }
     }
 }

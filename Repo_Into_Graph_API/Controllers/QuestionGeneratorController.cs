@@ -27,6 +27,16 @@ namespace Repo_Into_Graph_API.Controllers
             var result = await _questionGenerate.GenerateQuestionsAsync(request);
             return Ok(result);
         }
+
+        [HttpPost("generate/full")]
+        public async Task<IActionResult> GenerateQuestionsFull([FromBody] GenerateQuestionFullRequest request)
+        {
+            if (request.NumberOfQuestions <= 0)
+                throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
+
+            var result = await _questionGenerate.GenerateQuestionsFullAsync(request);
+            return Ok(result);
+        }
     }
 }
 

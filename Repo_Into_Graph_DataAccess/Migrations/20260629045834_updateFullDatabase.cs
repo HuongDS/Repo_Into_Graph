@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Repo_Into_Graph_DataAccess.Migrations
 {
     /// <inheritdoc />
-    public partial class RenameDomainConceptsToBusinessAndFeature : Migration
+    public partial class updateFullDatabase : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -39,7 +39,7 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     Question = table.Column<string>(type: "text", nullable: false),
                     SuggestedAnswer = table.Column<string>(type: "text", nullable: false),
-                    Difficulty = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    Difficulty = table.Column<int>(type: "integer", maxLength: 20, nullable: false),
                     Tag = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
                     Description = table.Column<string>(type: "text", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
@@ -189,40 +189,30 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "business_method_mappings",
+                name: "feature_method_mappings",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    BusinessId = table.Column<Guid>(type: "uuid", nullable: false),
+                    FeatureId = table.Column<Guid>(type: "uuid", nullable: false),
                     MethodSourceId = table.Column<Guid>(type: "uuid", nullable: false),
                     MappedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_business_method_mappings", x => x.Id);
+                    table.PrimaryKey("PK_feature_method_mappings", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_business_method_mappings_businesses_BusinessId",
-                        column: x => x.BusinessId,
-                        principalTable: "businesses",
+                        name: "FK_feature_method_mappings_features_FeatureId",
+                        column: x => x.FeatureId,
+                        principalTable: "features",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_business_method_mappings_method_sources_MethodSourceId",
+                        name: "FK_feature_method_mappings_method_sources_MethodSourceId",
                         column: x => x.MethodSourceId,
                         principalTable: "method_sources",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_business_method_mappings_BusinessId",
-                table: "business_method_mappings",
-                column: "BusinessId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_business_method_mappings_MethodSourceId",
-                table: "business_method_mappings",
-                column: "MethodSourceId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_businesses_AnalysisRunId",
@@ -243,6 +233,16 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                 name: "IX_feature_business_mappings_FeatureId",
                 table: "feature_business_mappings",
                 column: "FeatureId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_feature_method_mappings_FeatureId",
+                table: "feature_method_mappings",
+                column: "FeatureId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_feature_method_mappings_MethodSourceId",
+                table: "feature_method_mappings",
+                column: "MethodSourceId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_feature_steps_FeatureId",
@@ -269,13 +269,13 @@ namespace Repo_Into_Graph_DataAccess.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "business_method_mappings");
-
-            migrationBuilder.DropTable(
                 name: "call_graph_edges");
 
             migrationBuilder.DropTable(
                 name: "feature_business_mappings");
+
+            migrationBuilder.DropTable(
+                name: "feature_method_mappings");
 
             migrationBuilder.DropTable(
                 name: "feature_steps");
@@ -284,10 +284,10 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                 name: "few_shot_examples");
 
             migrationBuilder.DropTable(
-                name: "method_sources");
+                name: "businesses");
 
             migrationBuilder.DropTable(
-                name: "businesses");
+                name: "method_sources");
 
             migrationBuilder.DropTable(
                 name: "features");

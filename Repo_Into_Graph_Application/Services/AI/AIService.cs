@@ -46,7 +46,10 @@ namespace Repo_Into_Graph_Application.Services.AI
 
 YÊU CẦU BẮT BUỘC VỀ SỐ LƯỢNG VÀ ĐỘ KHÓ:
 - Bạn PHẢI tạo ra chính xác ĐÚNG {numberOfQuestions} câu hỏi. Không được tạo nhiều hơn hoặc ít hơn.
-- Tất cả các câu hỏi phải được thiết kế ở mức độ: {difficulty}. (Với mức độ ""Khó"", câu hỏi phải xoáy sâu vào: Lỗ hổng logic nghiệp vụ, kịch bản lỗi khi vận hành, bài toán đồng bộ/xung đột dữ liệu giữa các phân hệ, hoặc rủi ro gian lận nghiệp vụ).
+- Tất cả các câu hỏi phải được thiết kế cấu trúc dựa trên mức độ: {difficulty} với quy tắc kết hợp tính năng (feature) như sau:
+  + Nếu mức độ là ""de"" (Dễ): Câu hỏi CHỈ ĐƯỢC tập trung vào tình huống xảy ra trong phạm vi 01 tính năng đơn lẻ (Ví dụ: Chỉ hỏi quanh nghiệp vụ Tạo bài đấu giá, hoặc chỉ hỏi về Đặt giá).
+  + Nếu mức độ là ""trungbinh"" (Trung bình): Câu hỏi PHẢI là sự kết hợp liên chuỗi giữa 2 đến 3 tính năng liên quan để kiểm tra luồng nghiệp vụ kế thừa (Ví dụ: Sự liên quan giữa Nạp tiền -> Đặt giá -> Trừ tiền; hoặc Đặt giá thành công -> Kết thúc đấu giá -> Hoàn tiền cho người thua).
+  + Nếu mức độ là ""kho"" (Khó): Câu hỏi có thể KẾT HỢP TÙY Ý và phức tạp giữa nhiều tính năng khác nhau trong hệ thống. Đồng thời xoáy sâu vào: Lỗ hổng logic khi các tính năng đan xen, kịch bản lỗi khi vận hành đồng thời, bài toán đồng bộ/xung đột dữ liệu giữa các phân hệ, hoặc rủi ro gian lận nghiệp vụ có tổ chức.
 
 THIẾT QUÂN LUẬT VỀ NGÔN NGỮ (100% BUSINESS LANGUAGE):
 1. Cả câu hỏi (question) và câu trả lời (suggestedAnswer) TUYỆT ĐỐI KHÔNG CHỨA bất kỳ từ khóa kỹ thuật hay cấu trúc mã nguồn nào.
@@ -60,7 +63,7 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
   [ ""TênController.TênAction"", ""TênInterfaceService.TênHàmAsync"", ""TênClassServiceImpl.TênHàmAsync"", ""TênRepository.TênHàmAsync (nếu có)"" ]
 - VÍ DỤ MẪU CHUẨN LUỒNG:
   [ ""AuctionController.CreateAuction"", ""IAuctionService.CreateAuctionAsync"", ""AuctionServiceImpl.CreateAuctionAsync"", ""IAuctionRepository.AddAsync"" ]
-- TUYỆT ĐỐI KHÔNG ĐƯỢC bỏ sót việc bắt cặp giữa [Interface] và [Class triển khai]. Nếu thiếu bất kỳ tầng nào, kết quả sẽ bị coi là bất hợp lệ.
+- **LƯU Ý ĐẶC BIỆT CHO MỨC ĐỘ TRUNGBINH/KHO:** Vì câu hỏi kết hợp nhiều tính năng, mảng ""targetedEntryPoints"" PHẢI liệt kê đầy đủ luồng đi của TẤT CẢ các tính năng xuất hiện trong tình huống đó (liệt kê tuần tự luồng của tính năng A rồi nối tiếp luồng của tính năng B). Nếu thiếu bất kỳ tầng nào, kết quả sẽ bị coi là bất hợp lệ.
 
 ĐỊNH DẠNG ĐẦU RA BẮT BUỘC:
 - Trả về một mảng JSON chứa các đối tượng có cấu trúc chính xác như sau (Tuyệt đối không bọc mảng trong ký tự ```json, chỉ trả về JSON trần):

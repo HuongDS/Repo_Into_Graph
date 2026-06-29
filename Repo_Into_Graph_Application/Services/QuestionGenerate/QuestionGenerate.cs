@@ -129,10 +129,10 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                     .Where(e => request.FewShotExampleIds.Contains(e.Id))
                     .ToListAsync();
             }
-            else if (!string.IsNullOrWhiteSpace(request.Difficulty))
+            else if (request.Difficulty != null)
             {
                 fewShotExamples = await _context.FewShotExamples
-                    .Where(e => e.Difficulty.ToLower() == request.Difficulty.ToLower())
+                    .Where(e => e.Difficulty == request.Difficulty)
                     .Take(5)
                     .ToListAsync();
             }
@@ -147,7 +147,7 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 codeBuilder: codeBuilder.ToString(),
                 contextBuilder: contextBuilder.ToString(),
                 numberOfQuestions: numberOfQuestions,
-                difficulty: request.Difficulty,
+                difficulty: request.Difficulty?.ToString(),
                 additionalContext: request.Description,
          
                 fewShotExamples: fewShotExamples);

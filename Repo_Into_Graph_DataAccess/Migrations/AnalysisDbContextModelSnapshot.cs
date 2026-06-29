@@ -275,10 +275,9 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
-                    b.Property<string>("Difficulty")
-                        .IsRequired()
+                    b.Property<int>("Difficulty")
                         .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Question")
                         .IsRequired()

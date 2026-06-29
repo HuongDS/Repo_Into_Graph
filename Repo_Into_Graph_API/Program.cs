@@ -2,20 +2,21 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Repo_Into_Graph_DataAccess.Repository.Impl;
-using Repo_Into_Graph_DataAccess.Repository.Interface;
+using Repo_Into_Graph_API.Exceptions;
+using Repo_Into_Graph_Application.Enums;
 using Repo_Into_Graph_Application.Services.AI;
 using Repo_Into_Graph_Application.Services.Analysis;
-using Repo_Into_Graph_Application.Services.Features;
+using Repo_Into_Graph_Application.Services.Caculation;
 using Repo_Into_Graph_Application.Services.CodeQueryable;
 using Repo_Into_Graph_Application.Services.DataFlowParser;
+using Repo_Into_Graph_Application.Services.Features;
 using Repo_Into_Graph_Application.Services.FewShot;
 using Repo_Into_Graph_Application.Services.GitService;
 using Repo_Into_Graph_Application.Services.Mapper;
 using Repo_Into_Graph_Application.Services.QuestionGenerate;
-using Repo_Into_Graph_API.Exceptions;
 using Repo_Into_Graph_DataAccess.Database;
-using Repo_Into_Graph_Application.Services.Caculation;
+using Repo_Into_Graph_DataAccess.Repository.Impl;
+using Repo_Into_Graph_DataAccess.Repository.Interface;
 
 if (File.Exists(".env"))
 {
@@ -72,7 +73,11 @@ builder.Services.AddScoped<BusinessCallDataFlowGenerator>();
 builder.Services.AddScoped<ICaculationService, CaculationService>();
 
 // Add support for controllers
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumDescriptionConverter<DifficultyLevel>());
+    });
 
 // Add Swagger services
 builder.Services.AddEndpointsApiExplorer();

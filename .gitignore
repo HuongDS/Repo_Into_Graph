@@ -16,6 +16,7 @@ output/
 # Mono auto generated files
 mono_crash.*
 .env
+*.env
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/

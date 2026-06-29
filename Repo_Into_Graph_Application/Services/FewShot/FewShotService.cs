@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_Application.Dtos.FewShot;
+using Repo_Into_Graph_Application.Enums;
 using Repo_Into_Graph_Application.Exceptions;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
@@ -34,7 +35,12 @@ namespace Repo_Into_Graph_Application.Services.FewShot
                 .OrderByDescending(x => x.CreatedAt);
 
             if (!string.IsNullOrWhiteSpace(difficulty))
-                query = query.Where(x => x.Difficulty.ToLower() == difficulty.Trim().ToLower());
+            {
+                if (Enum.TryParse<DifficultyLevel>(difficulty, true, out DifficultyLevel parsedDifficulty))
+                {
+                    query = query.Where(x => x.Difficulty == parsedDifficulty);
+                }
+            }
 
             if (!string.IsNullOrWhiteSpace(tag))
                 query = query.Where(x => x.Tag != null &&
@@ -74,7 +80,7 @@ namespace Repo_Into_Graph_Application.Services.FewShot
                 Id              = Guid.NewGuid(),
                 Question        = request.Question.Trim(),
                 SuggestedAnswer = request.SuggestedAnswer.Trim(),
-                Difficulty      = request.Difficulty.Trim(),
+                Difficulty      =  request.Difficulty,
                 Tag             = request.Tag?.Trim(),
                 Description     = request.Description?.Trim(),
                 CreatedAt       = DateTime.UtcNow
@@ -99,7 +105,7 @@ namespace Repo_Into_Graph_Application.Services.FewShot
             if (request.SuggestedAnswer is not null)
                 entity.SuggestedAnswer = request.SuggestedAnswer.Trim();
             if (request.Difficulty is not null)
-                entity.Difficulty = request.Difficulty.Trim();
+                entity.Difficulty = request.Difficulty;
             if (request.Tag is not null)
                 entity.Tag = request.Tag.Trim();
             if (request.Description is not null)

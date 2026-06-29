@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.37111.16
+# Visual Studio Version 18
+VisualStudioVersion = 18.8.11918.235 insiders
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Repo_Into_Graph_API", "Repo_Into_Graph_API\Repo_Into_Graph_API.csproj", "{A6A06F51-8E5D-40D4-0E90-4A1581195D67}"
 EndProject

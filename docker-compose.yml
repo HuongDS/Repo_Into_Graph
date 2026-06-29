@@ -1,6 +1,0 @@
-services:
-  repo_into_graph_api:
-    image: ${DOCKER_REGISTRY-}repointographapi
-    build:
-      context: .
-      dockerfile: Repo_Into_Graph_API/Dockerfile

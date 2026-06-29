@@ -46,10 +46,27 @@ namespace Repo_Into_Graph_Application.Services.AI
 
 YÊU CẦU BẮT BUỘC VỀ SỐ LƯỢNG VÀ ĐỘ KHÓ:
 - Bạn PHẢI tạo ra chính xác ĐÚNG {numberOfQuestions} câu hỏi. Không được tạo nhiều hơn hoặc ít hơn.
-- Tất cả các câu hỏi phải được thiết kế cấu trúc dựa trên mức độ: {difficulty} với quy tắc kết hợp tính năng (feature) như sau:
-  + Nếu mức độ là ""de"" (Dễ): Câu hỏi CHỈ ĐƯỢC tập trung vào tình huống xảy ra trong phạm vi 01 tính năng đơn lẻ (Ví dụ: Chỉ hỏi quanh nghiệp vụ Tạo bài đấu giá, hoặc chỉ hỏi về Đặt giá).
-  + Nếu mức độ là ""trungbinh"" (Trung bình): Câu hỏi PHẢI là sự kết hợp liên chuỗi giữa 2 đến 3 tính năng liên quan để kiểm tra luồng nghiệp vụ kế thừa (Ví dụ: Sự liên quan giữa Nạp tiền -> Đặt giá -> Trừ tiền; hoặc Đặt giá thành công -> Kết thúc đấu giá -> Hoàn tiền cho người thua).
-  + Nếu mức độ là ""kho"" (Khó): Câu hỏi có thể KẾT HỢP TÙY Ý và phức tạp giữa nhiều tính năng khác nhau trong hệ thống. Đồng thời xoáy sâu vào: Lỗ hổng logic khi các tính năng đan xen, kịch bản lỗi khi vận hành đồng thời, bài toán đồng bộ/xung đột dữ liệu giữa các phân hệ, hoặc rủi ro gian lận nghiệp vụ có tổ chức.
+- Tất cả các câu hỏi phải được thiết kế cấu trúc dựa trên mức độ: {difficulty} với tiêu chí như sau:
+TIÊU CHÍ ĐÁNH GIÁ ĐỊNH LƯỢNG CHI TIẾT VỀ ĐỘ KHÓ (AI BẮT BUỘC TUÂN THỦ):
+
+1. THẾ NÀO LÀ MỨC ĐỘ ""de"" (DỄ) - KIỂM TRA ĐƠN LUỒNG:
+   - Bản chất: Chỉ kiểm tra khả năng đọc hiểu một chuỗi hành động tuyến tính trong MỘT Feature duy nhất.
+   - Tiêu chí Code/Graph: Toàn bộ Call Stack trong ""targetedEntryPoints"" chỉ được phép đi qua đúng 1 Controller và luồng Service trực tiếp của chính nó. Không có sự xuất hiện của các Service thuộc phân hệ khác.
+   - Kịch bản nghiệp vụ: Xoay quanh việc thiếu thông tin đầu vào, sai định dạng dữ liệu, hoặc không đủ điều kiện cơ bản để thực hiện (Ví dụ: Đặt giá thấp hơn mức giá hiện tại, Đăng ký thông tin bị thiếu trường bắt buộc).
+
+2. THẾ NÀO LÀ MỨC ĐỘ ""trungbinh"" (TRUNG BÌNH) - KIỂM TRA ĐA LUỒNG KẾ THỪA:
+   - Bản chất: Kiểm tra tính liên đới logic giữa các Feature hoạt động theo chuỗi (Tính năng này là tiền đề hoặc kết quả của tính năng kia).
+   - Tiêu chí Code/Graph: ""targetedEntryPoints"" PHẢI xuất hiện Call Stack của ít nhất 2 cụm Controller/Service khác nhau (Ví dụ: Luồng của WalletService kết hợp luồng của AuctionService).
+   - Kịch bản nghiệp vụ: Đặt câu hỏi tại ""điểm giao thoa"" của chuỗi hành động. Khi một mắt xích thành công nhưng mắt xích sau thất bại thì xử lý dòng tiền/tài sản trên thực tế thế nào (Ví dụ: Tài khoản ví đủ tiền -> Trừ tiền thành công -> Hệ thống ghi nhận Đặt giá bị lỗi mạng -> Tiền của khách hàng xử lý ra sao?).
+
+3. THẾ NÀO LÀ MỨC ĐỘ ""kho"" (KHÓ) - KIỂM TRA TOÀN DIỆN, ĐỒNG THỜI VÀ RỦI RO:
+   - Bản chất: Kiểm tra tư duy hệ thống trước các biến cố nghiêm trọng liên quan đến toàn vẹn dữ liệu, tranh chấp tài nguyên, hoặc lỗ hổng quy trình vận hành.
+   - Tiêu chí Code/Graph: Kết hợp tùy ý không giới hạn số lượng Feature. Đặc biệt tập trung vào các hàm xử lý có sử dụng Transaction, các Background Job (như Hangfire), Queue, hoặc các hàm tính toán logic phức tạp có tính chất cập nhật trạng thái chung.
+   - Kịch bản nghiệp vụ: Tình huống phải mô tả các kịch bản bất đối xứng, bao gồm:
+     + Tranh chấp đồng thời (Concurrency): Hai người cùng bấm đặt giá một tài sản tại cùng một phần nghìn giây cuối cùng khi đồng hồ đếm ngược kết thúc.
+     + Lỗ hổng quy trình (Business Logic Flaw): Người bán lợi dụng việc hệ thống đang xử lý lệnh kết thúc để rút hạ bài đăng hòng bùng tiền cọc.
+     + Lỗi hệ thống mất đồng bộ: Giao dịch ngân hàng báo thành công, ví hệ thống đã cộng tiền, nhưng trạng thái đơn hàng bị kẹt ở mức ""Chờ thanh toán"".
+   
 
 THIẾT QUÂN LUẬT VỀ NGÔN NGỮ (100% BUSINESS LANGUAGE):
 1. Cả câu hỏi (question) và câu trả lời (suggestedAnswer) TUYỆT ĐỐI KHÔNG CHỨA bất kỳ từ khóa kỹ thuật hay cấu trúc mã nguồn nào.

@@ -8,7 +8,10 @@ namespace Repo_Into_Graph_Application.Dtos.QuestionGenerate
 
         public string[] TargetedEntryPoints { get; set; } = Array.Empty<string>();
 
-        //public double Coverage { get; set; } = 0.0;
+        /// <summary>
+        /// Độ bao phủ code riêng của câu hỏi này (tỉ lệ method mà câu hỏi chạm tới / tổng số method của Business).
+        /// </summary>
+        public double Coverage { get; set; } = 0.0;
     }
 }
 

@@ -7,6 +7,7 @@ using Repo_Into_Graph_Application.Services.Analysis;
 using Repo_Into_Graph_Application.Services.Caculation;
 using Repo_Into_Graph_Application.Services.GitService;
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_DataAccess.Enums;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using System;
@@ -147,9 +148,9 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 codeBuilder: codeBuilder.ToString(),
                 contextBuilder: contextBuilder.ToString(),
                 numberOfQuestions: numberOfQuestions,
-                difficulty: request.Difficulty?.ToString(),
+                difficulty: request.Difficulty.GetDescription(),
                 additionalContext: request.Description,
-         
+
                 fewShotExamples: fewShotExamples);
 
             var codeCoverage = await _caculationService.CalculateCodeCoverage(questions,request.BusinessId);

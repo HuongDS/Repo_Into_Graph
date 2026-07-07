@@ -31,7 +31,7 @@ namespace Repo_Into_Graph_Application.Services.AI
             _client = new Client(apiKey: apiKey, clientOptions: clientOptions);
         }
 
-        
+
         public async Task<IEnumerable<GeneratedQuestionDto>> GenerateUnifiedQuestionsAsync(
             string businessName,
             string codeBuilder,
@@ -39,7 +39,7 @@ namespace Repo_Into_Graph_Application.Services.AI
             int numberOfQuestions,
             string difficulty,
             string? additionalContext = null,
-           
+
             IEnumerable<FewShotExample>? fewShotExamples = null)
         {
             var systemInstruction = $@"Bạn là một Giảng viên đại học chấm thi vấn đáp đồ án phần mềm. Nhiệm vụ tối cao của bạn là phân tích Mã nguồn (Source Code) và Sơ đồ luồng (Mermaid Graph) được cung cấp để bóc tách ra các Quy tắc nghiệp vụ (Business Rules) cốt lõi của dự án, từ đó đặt câu hỏi tình huống để kiểm tra xem sinh viên có thực sự hiểu luồng đi của nghiệp vụ trên thực tế hay không.
@@ -87,7 +87,7 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
 [
   {{
     ""question"": ""Câu hỏi tình huống nghiệp vụ thực tế ở đây"",
-    ""suggestedAnswer"": ""Giải thích giải pháp xử lý logic nghiệp vụ ở đây (không chứa từ khóa code)"",
+    ""suggestedAnswer"": ""Giải thích giải pháp xử lý logic nghiệp vụ ở đây có thể hiểu ra từ source code và context (không chứa từ khóa code) "",
     ""difficulty"": ""{difficulty}"",
     ""targetedEntryPoints"": [
       ""TênController.TênAction"",
@@ -98,12 +98,12 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
 ]";
 
             var prompt = new StringBuilder();
-           
+
 
             prompt.AppendLine("--- THÔNG TIN CHUNG ---");
             prompt.AppendLine($"Tên Business: {businessName}");
             prompt.AppendLine();
-            
+
             prompt.AppendLine("--- THÔNG TIN DATA FLOW GRAPH ---");
             prompt.AppendLine(contextBuilder);
             prompt.AppendLine();
@@ -147,7 +147,7 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
                 {
                     Parts = [new Part { Text = systemInstruction }]
                 },
-                Temperature = 0.3f, 
+                Temperature = 0.3f,
                 ResponseMimeType = "application/json"
             };
 
@@ -193,7 +193,7 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
                 {
                     PropertyNameCaseInsensitive = true
                 }) ?? new List<GeneratedQuestionDto>();
-                 return questions;
+                return questions;
 
             }
             catch (JsonException ex)
@@ -202,7 +202,7 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
             }
         }
 
-       
+
     }
 }
 

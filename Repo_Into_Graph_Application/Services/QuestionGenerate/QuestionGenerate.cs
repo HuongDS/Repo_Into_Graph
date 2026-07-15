@@ -1,4 +1,5 @@
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_DataAccess.Repository.Interface;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,18 +20,33 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 {
     public class QuestionGenerate : IQuestionGenerate
     {
-        private readonly AnalysisDbContext _context;
+        private readonly IBusinessRepository _businessRepository;
+        private readonly IFeatureBusinessMappingRepository _featureBusinessMappingRepository;
+        private readonly IFeatureRepository _featureRepository;
+        private readonly IFeatureMethodMappingRepository _featureMethodMappingRepository;
+        private readonly IFewShotExampleRepository _fewShotExampleRepository;
         private readonly IAIService _aIService;
         private readonly ICaculationService _caculationService;
 
-        public QuestionGenerate(AnalysisDbContext context, IAIService aIService, ICaculationService caculationService)
+        public QuestionGenerate(
+            IBusinessRepository businessRepository,
+            IFeatureBusinessMappingRepository featureBusinessMappingRepository,
+            IFeatureRepository featureRepository,
+            IFeatureMethodMappingRepository featureMethodMappingRepository,
+            IFewShotExampleRepository fewShotExampleRepository,
+            IAIService aIService, 
+            ICaculationService caculationService)
         {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _businessRepository = businessRepository ?? throw new ArgumentNullException(nameof(businessRepository));
+            _featureBusinessMappingRepository = featureBusinessMappingRepository ?? throw new ArgumentNullException(nameof(featureBusinessMappingRepository));
+            _featureRepository = featureRepository ?? throw new ArgumentNullException(nameof(featureRepository));
+            _featureMethodMappingRepository = featureMethodMappingRepository ?? throw new ArgumentNullException(nameof(featureMethodMappingRepository));
+            _fewShotExampleRepository = fewShotExampleRepository ?? throw new ArgumentNullException(nameof(fewShotExampleRepository));
             _aIService = aIService;
             _caculationService = caculationService;
         }
 
-        
+
 
         public async Task<GenerateQuestionsResponse> GenerateQuestionsAsync(GenerateQuestionsRequest request)
         {
@@ -38,28 +54,18 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 throw new BadRequestException("Yêu cầu không được để trống.");
 
             // 1. Load Business
-            var businessModel = await _context.Businesses
-                .FirstOrDefaultAsync(b => b.Id == request.BusinessId);
+            var businessModel = await _businessRepository.GetByIdAsync(request.BusinessId);
 
             if (businessModel == null)
                 throw new NotFoundException("Business", request.BusinessId);
 
             // 2. Load các Feature (Luồng nghiệp vụ) được map với Business này
-            var featureBusinessMappings = await _context.FeatureBusinessMappings
-                .Where(m => m.BusinessId == request.BusinessId)
-                .Select(m => m.FeatureId)
-                .ToListAsync();
+            var featureBusinessMappings = await _featureBusinessMappingRepository.GetFeatureIdsByBusinessIdAsync(request.BusinessId);
 
-            var features = await _context.Features
-                .Include(f => f.Steps)
-                .Where(f => featureBusinessMappings.Contains(f.Id))
-                .ToListAsync();
+            var features = await _featureRepository.GetFeaturesWithStepsByIdsAsync(featureBusinessMappings);
 
             // 3. Load Source Code (MethodSource) từ các Feature đó
-            var featureMethodMappings = await _context.FeatureMethodMappings
-                .Include(m => m.MethodSource)
-                .Where(m => featureBusinessMappings.Contains(m.FeatureId))
-                .ToListAsync();
+            var featureMethodMappings = await _featureMethodMappingRepository.GetMappingsWithMethodSourceByFeatureIdsAsync(featureBusinessMappings);
 
             var methodSources = featureMethodMappings
                 .Where(m => m.MethodSource != null)
@@ -120,16 +126,11 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             IEnumerable<FewShotExample>? fewShotExamples = null;
             if (request.FewShotExampleIds != null && request.FewShotExampleIds.Count > 0)
             {
-                fewShotExamples = await _context.FewShotExamples
-                    .Where(e => request.FewShotExampleIds.Contains(e.Id))
-                    .ToListAsync();
+                fewShotExamples = await _fewShotExampleRepository.GetByIdsAsync(request.FewShotExampleIds);
             }
             else if (!string.IsNullOrWhiteSpace(request.Difficulty))
             {
-                fewShotExamples = await _context.FewShotExamples
-                    .Where(e => e.Difficulty.ToLower() == request.Difficulty.ToLower())
-                    .Take(5)
-                    .ToListAsync();
+                fewShotExamples = await _fewShotExampleRepository.GetByDifficultyAsync(request.Difficulty, 5);
             }
 
             int numberOfQuestions = request.NumberOfQuestions;
@@ -144,10 +145,10 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 numberOfQuestions: numberOfQuestions,
                 difficulty: request.Difficulty,
                 additionalContext: request.Description,
-         
+
                 fewShotExamples: fewShotExamples);
 
-            var codeCoverage = await _caculationService.CalculateCodeCoverage(questions,request.BusinessId);
+            var codeCoverage = await _caculationService.CalculateCodeCoverage(questions, request.BusinessId);
 
             return new GenerateQuestionsResponse
             {
@@ -156,9 +157,8 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
                 TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
                 FewShotUsed = fewShotExamples?.Count() ?? 0,
-                GeneratedQuestionDtos= questions,
+                GeneratedQuestionDtos = questions,
                 CodeCoverage = codeCoverage,
-
             };
         }
     }

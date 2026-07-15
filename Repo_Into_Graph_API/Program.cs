@@ -16,6 +16,7 @@ using Repo_Into_Graph_Application.Services.QuestionGenerate;
 using Repo_Into_Graph_API.Exceptions;
 using Repo_Into_Graph_DataAccess.Database;
 using Repo_Into_Graph_Application.Services.Caculation;
+using Repo_Into_Graph_Application.Services.WorkflowAssessment;
 
 if (File.Exists(".env"))
 {
@@ -70,6 +71,9 @@ builder.Services.AddScoped<IAIService, AIService>();
 builder.Services.AddScoped<DataFlowParseService>();
 builder.Services.AddScoped<BusinessCallDataFlowGenerator>();
 builder.Services.AddScoped<ICaculationService, CaculationService>();
+builder.Services.AddScoped<IWorkflowAssessmentService, WorkflowAssessmentService>();
+builder.Services.AddScoped<IAccuracyAssessmentService, AccuracyAssessmentService>();
+builder.Services.AddScoped<IDifficultyAssessmentService, DifficultyAssessmentService>();
 
 // Add support for controllers
 builder.Services.AddControllers();

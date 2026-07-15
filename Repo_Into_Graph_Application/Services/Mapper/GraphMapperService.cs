@@ -1,4 +1,5 @@
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_DataAccess.Repository.Interface;
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_DataAccess.Models.Business;
@@ -10,11 +11,30 @@ namespace Repo_Into_Graph_Application.Services.Mapper;
 
 public class GraphMapperService
 {
-    private readonly AnalysisDbContext _context;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IBusinessRepository _businessRepository;
+    private readonly IMethodSourceRepository _methodSourceRepository;
+    private readonly ICallGraphEdgeRepository _callGraphEdgeRepository;
+    private readonly IFeatureRepository _featureRepository;
+    private readonly IFeatureBusinessMappingRepository _featureBusinessMappingRepository;
+    private readonly IFeatureMethodMappingRepository _featureMethodMappingRepository;
 
-    public GraphMapperService(AnalysisDbContext context)
+    public GraphMapperService(
+        IUnitOfWork unitOfWork,
+        IBusinessRepository businessRepository,
+        IMethodSourceRepository methodSourceRepository,
+        ICallGraphEdgeRepository callGraphEdgeRepository,
+        IFeatureRepository featureRepository,
+        IFeatureBusinessMappingRepository featureBusinessMappingRepository,
+        IFeatureMethodMappingRepository featureMethodMappingRepository)
     {
-        _context = context;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _businessRepository = businessRepository ?? throw new ArgumentNullException(nameof(businessRepository));
+        _methodSourceRepository = methodSourceRepository ?? throw new ArgumentNullException(nameof(methodSourceRepository));
+        _callGraphEdgeRepository = callGraphEdgeRepository ?? throw new ArgumentNullException(nameof(callGraphEdgeRepository));
+        _featureRepository = featureRepository ?? throw new ArgumentNullException(nameof(featureRepository));
+        _featureBusinessMappingRepository = featureBusinessMappingRepository ?? throw new ArgumentNullException(nameof(featureBusinessMappingRepository));
+        _featureMethodMappingRepository = featureMethodMappingRepository ?? throw new ArgumentNullException(nameof(featureMethodMappingRepository));
     }
 
     public async Task ProcessAndMapGraphAsync(Guid analysisRunId, string businessJsonPath)
@@ -37,16 +57,11 @@ public class GraphMapperService
             CreatedAt = DateTime.UtcNow
         }).ToList();
 
-        await _context.Set<Business>().AddRangeAsync(businessRecords);
-        await _context.SaveChangesAsync();
+        await _businessRepository.AddRangeAsync(businessRecords);
 
-        var methodSourcesInRam = await _context.Set<MethodSourceRecord>()
-            .Where(m => m.AnalysisRunId == analysisRunId)
-            .ToListAsync();
+        var methodSourcesInRam = await _methodSourceRepository.GetByAnalysisRunIdAsync(analysisRunId);
 
-        var callGraphEdgesInRam = await _context.Set<CallGraphEdge>()
-            .Where(e => e.AnalysisRunId == analysisRunId)
-            .ToListAsync();
+        var callGraphEdgesInRam = await _callGraphEdgeRepository.GetByAnalysisRunIdAsync(analysisRunId);
 
         var graphLookup = callGraphEdgesInRam.ToLookup(
             e => $"{e.CallerClass.Trim().ToLower()}.{e.CallerMethod.Trim().ToLower()}"
@@ -67,9 +82,7 @@ public class GraphMapperService
         var mappingsToInsert = new List<FeatureMethodMapping>();
         var featureBusinessMappingsToInsert = new List<FeatureBusinessMapping>();
 
-        var featuresInRam = await _context.Set<Feature>()
-            .Where(f => f.AnalysisRunId == analysisRunId)
-            .ToListAsync();
+        var featuresInRam = await _featureRepository.GetByAnalysisRunIdAsync(analysisRunId);
             
         var mappedFeatureIds = new HashSet<Guid>();
 
@@ -131,15 +144,15 @@ public class GraphMapperService
 
         if (featureBusinessMappingsToInsert.Any())
         {
-            await _context.Set<FeatureBusinessMapping>().AddRangeAsync(featureBusinessMappingsToInsert);
+            await _featureBusinessMappingRepository.AddRangeAsync(featureBusinessMappingsToInsert);
         }
 
         if (mappingsToInsert.Any())
         {
-            await _context.Set<FeatureMethodMapping>().AddRangeAsync(mappingsToInsert);
+            await _featureMethodMappingRepository.AddRangeAsync(mappingsToInsert);
         }
         
-        await _context.SaveChangesAsync();
+        await _unitOfWork.SaveChangesAsync();
     }
 
     private void FindAllMethodsInSubTree(

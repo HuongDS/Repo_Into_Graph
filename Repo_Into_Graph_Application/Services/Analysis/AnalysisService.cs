@@ -20,26 +20,39 @@ namespace Repo_Into_Graph_Application.Services.Analysis
     public class AnalysisService : IAnalysisService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IAnalysisRunRepository _analysisRunRepository;
+        private readonly IMethodSourceRepository _methodSourceRepository;
+        private readonly IFeatureRepository _featureRepository;
+        private readonly IBusinessRepository _businessRepository;
+        private readonly ICallGraphEdgeRepository _callGraphEdgeRepository;
         private readonly GraphMapperService _graphMapper;
         private readonly IGitService _gitService;
-        private readonly AnalysisDbContext _context;
+
         private readonly BusinessFlowParser _businessFlowParser;
         private readonly DataFlowParseService _dataFlowParser;
         private readonly BusinessCallDataFlowGenerator _businessCallDataFlowGenerator;
 
         public AnalysisService(
             IUnitOfWork unitOfWork,
+            IAnalysisRunRepository analysisRunRepository,
+            IMethodSourceRepository methodSourceRepository,
+            IFeatureRepository featureRepository,
+            IBusinessRepository businessRepository,
+            ICallGraphEdgeRepository callGraphEdgeRepository,
             GraphMapperService graphMapper,
             IGitService gitService,
-            AnalysisDbContext context,
             BusinessFlowParser businessFlowParser,
             BusinessCallDataFlowGenerator businessCallDataFlowGenerator,
             DataFlowParseService dataFlowParser)
         {
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+            _analysisRunRepository = analysisRunRepository ?? throw new ArgumentNullException(nameof(analysisRunRepository));
+            _methodSourceRepository = methodSourceRepository ?? throw new ArgumentNullException(nameof(methodSourceRepository));
+            _featureRepository = featureRepository ?? throw new ArgumentNullException(nameof(featureRepository));
+            _businessRepository = businessRepository ?? throw new ArgumentNullException(nameof(businessRepository));
+            _callGraphEdgeRepository = callGraphEdgeRepository ?? throw new ArgumentNullException(nameof(callGraphEdgeRepository));
             _graphMapper = graphMapper ?? throw new ArgumentNullException(nameof(graphMapper));
             _gitService = gitService ?? throw new ArgumentNullException(nameof(gitService));
-            _context = context ?? throw new ArgumentNullException(nameof(context));
             _businessFlowParser = businessFlowParser ?? throw new ArgumentNullException(nameof(businessFlowParser));
             _dataFlowParser = dataFlowParser ?? throw new ArgumentNullException(nameof(dataFlowParser));
             _businessCallDataFlowGenerator = businessCallDataFlowGenerator ?? throw new ArgumentNullException(nameof(businessCallDataFlowGenerator));
@@ -74,17 +87,16 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 var analyzer = new CodeAnalyzer(targetPath);
                 var result = await analyzer.AnalyzeAsync();
 
-                var existingRuns = await _unitOfWork.AnalysisRuns
+                var existingRuns = await _analysisRunRepository
                     .FindAsync(r => r.RepositoryPath.ToLower() == trimmedRepoPath.ToLower());
 
                 if (existingRuns.Any())
                 {
-                    _unitOfWork.AnalysisRuns.DeleteRange(existingRuns);
-                    _unitOfWork.MethodSources.DeleteRange(existingRuns.SelectMany(r => r.MethodSources));
-                    _unitOfWork.Features.DeleteRange(existingRuns.SelectMany(r => r.Features));
-                    _unitOfWork.Businesses.DeleteRange(existingRuns.SelectMany(r => r.Businesses));
-                    _unitOfWork.CallGraphEdges.DeleteRange(existingRuns.SelectMany(r => r.CallGraphEdges));
-                    await _unitOfWork.SaveChangesAsync();
+                    _analysisRunRepository.DeleteRange(existingRuns);
+                    _methodSourceRepository.DeleteRange(existingRuns.SelectMany(r => r.MethodSources));
+                    _featureRepository.DeleteRange(existingRuns.SelectMany(r => r.Features));
+                    _businessRepository.DeleteRange(existingRuns.SelectMany(r => r.Businesses));
+                    _callGraphEdgeRepository.DeleteRange(existingRuns.SelectMany(r => r.CallGraphEdges));
                 }
 
                 // Tạo AnalysisRun mới
@@ -112,8 +124,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                     }).ToList()
                 };
 
-                await _unitOfWork.AnalysisRuns.AddAsync(analysisRun);
-                await _unitOfWork.SaveChangesAsync();
+                await _analysisRunRepository.AddAsync(analysisRun);
                 var allIntraEdges = new List<DataFlowEdge>();
                 foreach (var source in analysisRun.MethodSources)
                 {
@@ -134,9 +145,10 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                     {
                         flow.DataFlowMermaidGraph = _businessCallDataFlowGenerator.GenerateCallDataFlow(flow, methodSourcesList, allIntraEdges);
                     }
-                    await _context.Features.AddRangeAsync(features);
-                    await _context.SaveChangesAsync();
+                    await _featureRepository.AddRangeAsync(features);
                 }
+
+                await _unitOfWork.SaveChangesAsync();
 
                 // Thuc hien anh xa do thi voi Business (doc tu template_business.json)
                 // Uu tien doc template_business.json tu ben trong repository duoc phan tich,

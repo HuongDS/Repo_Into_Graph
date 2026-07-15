@@ -11,10 +11,12 @@ namespace Repo_Into_Graph_Application.Services.Analysis
     public class AnalysisRunService : IAnalysisRunService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IAnalysisRunRepository _analysisRunRepository;
 
-        public AnalysisRunService(IUnitOfWork unitOfWork)
+        public AnalysisRunService(IUnitOfWork unitOfWork, IAnalysisRunRepository analysisRunRepository)
         {
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+            _analysisRunRepository = analysisRunRepository ?? throw new ArgumentNullException(nameof(analysisRunRepository));
         }
 
         // ─── GET (paged) ──────────────────────────────────────────────────────────
@@ -31,40 +33,18 @@ namespace Repo_Into_Graph_Application.Services.Analysis
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 10;
 
-            IQueryable<AnalysisRun> query = _unitOfWork.AnalysisRuns
-                .AsQueryable()
-                .OrderByDescending(x => x.CreatedAt);
+            var result = await _analysisRunRepository.GetPagedAnalysisRunsAsync(page, pageSize, repoOwner, repoName, repoLanguage, isPublic);
 
-            // Áp dụng bộ lọc (tìm kiếm không phân biệt hoa/thường)
-            if (!string.IsNullOrWhiteSpace(repoOwner))
-                query = query.Where(x => x.RepoOwner != null &&
-                                         x.RepoOwner.ToLower().Contains(repoOwner.Trim().ToLower()));
-
-            if (!string.IsNullOrWhiteSpace(repoName))
-                query = query.Where(x => x.RepoName != null &&
-                                         x.RepoName.ToLower().Contains(repoName.Trim().ToLower()));
-
-            if (!string.IsNullOrWhiteSpace(repoLanguage))
-                query = query.Where(x => x.RepoLanguage != null &&
-                                         x.RepoLanguage.ToLower().Contains(repoLanguage.Trim().ToLower()));
-
-            if (isPublic.HasValue)
-                query = query.Where(x => x.IsPublic == isPublic.Value);
-
-            var totalCount = await query.CountAsync();
-
-            var items = await query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
+            var items = result.Items
                 .Select(x => ToDto(x))
-                .ToListAsync();
+                .ToList();
 
             return new PagedResult<AnalysisRunDto>
             {
                 Items      = items,
                 Page       = page,
                 PageSize   = pageSize,
-                TotalCount = totalCount
+                TotalCount = result.TotalCount
             };
         }
 
@@ -72,7 +52,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
 
         public async Task<AnalysisRunDto?> GetByIdAsync(Guid id)
         {
-            var entity = await _unitOfWork.AnalysisRuns.GetByIdAsync(id);
+            var entity = await _analysisRunRepository.GetByIdAsync(id);
             return entity is null ? null : ToDto(entity);
         }
 
@@ -95,7 +75,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 RepoUpdatedAt   = request.RepoUpdatedAt
             };
 
-            await _unitOfWork.AnalysisRuns.AddAsync(entity);
+            await _analysisRunRepository.AddAsync(entity);
             await _unitOfWork.SaveChangesAsync();
 
             return ToDto(entity);
@@ -105,7 +85,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
 
         public async Task<AnalysisRunDto?> UpdateAsync(Guid id, UpdateAnalysisRunRequest request)
         {
-            var entity = await _unitOfWork.AnalysisRuns.GetByIdAsync(id);
+            var entity = await _analysisRunRepository.GetByIdAsync(id);
             if (entity is null) return null;
 
             // Chỉ ghi đè khi giá trị được truyền lên (khác null)
@@ -126,7 +106,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
             if (request.RepoUpdatedAt is not null)
                 entity.RepoUpdatedAt = request.RepoUpdatedAt;
 
-            _unitOfWork.AnalysisRuns.Update(entity);
+            _analysisRunRepository.Update(entity);
             await _unitOfWork.SaveChangesAsync();
 
             return ToDto(entity);
@@ -136,10 +116,10 @@ namespace Repo_Into_Graph_Application.Services.Analysis
 
         public async Task<bool> DeleteAsync(Guid id)
         {
-            var entity = await _unitOfWork.AnalysisRuns.GetByIdAsync(id);
+            var entity = await _analysisRunRepository.GetByIdAsync(id);
             if (entity is null) return false;
 
-            _unitOfWork.AnalysisRuns.Delete(entity);
+            _analysisRunRepository.Delete(entity);
             await _unitOfWork.SaveChangesAsync();
 
             return true;

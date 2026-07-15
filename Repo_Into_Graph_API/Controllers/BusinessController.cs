@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Repo_Into_Graph_Application.Services.CodeQueryable;
+using Repo_Into_Graph_Application.Services.WorkflowAssessment;
+using Repo_Into_Graph_Application.Dtos.Code;
+using Repo_Into_Graph_Application.Dtos.Business;
+using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Repo_Into_Graph_Application.Dtos.Code;
-using Repo_Into_Graph_Application.Dtos.Business;
 
 namespace Repo_Into_Graph_API.Controllers
 {
@@ -14,10 +16,14 @@ namespace Repo_Into_Graph_API.Controllers
     public class BusinessController : ControllerBase
     {
         private readonly ICodeQueryable _codeQueryable;
+        private readonly IWorkflowAssessmentService _workflowAssessmentService;
 
-        public BusinessController(ICodeQueryable codeQueryable)
+        public BusinessController(
+            ICodeQueryable codeQueryable,
+            IWorkflowAssessmentService workflowAssessmentService)
         {
             _codeQueryable = codeQueryable ?? throw new ArgumentNullException(nameof(codeQueryable));
+            _workflowAssessmentService = workflowAssessmentService ?? throw new ArgumentNullException(nameof(workflowAssessmentService));
         }
 
         [HttpGet]
@@ -48,6 +54,20 @@ namespace Repo_Into_Graph_API.Controllers
                 return NotFound(new { message = $"Không tìm thấy Code Flow của Business với ID: {id}" });
             }
             return Ok(codeFlow);
+        }
+
+        [HttpGet("{businessId:guid}/graph")]
+        public async Task<ActionResult<BusinessWorkflowGraphDto>> GetGraph(Guid businessId)
+        {
+            var businesses = await _codeQueryable.GetBusinessesAsync(businessId);
+            var business = businesses.FirstOrDefault();
+            if (business == null)
+            {
+                return NotFound(new { message = $"Không tìm thấy Business với ID: {businessId}" });
+            }
+
+            var graph = await _workflowAssessmentService.GetBusinessWorkflowGraphAsync(businessId);
+            return Ok(graph);
         }
     }
 }

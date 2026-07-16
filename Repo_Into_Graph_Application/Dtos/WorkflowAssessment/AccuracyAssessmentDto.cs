@@ -23,6 +23,11 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
         /// Đây là nguồn chính để Gemini Embedding so sánh với câu hỏi.
         /// </summary>
         public string Description { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Mã nguồn của hàm/node tương ứng, dùng để gửi cho LLM tham khảo.
+        /// </summary>
+        public string SourceCode { get; set; } = string.Empty;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

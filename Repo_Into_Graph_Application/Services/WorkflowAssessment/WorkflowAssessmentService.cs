@@ -1,4 +1,4 @@
-﻿using System.Net.Http;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -216,7 +216,8 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 {
                     NodeId = n.Id,
                     NodeName = n.Name,
-                    Description = n.Description
+                    Description = n.Description,
+                    SourceCode = n.SourceCode
                 }).ToList(),
                 Edges = workflowGraph.Edges.Select(e => new WorkflowEdgeInputDto
                 {
@@ -264,7 +265,8 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                     Description = $"{m.ClassName} {m.MethodName} " +
                                   $"{string.Join(" ", kws)} " +
                                   $"{ExtractKeywordsFromSource(m.SourceCode)}",
-                    Keywords = kws
+                    Keywords = kws,
+                    SourceCode = m.SourceCode ?? string.Empty
                 };
             }).ToList();
 

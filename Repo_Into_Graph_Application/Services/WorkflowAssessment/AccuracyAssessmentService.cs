@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Google.GenAI;
+using Google.GenAI.Types;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 using Repo_Into_Graph_Application.Services.AI;
 
@@ -19,14 +21,14 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         private readonly ILogger<AccuracyAssessmentService> _logger;
 
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly string _cohereApiKey;
+        private readonly string _geminiApiKey;
 
         public AccuracyAssessmentService(IEmbeddingService embeddingService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<AccuracyAssessmentService> logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
             _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
-            _cohereApiKey = configuration["CohereConfig:ApiKey"] ?? throw new InvalidOperationException("Thiếu cấu hình CohereConfig:ApiKey.");
+            _geminiApiKey = configuration["GeminiConfig:ApiKey"] ?? throw new InvalidOperationException("Thiếu cấu hình GeminiConfig:ApiKey.");
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -49,14 +51,30 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             var nodeTexts = workflowData.Nodes.Select(n => $"{n.NodeName}. {n.Description}".Trim()).ToList();
             var nodeVectors = await _embeddingService.EmbedBatchAsync(nodeTexts, "search_document");
 
+                        // ── Tạo Workflow Context text để gửi cho Gemini ──
+            var sb = new StringBuilder();
+            sb.AppendLine($"Workflow Name: {workflowData.WorkflowName}");
+            sb.AppendLine("Nodes:");
+            if (workflowData.Nodes != null)
+            {
+                foreach(var n in workflowData.Nodes) sb.AppendLine($"- [{n.NodeId}] {n.NodeName}");
+            }
+            sb.AppendLine("Edges:");
+            if (workflowData.Edges != null)
+            {
+                foreach(var e in workflowData.Edges) sb.AppendLine($"- {e.FromNodeId} -> {e.ToNodeId}");
+            }
+            string workflowContext = sb.ToString();
+
             foreach (var q in response.GeneratedQuestionDtos ?? Enumerable.Empty<Repo_Into_Graph_Application.Dtos.QuestionGenerate.GeneratedQuestionDto>())
             {
                 if (string.IsNullOrWhiteSpace(q.Question)) continue;
 
                 // Steps 1 & 2 & 3 manually for each question reusing nodeVectors
                 var extractedPath = await Step1_EmbeddingMappingAsync(q.Question, workflowData.Nodes, nodeVectors);
-                var (isAccurate, brokenTransitions) = Step2_GraphConnectionVerification(extractedPath, workflowData.Nodes, workflowData.Edges);
-                var finalVerdict = await GenerateFinalVerdictAsync(q.Question, workflowData.WorkflowName ?? string.Empty, extractedPath, brokenTransitions, isAccurate);
+                
+                // Gọi LLM as a Judge để xác thực
+                var (isAccurate, brokenTransitions, finalVerdict) = await ValidateAccuracyWithGeminiAsync(q.Question, workflowContext, extractedPath, workflowData.Nodes);
 
                 batchResult.QuestionResults.Add(new QuestionAccuracyAssessmentResultDto
                 {
@@ -96,23 +114,21 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 
             _logger.LogInformation("[Bước 1] Ánh xạ thành công {Count} nút Active.", extractedPath.Count);
 
+                        // ══════════════════════════════════════════════════════════════════
+            // BƯỚC 2: LLM-as-a-Judge (Gemini Flash)
             // ══════════════════════════════════════════════════════════════════
-            // BƯỚC 2: Graph Connection Verification (Path Alignment)
-            // ══════════════════════════════════════════════════════════════════
-            var (isAccurate, brokenTransitions) = Step2_GraphConnectionVerification(
-                extractedPath, nodes, edges);
+            var sb = new StringBuilder();
+            sb.AppendLine($"Workflow Name: {request.WorkflowData?.WorkflowName}");
+            sb.AppendLine("Nodes:");
+            foreach(var n in nodes) sb.AppendLine($"- [{n.NodeId}] {n.NodeName}");
+            sb.AppendLine("Edges:");
+            foreach(var e in edges) sb.AppendLine($"- {e.FromNodeId} -> {e.ToNodeId}");
+            string workflowContext = sb.ToString();
 
-            _logger.LogInformation("[Bước 2] IsAccurate={A} | Broken={B}", isAccurate, brokenTransitions.Count);
+            var (isAccurate, brokenTransitions, finalVerdict) = await ValidateAccuracyWithGeminiAsync(
+                request.Question, workflowContext, extractedPath, nodes);
 
-            // ══════════════════════════════════════════════════════════════════
-            // FINAL VERDICT: Sinh lời tổng hợp bằng Gemini text
-            // ══════════════════════════════════════════════════════════════════
-            var finalVerdict = await GenerateFinalVerdictAsync(
-                request.Question,
-                request.WorkflowData?.WorkflowName ?? string.Empty,
-                extractedPath,
-                brokenTransitions,
-                isAccurate);
+            _logger.LogInformation("[LLM Verification] IsAccurate={A} | Broken={B}", isAccurate, brokenTransitions.Count);
 
             return new AccuracyAssessmentResultDto
             {
@@ -212,226 +228,132 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 .ToList();
         }
 
+                // ─────────────────────────────────────────────────────────────────────
+        // BƯỚC 2: Validate Accuracy With Gemini (LLM-as-a-Judge)
         // ─────────────────────────────────────────────────────────────────────
-        // BƯỚC 2: Graph Connection Verification (Path Alignment)
-        // ─────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Duyệt chuỗi extractedPath từ đầu đến cuối.
-        /// Với mỗi cặp (Node[i], Node[i+1]): tra cứu EdgeSet O(1).
-        /// Nếu không tồn tại cạnh nối → đánh dấu BrokenTransition.
-        /// </summary>
-        private static (bool IsAccurate, List<BrokenTransitionDto> BrokenTransitions)
-            Step2_GraphConnectionVerification(
-                List<ExtractedPathStepDto>  extractedPath,
-                List<WorkflowNodeInputDto>  nodes,
-                List<WorkflowEdgeInputDto>  edges)
-        {
-            var brokenTransitions = new List<BrokenTransitionDto>();
-
-            if (extractedPath.Count < 2)
-                return (true, brokenTransitions); // Ít hơn 2 nút → không cần kiểm tra cạnh
-
-                        // ── 2a. Xây dựng Adjacency List từ danh sách cạnh ────────────────
-            var adjList = new Dictionary<string, List<string>>();
-            foreach (var e in edges)
-            {
-                if (string.IsNullOrWhiteSpace(e.FromNodeId) || string.IsNullOrWhiteSpace(e.ToNodeId)) continue;
-                var from = e.FromNodeId.Trim().ToLowerInvariant();
-                var to = e.ToNodeId.Trim().ToLowerInvariant();
-                if (!adjList.ContainsKey(from)) adjList[from] = new List<string>();
-                adjList[from].Add(to);
-            }
-
-            // Lookup: NodeId → NodeName (để điền tên đầy đủ vào BrokenTransition)
-            var nodeLookup = nodes.ToDictionary(
-                n => n.NodeId.Trim().ToLowerInvariant(),
-                n => n.NodeName,
-                StringComparer.OrdinalIgnoreCase);
-
-            // ── 2b. Duyệt từng cặp liên tiếp bằng BFS để kiểm tra tính Reachable ───────────────────────────────
-            for (int i = 0; i < extractedPath.Count - 1; i++)
-            {
-                var fromStep = extractedPath[i];
-                var toStep   = extractedPath[i + 1];
-
-                var fromKey = fromStep.NodeId.Trim().ToLowerInvariant();
-                var toKey   = toStep.NodeId.Trim().ToLowerInvariant();
-
-                bool reachable = false;
-                var queue = new Queue<string>();
-                var visited = new HashSet<string>();
-                
-                queue.Enqueue(fromKey);
-                visited.Add(fromKey);
-
-                while (queue.Count > 0)
-                {
-                    var curr = queue.Dequeue();
-                    if (curr == toKey)
-                    {
-                        reachable = true;
-                        break;
-                    }
-
-                    if (adjList.TryGetValue(curr, out var neighbors))
-                    {
-                        foreach (var neighbor in neighbors)
-                        {
-                            if (visited.Add(neighbor))
-                            {
-                                queue.Enqueue(neighbor);
-                            }
-                        }
-                    }
-                }
-
-                if (!reachable)
-                {
-                    // Đứt gãy luồng do không thể đi từ A đến B
-                    brokenTransitions.Add(new BrokenTransitionDto
-                    {
-                        FromNode = fromStep.NodeName,
-                        ToNode   = toStep.NodeName,
-                        Reason   = $"Không tồn tại đường đi từ \"{fromStep.NodeName}\" " +
-                                   $"đến \"{toStep.NodeName}\" trong đồ thị luồng nghiệp vụ. " +
-                                   $"Câu hỏi đang mô tả một bước nhảy cóc không hợp lệ hoặc đi ngược quy trình hệ thống."
-                    });
-                }
-            }
-
-            bool isAccurate = brokenTransitions.Count == 0;
-            return (isAccurate, brokenTransitions);
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // FINAL VERDICT: Sinh lời luận tội / chứng minh bằng Gemini text
-        // ─────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Gọi Gemini text model để tổng hợp bằng chứng và trả về một đoạn văn
-        /// phân tích tính chính xác của câu hỏi đối với Workflow.
-        /// </summary>
-        private async Task<string> GenerateFinalVerdictAsync(
+        private async Task<(bool IsAccurate, List<BrokenTransitionDto> BrokenTransitions, string FinalVerdict)> ValidateAccuracyWithGeminiAsync(
             string question,
-            string workflowName,
-            List<ExtractedPathStepDto>   extractedPath,
-            List<BrokenTransitionDto>    brokenTransitions,
-            bool isAccurate)
+            string workflowContext,
+            List<ExtractedPathStepDto> extractedPath,
+            List<WorkflowNodeInputDto> allNodes)
         {
-            // ── Xây dựng prompt phân tích ──────────────────────────────────
-            var sb = new StringBuilder();
-            sb.AppendLine("Bạn là chuyên gia kiểm định quy trình nghiệp vụ. Hãy viết một đoạn phân tích ngắn gọn (3-5 câu) bằng tiếng Việt về tính chính xác của câu hỏi sau đây đối với luồng nghiệp vụ.");
-            sb.AppendLine();
-            sb.AppendLine($"**Câu hỏi cần đánh giá:**");
-            sb.AppendLine($"\"{question}\"");
-            sb.AppendLine();
-            sb.AppendLine($"**Workflow:** {workflowName}");
-            sb.AppendLine();
+            var systemInstruction = @"Bạn là chuyên gia kiểm định quy trình nghiệp vụ (Business Analyst).
+Nhiệm vụ của bạn là đánh giá xem một CÂU HỎI TÌNH HUỐNG có phản ánh ĐÚNG logic của LUỒNG NGHIỆP VỤ (Workflow) hay không.
+Bạn sẽ được cung cấp:
+1. Câu hỏi.
+2. Cấu trúc đồ thị luồng nghiệp vụ (Nodes và Edges).
+3. Chuỗi các bước (Nodes) được trích xuất từ câu hỏi (Đây chỉ là gợi ý từ hệ thống tìm kiếm ngữ nghĩa, có thể thiếu sót hoặc dư thừa).
 
-            sb.AppendLine("**Chuỗi bước được trích xuất từ câu hỏi (theo thứ tự):**");
+QUY TẮC ĐÁNH GIÁ TÍNH CHÍNH XÁC (IsAccurate):
+1. Ưu tiên cao nhất là đánh giá ý nghĩa logic của CÂU HỎI đối chiếu với ĐỒ THỊ LUỒNG.
+2. BỎ QUA LỖI THIẾU BƯỚC (Sub-step omission): Nếu câu hỏi chỉ nhắc đến một bước tổng quát (Ví dụ: Service layer kiểm tra giới hạn) mà bước đó ngầm gọi đến các bước con (Ví dụ: Repository layer đếm số lượng), thì câu hỏi hoàn toàn HỢP LỆ và CHÍNH XÁC.
+3. BỎ QUA LỖI NODE DƯ THỪA (Noise nodes): Danh sách trích xuất có thể chứa các Endpoint/Node độc lập hoặc dư thừa do thuật toán tìm kiếm từ khóa bắt nhầm (Ví dụ: Câu hỏi nói về hàm A có cập nhật trạng thái, thuật toán lại trích xuất thêm hàm B cũng tên là cập nhật trạng thái). BẠN PHẢI BỎ QUA các node không liên quan này thay vì đánh giá chúng là lỗi đứt gãy luồng (Broken Transition). Chỉ tập trung vào các Node thực sự thuộc về luồng nghiệp vụ đang xét.
+4. CHỈ BẮT LỖI SAI LOGIC KHI:
+   - Câu hỏi mô tả một trình tự hoàn toàn ngược ngạo (A xảy ra sau B, nhưng trong đồ thị B xảy ra sau A).
+   - Câu hỏi cố tình kết hợp 2 nhánh rẽ đối lập (XOR) bắt buộc phải chạy đồng thời.
+   - Câu hỏi nhắc đến một sự kiện ảo không hề tồn tại hoặc không thể đi tới được trong luồng chính.
+
+YÊU CẦU ĐẦU RA (Trả về ĐÚNG định dạng JSON sau, TUYỆT ĐỐI không có markdown ```json):
+{
+  ""isAccurate"": true,
+  ""brokenTransitions"": [
+    {
+      ""fromNode"": ""Tên_Node_1"",
+      ""toNode"": ""Tên_Node_2"",
+      ""reason"": ""Giải thích lý do tại sao bước nhảy này sai logic luồng.""
+    }
+  ],
+  ""finalVerdict"": ""Một đoạn văn tiếng Việt ngắn gọn (3-5 câu) phân tích kết luận cuối cùng.""
+}
+Lưu ý: Nếu isAccurate = true, hãy để mảng brokenTransitions rỗng [].";
+
+            var prompt = new StringBuilder();
+            prompt.AppendLine("--- LUỒNG NGHIỆP VỤ (WORKFLOW) ---");
+            prompt.AppendLine(workflowContext);
+            prompt.AppendLine();
+            prompt.AppendLine("--- CÂU HỎI CẦN ĐÁNH GIÁ ---");
+            prompt.AppendLine(question);
+            prompt.AppendLine();
+            prompt.AppendLine("--- CÁC BƯỚC ĐÃ ĐƯỢC TRÍCH XUẤT TỪ CÂU HỎI ---");
             if (extractedPath.Count > 0)
             {
                 foreach (var step in extractedPath)
                 {
-                    sb.AppendLine($"  Bước {step.Step}: [{step.NodeId}] {step.NodeName}" +
-                                  $" (khớp với cụm \"{step.MatchedPhrase}\", sim={step.SimilarityScore:F3})");
+                    prompt.AppendLine($"Bước {step.Step}: [{step.NodeId}] {step.NodeName}");
+                    var nodeInfo = allNodes.FirstOrDefault(n => n.NodeId == step.NodeId);
+                    if (nodeInfo != null && !string.IsNullOrWhiteSpace(nodeInfo.SourceCode))
+                    {
+                        prompt.AppendLine("```csharp");
+                        prompt.AppendLine(nodeInfo.SourceCode);
+                        prompt.AppendLine("```");
+                    }
                 }
             }
             else
             {
-                sb.AppendLine("  (Không tìm được nút nào tương đồng trong workflow)");
+                prompt.AppendLine("(Không tìm thấy bước nào trong luồng khớp với câu hỏi này)");
             }
-            sb.AppendLine();
 
-            if (brokenTransitions.Count > 0)
+            var clientOptions = new ClientOptions { HttpClientFactory = () => _httpClientFactory.CreateClient() };
+            var client = new Client(apiKey: _geminiApiKey, clientOptions: clientOptions);
+
+            var config = new GenerateContentConfig
             {
-                sb.AppendLine("**Các chuyển tiếp bị đứt gãy:**");
-                foreach (var bt in brokenTransitions)
-                {
-                    sb.AppendLine($"  ✗ \"{bt.FromNode}\" → \"{bt.ToNode}\": {bt.Reason}");
-                }
-                sb.AppendLine();
-            }
+                SystemInstruction = new Content { Parts = [new Part { Text = systemInstruction }] },
+                Temperature = 0.2f,
+                ResponseMimeType = "application/json"
+            };
 
-            sb.AppendLine($"**Kết luận sơ bộ:** Câu hỏi {(isAccurate ? "CHÍNH XÁC" : "KHÔNG CHÍNH XÁC")} về mặt luồng nghiệp vụ.");
-            sb.AppendLine();
-            sb.AppendLine("Hãy đưa ra phân tích chi tiết, chỉ rõ tại sao câu hỏi phản ánh đúng hoặc sai luồng hệ thống, " +
-                          "và nêu rủi ro nghiệp vụ nếu có. Chỉ trả về đoạn văn phân tích, không thêm tiêu đề hay định dạng markdown.");
-
-            // ── Gọi Gemini với retry ───────────────────────────────────────
-            string verdict = string.Empty;
-            int retries    = 3;
-            int delay      = 3;
-
-            for (int attempt = 1; attempt <= retries; attempt++)
+            int maxRetries = 3;
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
                 try
                 {
-                    var client = _httpClientFactory.CreateClient();
-                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _cohereApiKey);
-                    
-                    var payload = new
-                    {
-                        model = VerdictModel,
-                        message = sb.ToString(),
-                        temperature = 0.4
-                    };
+                    var response = await client.Models.GenerateContentAsync(
+                        model: "gemini-3.1-flash-lite",
+                        contents: prompt.ToString(),
+                        config: config
+                    );
 
-                    var response = await client.PostAsync(
-                        "https://api.cohere.com/v1/chat",
-                        new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
+                    var aiJsonText = response.Text?.Trim() ?? string.Empty;
 
-                    if (response.IsSuccessStatusCode)
+                    // Clean markdown blocks if any
+                    if (aiJsonText.StartsWith("```json")) aiJsonText = aiJsonText.Substring(7);
+                    if (aiJsonText.EndsWith("```")) aiJsonText = aiJsonText.Substring(0, aiJsonText.Length - 3);
+                    aiJsonText = aiJsonText.Trim();
+
+                    var result = JsonSerializer.Deserialize<JsonElement>(aiJsonText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    bool isAccurate = result.TryGetProperty("isAccurate", out var isAccProp) && (isAccProp.ValueKind == JsonValueKind.True || isAccProp.ValueKind == JsonValueKind.False) ? isAccProp.GetBoolean() : false;
+                    string finalVerdict = result.TryGetProperty("finalVerdict", out var verdictProp) ? verdictProp.GetString() ?? "" : "";
+
+                    var broken = new List<BrokenTransitionDto>();
+                    if (result.TryGetProperty("brokenTransitions", out var brokenProp) && brokenProp.ValueKind == JsonValueKind.Array)
                     {
-                        var json = await response.Content.ReadAsStringAsync();
-                        using var doc = JsonDocument.Parse(json);
-                        if (doc.RootElement.TryGetProperty("text", out var textProp))
+                        foreach (var item in brokenProp.EnumerateArray())
                         {
-                            verdict = textProp.GetString()?.Trim() ?? string.Empty;
-                            break;
+                            broken.Add(new BrokenTransitionDto
+                            {
+                                FromNode = item.TryGetProperty("fromNode", out var f) ? f.GetString() : "",
+                                ToNode = item.TryGetProperty("toNode", out var t) ? t.GetString() : "",
+                                Reason = item.TryGetProperty("reason", out var r) ? r.GetString() : ""
+                            });
                         }
                     }
-                    else if (response.StatusCode == (System.Net.HttpStatusCode)429)
-                    {
-                        if (attempt == retries) throw new InvalidOperationException("Cohere Rate Limit Exceeded");
-                        
-                        int waitSeconds = delay;
-                        if (response.Headers.RetryAfter?.Delta.HasValue == true)
-                        {
-                            waitSeconds = (int)response.Headers.RetryAfter.Delta.Value.TotalSeconds + 1;
-                        }
 
-                        _logger.LogWarning("[FinalVerdict] Rate limit 429. Thử lại sau {D}s... (Attempt {A}/{R})", 
-                            waitSeconds, attempt, retries);
-                        
-                        await Task.Delay(TimeSpan.FromSeconds(waitSeconds));
-                        delay = Math.Max(delay * 2, 3);
-                    }
-                    else
-                    {
-                        var error = await response.Content.ReadAsStringAsync();
-                        _logger.LogError("Cohere Chat API Error: {Error}", error);
-                        throw new InvalidOperationException($"Cohere Chat API Error ({response.StatusCode}): {error}");
-                    }
+                    return (isAccurate, broken, finalVerdict);
                 }
-                catch (Exception ex) when (attempt < retries && ex.Message.Contains("Rate Limit"))
+                catch (Exception ex)
                 {
-                    // Đã xử lý ở trên
+                    if (attempt == maxRetries)
+                    {
+                        _logger.LogError(ex, "Gemini Accuracy Assessment failed after {Retries} attempts.", maxRetries);
+                        return (false, new List<BrokenTransitionDto>(), "Lỗi hệ thống khi gọi Gemini API để phân tích câu hỏi.");
+                    }
+                    await Task.Delay(2000 * attempt);
                 }
             }
 
-            // Fallback nếu Gemini không trả lời được
-            if (string.IsNullOrWhiteSpace(verdict))
-            {
-                verdict = isAccurate
-                    ? $"Câu hỏi phản ánh đúng luồng nghiệp vụ của workflow '{workflowName}'. " +
-                      $"Toàn bộ {extractedPath.Count} bước được trích xuất đều liên thông hợp lệ."
-                    : $"Câu hỏi KHÔNG phản ánh đúng luồng nghiệp vụ của workflow '{workflowName}'. " +
-                      $"Phát hiện {brokenTransitions.Count} chuyển tiếp bị đứt gãy.";
-            }
-
-            return verdict;
+            return (false, new List<BrokenTransitionDto>(), "Lỗi hệ thống.");
         }
 
         // ─────────────────────────────────────────────────────────────────────

@@ -54,6 +54,11 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
         /// Danh sách từ khóa bổ sung giúp Semantic Matching chính xác hơn.
         /// </summary>
         public List<string> Keywords { get; set; } = new();
+
+        /// <summary>
+        /// Source code of the node (if available).
+        /// </summary>
+        public string SourceCode { get; set; } = string.Empty;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

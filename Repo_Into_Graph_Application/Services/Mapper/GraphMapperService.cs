@@ -49,7 +49,7 @@ public class GraphMapperService
 
         if (businessData == null || !businessData.Any()) return;
 
-        var businessRecords = businessData.Select(b => new Business
+        var businessRecords = businessData.Select(b => new Bussiness
         {
             Id = Guid.NewGuid(),
             AnalysisRunId = analysisRunId,

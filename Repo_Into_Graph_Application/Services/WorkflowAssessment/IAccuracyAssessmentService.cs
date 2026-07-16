@@ -1,4 +1,4 @@
-using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
+﻿using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 
 namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 {
@@ -15,5 +15,6 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         /// (nodes + edges), thực thi Pipeline và trả về kết quả đánh giá chi tiết.
         /// </summary>
         Task<AccuracyAssessmentResultDto> AssessAccuracyAsync(AccuracyAssessmentRequestDto request);
+        Task<BatchAccuracyAssessmentResultDto> AssessAccuracyBatchAsync(Repo_Into_Graph_Application.Dtos.QuestionGenerate.GenerateQuestionsResponse response, WorkflowDataDto workflowData);
     }
 }

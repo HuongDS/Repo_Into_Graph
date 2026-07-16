@@ -150,17 +150,6 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
         /// <summary>Chi tiết của các nút Active (để hiển thị ra UI).</summary>
         public List<NodeDto> ActiveNodes { get; set; } = new();
 
-        // ── Bước 2: Path Accuracy ─────────────────────────────────────────────
-
-        /// <summary>
-        /// true  → chuỗi Active Nodes tạo thành một đường đi liên tục hợp lệ trong Workflow.
-        /// false → có đứt gãy luồng (missing edge).
-        /// </summary>
-        public bool IsAccurate { get; set; }
-
-        /// <summary>Danh sách các cặp nút bị đứt gãy (FromId → ToId) nếu IsAccurate = false.</summary>
-        public List<(string FromId, string ToId)> BrokenLinks { get; set; } = new();
-
         // ── Bước 3: Metrics ───────────────────────────────────────────────────
 
         /// <summary>Tỉ lệ nút Workflow / nút toàn cục (= Coverage_Luong_Graph).</summary>
@@ -171,21 +160,6 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
 
         /// <summary>Độ bao phủ tổng (bắc cầu) = CoverageWorkflowOverGlobal × CoverageActiveOverWorkflow.</summary>
         public double TotalCoverage { get; set; }
-
-        /// <summary>Độ sâu chuỗi = Số nút Active - 1.</summary>
-        public int ImpactPathLength { get; set; }
-
-        /// <summary>Số nút loại DecisionGateway trong chuỗi Active Nodes.</summary>
-        public int GatewaysCount { get; set; }
-
-        /// <summary>Phân loại độ khó: "Dễ" | "Trung bình" | "Khó".</summary>
-        public string DifficultyLevel { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Số cạnh E_q của đồ thị con G_q (chỉ tính cạnh kết nối giữa các Active Nodes).
-        /// Dùng để tính V(G) = E_q - V_q + 2 ở tầng Controller/DifficultyAssessmentService.
-        /// </summary>
-        public int SubgraphEdgeCount { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -195,19 +169,13 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
     /// <summary>
     /// Đóng gói câu hỏi gốc cùng toàn bộ kết quả Pipeline 3 bước của câu hỏi đó.
     /// </summary>
-    public class QuestionAssessmentResultDto
+    public class QuestionCoverageDto
     {
         /// <summary>Câu hỏi nghiệp vụ ngôn ngữ tự nhiên gốc.</summary>
         public string Question { get; set; } = string.Empty;
 
-        /// <summary>Gợi ý đáp án từ hệ thống sinh câu hỏi.</summary>
-        public string SuggestedAnswer { get; set; } = string.Empty;
-
-        /// <summary>Độ khó AI tự sinh (label gốc từ QuestionGenerate).</summary>
-        public string AiDifficulty { get; set; } = string.Empty;
-
-        /// <summary>Kết quả Pipeline 3 bước sau khi đánh giá trên đồ thị.</summary>
-        public AssessmentResultDto? GraphAssessment { get; set; }
+        /// <summary>Số lượng nút mã nguồn (Active Nodes) mà câu hỏi này đi qua.</summary>
+        public int ActiveNodeCount { get; set; }
 
         /// <summary>Độ bao phủ tổng (bắc cầu) của câu hỏi này.</summary>
         public double Coverage { get; set; }
@@ -226,7 +194,7 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
     /// <summary>
     /// Kết quả tổng hợp khi đánh giá toàn bộ danh sách câu hỏi của một Business.
     /// </summary>
-    public class BatchAssessmentResultDto
+    public class CoverageAssessmentResultDto
     {
         /// <summary>ID Business được đánh giá.</summary>
         public Guid BusinessId { get; set; }
@@ -236,12 +204,6 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
 
         /// <summary>Số lượng câu hỏi được đánh giá.</summary>
         public int TotalQuestions { get; set; }
-
-        /// <summary>Số câu hỏi có luồng chính xác (IsAccurate = true).</summary>
-        public int AccurateCount { get; set; }
-
-        /// <summary>Phần trăm câu hỏi chính xác (AccurateCount / TotalQuestions).</summary>
-        public double AccuracyRate { get; set; }
 
         /// <summary>Coverage trung bình của toàn bộ câu hỏi.</summary>
         public double AverageTotalCoverage { get; set; }
@@ -253,6 +215,6 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
         public int GlobalNodeCount { get; set; }
 
         /// <summary>Kết quả chi tiết từng câu hỏi.</summary>
-        public List<QuestionAssessmentResultDto> QuestionResults { get; set; } = new();
+        public List<QuestionCoverageDto> QuestionResults { get; set; } = new();
     }
 }

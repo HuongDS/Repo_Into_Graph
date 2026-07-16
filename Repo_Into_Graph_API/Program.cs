@@ -74,6 +74,7 @@ builder.Services.AddScoped<ICaculationService, CaculationService>();
 builder.Services.AddScoped<IWorkflowAssessmentService, WorkflowAssessmentService>();
 builder.Services.AddScoped<IAccuracyAssessmentService, AccuracyAssessmentService>();
 builder.Services.AddScoped<IDifficultyAssessmentService, DifficultyAssessmentService>();
+builder.Services.AddScoped<Repo_Into_Graph_Application.Services.AI.IEmbeddingService, Repo_Into_Graph_Application.Services.AI.EmbeddingService>();
 
 // Add support for controllers
 builder.Services.AddControllers();

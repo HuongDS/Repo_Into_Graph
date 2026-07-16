@@ -21,19 +21,9 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         /// <param name="response">
         ///   Output từ QuestionGenerateService – chứa BusinessId và toàn bộ GeneratedQuestionDtos.
         /// </param>
-        Task<BatchAssessmentResultDto> AssessCoverageAsync(GenerateQuestionsResponse response);
+        Task<CoverageAssessmentResultDto> AssessCoverageAsync(GenerateQuestionsResponse response);
 
-        /// <summary>
-        /// Orchestrator tổng hợp: thực thi toàn bộ Pipeline đánh giá câu hỏi trong một lần gọi.
-        /// <list type="number">
-        ///   <item>Bước 1–2: Semantic Mapping + Path Matching (Accuracy Assessment)</item>
-        ///   <item>Bước 3: Metrics Calculation – Độ Khó (Difficulty Assessment)</item>
-        /// </list>
-        /// </summary>
-        /// <param name="request">
-        ///   Câu hỏi nghiệp vụ + dữ liệu đồ thị Workflow (nodes + edges).
-        /// </param>
-        Task<AssessAllResultDto> AssessAllAsync(AssessAllRequestDto request);
+
 
         /// <summary>
         /// Lấy cấu trúc đồ thị (Nodes và Edges) của một Business Flow dưới dạng BusinessWorkflowGraphDto.

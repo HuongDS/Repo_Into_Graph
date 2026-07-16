@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
+using Repo_Into_Graph_Application.Services.AI;
 
 namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 {
@@ -14,20 +15,18 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         private const string EmbeddingModel = "embed-multilingual-v3.0";
         private const string VerdictModel = "command-r-08-2024";
 
-        private readonly IHttpClientFactory _httpClientFactory;
-        private readonly string _cohereApiKey;
+        private readonly IEmbeddingService _embeddingService;
         private readonly ILogger<AccuracyAssessmentService> _logger;
 
-        public AccuracyAssessmentService(
-            IConfiguration configuration,
-            IHttpClientFactory httpClientFactory,
-            ILogger<AccuracyAssessmentService> logger)
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly string _cohereApiKey;
+
+        public AccuracyAssessmentService(IEmbeddingService embeddingService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<AccuracyAssessmentService> logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
             _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
-
-            _cohereApiKey = configuration["CohereConfig:ApiKey"]
-                ?? throw new InvalidOperationException("Thiếu cấu hình CohereConfig:ApiKey.");
+            _cohereApiKey = configuration["CohereConfig:ApiKey"] ?? throw new InvalidOperationException("Thiếu cấu hình CohereConfig:ApiKey.");
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -35,6 +34,45 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         // ─────────────────────────────────────────────────────────────────────
 
         /// <inheritdoc/>
+                public async Task<BatchAccuracyAssessmentResultDto> AssessAccuracyBatchAsync(Repo_Into_Graph_Application.Dtos.QuestionGenerate.GenerateQuestionsResponse response, WorkflowDataDto workflowData)
+        {
+            var batchResult = new BatchAccuracyAssessmentResultDto
+            {
+                BusinessId = response.BusinessId,
+                BusinessName = response.BusinessName
+            };
+
+            if (workflowData == null || workflowData.Nodes == null || workflowData.Nodes.Count == 0)
+                return batchResult;
+
+            // Precompute node embeddings ONCE for the entire batch
+            var nodeTexts = workflowData.Nodes.Select(n => $"{n.NodeName}. {n.Description}".Trim()).ToList();
+            var nodeVectors = await _embeddingService.EmbedBatchAsync(nodeTexts, "search_document");
+
+            foreach (var q in response.GeneratedQuestionDtos ?? Enumerable.Empty<Repo_Into_Graph_Application.Dtos.QuestionGenerate.GeneratedQuestionDto>())
+            {
+                if (string.IsNullOrWhiteSpace(q.Question)) continue;
+
+                // Steps 1 & 2 & 3 manually for each question reusing nodeVectors
+                var extractedPath = await Step1_EmbeddingMappingAsync(q.Question, workflowData.Nodes, nodeVectors);
+                var (isAccurate, brokenTransitions) = Step2_GraphConnectionVerification(extractedPath, workflowData.Nodes, workflowData.Edges);
+                var finalVerdict = await GenerateFinalVerdictAsync(q.Question, workflowData.WorkflowName ?? string.Empty, extractedPath, brokenTransitions, isAccurate);
+
+                batchResult.QuestionResults.Add(new QuestionAccuracyAssessmentResultDto
+                {
+                    Question = q.Question,
+                    AccuracyResult = new AccuracyAssessmentResultDto
+                    {
+                        IsAccurate = isAccurate,
+                        ExtractedPath = extractedPath,
+                        BrokenTransitions = brokenTransitions,
+                        FinalVerdict = finalVerdict
+                    }
+                });
+            }
+            return batchResult;
+        }
+
         public async Task<AccuracyAssessmentResultDto> AssessAccuracyAsync(
             AccuracyAssessmentRequestDto request)
         {
@@ -90,62 +128,43 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         // ─────────────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Gom toàn bộ văn bản cần embed (question + tất cả node descriptions +
-        /// tất cả sliding-window chunks) vào 1 danh sách, gọi Gemini Embedding API
-        /// duy nhất 1 lần, rồi map ngược vector về từng node/chunk bằng CPU.
-        ///
-        /// Luồng:
-        ///   1. Build textBatch = [question, node0, node1, …, nodeN, chunk0, chunk1, …, chunkM]
-        ///   2. Gọi EmbedBatchWithRetryAsync(textBatch) → vectors[]
-        ///   3. vectors[0]         = questionVector
-        ///      vectors[1..N]      = nodeVectors
-        ///      vectors[N+1..N+M]  = chunkVectors
-        ///   4. Tính cosine similarity bằng CPU; lọc theo SimilarityThreshold
-        ///   5. Chọn MatchedPhrase cho từng node thắng bằng cosine với chunkVectors (CPU)
-        ///   6. Sắp xếp theo vị trí chunk trong câu hỏi
+        /// Nhúng Câu hỏi (với input_type = search_query)
+        /// Gom văn bản cần embed cho các nút (với input_type = search_document)
         /// </summary>
         private async Task<List<ExtractedPathStepDto>> Step1_EmbeddingMappingAsync(
             string question,
-            List<WorkflowNodeInputDto> nodes)
+            List<WorkflowNodeInputDto> nodes,
+            double[][]? precomputedNodeVectors = null)
         {
             if (nodes.Count == 0)
                 return new List<ExtractedPathStepDto>();
 
-            // ── Chuẩn bị danh sách text cần embed ────────────────────────────
-            var nodeTexts = nodes.Select(n =>
-            {
-                var t = $"{n.NodeName}. {n.Description}".Trim();
-                return string.IsNullOrWhiteSpace(t) ? n.NodeId : t;
-            }).ToList();
-
             var questionChunks = BuildSlidingWindowChunks(question, windowSize: 5, stepSize: 2);
             var chunkTexts = questionChunks.Select(c => c.Chunk).ToList();
 
-            // ── Gom vào 1 batch duy nhất: [question] + [nodes] + [chunks] ────
-            // Bố cục: index 0 = question, 1..N = nodes, N+1..N+M = chunks
-            var textBatch = new List<string>(1 + nodeTexts.Count + chunkTexts.Count);
-            textBatch.Add(question);          // idx 0
-            textBatch.AddRange(nodeTexts);    // idx 1 … N
-            textBatch.AddRange(chunkTexts);   // idx N+1 … N+M
+            // Nhúng Câu hỏi và chunk (với input_type = search_query)
+            var queryBatch = new List<string>(1 + chunkTexts.Count);
+            queryBatch.Add(question);
+            queryBatch.AddRange(chunkTexts);
+            
+            var queryVectors = await _embeddingService.EmbedBatchAsync(queryBatch, "search_query");
+            var questionVector = queryVectors[0];
+            var chunkVectors = queryVectors.Skip(1).ToArray();
 
+            // Nhúng Nodes (với input_type = search_document)
+            var nodeTexts = nodes.Select(n => $"{n.NodeName}. {n.Description}".Trim()).ToList();
+            
             _logger.LogInformation(
-                "[Bước 1] Batch embed {Total} texts (1 question + {N} nodes + {M} chunks) trong 1 request.",
-                textBatch.Count, nodeTexts.Count, chunkTexts.Count);
+                "[Bước 1] Gọi Cohere Embed: {Q} search_query và {N} search_document.", queryBatch.Count, nodeTexts.Count);
 
-            // ── Gọi API 1 lần duy nhất ───────────────────────────────────────
-            var allVectors = await EmbedBatchWithRetryAsync(textBatch);
-
-            // ── Map ngược vector theo index ───────────────────────────────────
-            var questionVector = allVectors[0];
-            var nodeVectors    = allVectors.Skip(1).Take(nodeTexts.Count).ToArray();
-            var chunkVectors   = allVectors.Skip(1 + nodeTexts.Count).ToArray();
+            var nodeVectors = await _embeddingService.EmbedBatchAsync(nodeTexts, "search_document");
 
             // ── Tính cosine similarity + lọc theo ngưỡng (hoàn toàn bằng CPU) ─
             var candidates = new List<(WorkflowNodeInputDto Node, double Similarity, string MatchedPhrase, int PhrasePosition)>();
 
             for (int i = 0; i < nodes.Count; i++)
             {
-                double sim = CosineSimilarity(questionVector, nodeVectors[i]);
+                double sim = _embeddingService.CosineSimilarity(questionVector, nodeVectors[i]);
                 if (sim < SimilarityThreshold) continue;
 
                 // Tìm chunk gần nhất với node này (CPU-only cosine)
@@ -155,7 +174,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 
                 for (int j = 0; j < questionChunks.Count && j < chunkVectors.Length; j++)
                 {
-                    double chunkSim = CosineSimilarity(nodeVectors[i], chunkVectors[j]);
+                    double chunkSim = _embeddingService.CosineSimilarity(nodeVectors[i], chunkVectors[j]);
                     if (chunkSim > bestChunkSim)
                     {
                         bestChunkSim = chunkSim;
@@ -170,10 +189,15 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                     nodes[i].NodeName, sim, bestPhrase);
             }
 
+            // ── Loại bỏ trùng lặp: Mỗi cụm từ (PhrasePosition) chỉ lấy 1 Node liên quan nhất ──
+            var filteredCandidates = candidates
+                .GroupBy(c => c.PhrasePosition)
+                .Select(g => g.OrderByDescending(c => c.Similarity).First())
+                .ToList();
+
             // ── Sắp xếp theo thứ tự tiến trình thời gian trong câu hỏi ───────
-            var orderedCandidates = candidates
+            var orderedCandidates = filteredCandidates
                 .OrderBy(c => c.PhrasePosition)
-                .ThenByDescending(c => c.Similarity)
                 .ToList();
 
             return orderedCandidates
@@ -208,17 +232,16 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             if (extractedPath.Count < 2)
                 return (true, brokenTransitions); // Ít hơn 2 nút → không cần kiểm tra cạnh
 
-            // ── 2a. Xây dựng EdgeSet O(1) từ danh sách cạnh ────────────────
-            // Key = (FromNodeId, ToNodeId) đã lowercase/trim để tránh mismatch
-            var edgeSet = new HashSet<(string From, string To)>(
-                edges
-                    .Where(e => !string.IsNullOrWhiteSpace(e.FromNodeId)
-                             && !string.IsNullOrWhiteSpace(e.ToNodeId))
-                    .Select(e => (
-                        e.FromNodeId.Trim().ToLowerInvariant(),
-                        e.ToNodeId.Trim().ToLowerInvariant()
-                    ))
-            );
+                        // ── 2a. Xây dựng Adjacency List từ danh sách cạnh ────────────────
+            var adjList = new Dictionary<string, List<string>>();
+            foreach (var e in edges)
+            {
+                if (string.IsNullOrWhiteSpace(e.FromNodeId) || string.IsNullOrWhiteSpace(e.ToNodeId)) continue;
+                var from = e.FromNodeId.Trim().ToLowerInvariant();
+                var to = e.ToNodeId.Trim().ToLowerInvariant();
+                if (!adjList.ContainsKey(from)) adjList[from] = new List<string>();
+                adjList[from].Add(to);
+            }
 
             // Lookup: NodeId → NodeName (để điền tên đầy đủ vào BrokenTransition)
             var nodeLookup = nodes.ToDictionary(
@@ -226,7 +249,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 n => n.NodeName,
                 StringComparer.OrdinalIgnoreCase);
 
-            // ── 2b. Duyệt từng cặp liên tiếp ───────────────────────────────
+            // ── 2b. Duyệt từng cặp liên tiếp bằng BFS để kiểm tra tính Reachable ───────────────────────────────
             for (int i = 0; i < extractedPath.Count - 1; i++)
             {
                 var fromStep = extractedPath[i];
@@ -235,16 +258,44 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 var fromKey = fromStep.NodeId.Trim().ToLowerInvariant();
                 var toKey   = toStep.NodeId.Trim().ToLowerInvariant();
 
-                if (!edgeSet.Contains((fromKey, toKey)))
+                bool reachable = false;
+                var queue = new Queue<string>();
+                var visited = new HashSet<string>();
+                
+                queue.Enqueue(fromKey);
+                visited.Add(fromKey);
+
+                while (queue.Count > 0)
                 {
-                    // Cạnh không tồn tại → đứt gãy luồng
+                    var curr = queue.Dequeue();
+                    if (curr == toKey)
+                    {
+                        reachable = true;
+                        break;
+                    }
+
+                    if (adjList.TryGetValue(curr, out var neighbors))
+                    {
+                        foreach (var neighbor in neighbors)
+                        {
+                            if (visited.Add(neighbor))
+                            {
+                                queue.Enqueue(neighbor);
+                            }
+                        }
+                    }
+                }
+
+                if (!reachable)
+                {
+                    // Đứt gãy luồng do không thể đi từ A đến B
                     brokenTransitions.Add(new BrokenTransitionDto
                     {
                         FromNode = fromStep.NodeName,
                         ToNode   = toStep.NodeName,
-                        Reason   = $"Không tồn tại chuyển tiếp trực tiếp từ \"{fromStep.NodeName}\" " +
-                                   $"sang \"{toStep.NodeName}\" trong đồ thị luồng nghiệp vụ. " +
-                                   $"Câu hỏi đang mô tả một bước nhảy cóc hoặc đi ngược quy trình hệ thống."
+                        Reason   = $"Không tồn tại đường đi từ \"{fromStep.NodeName}\" " +
+                                   $"đến \"{toStep.NodeName}\" trong đồ thị luồng nghiệp vụ. " +
+                                   $"Câu hỏi đang mô tả một bước nhảy cóc không hợp lệ hoặc đi ngược quy trình hệ thống."
                     });
                 }
             }
@@ -392,130 +443,6 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         /// Trả về mảng double[][] – mỗi phần tử tương ứng với 1 văn bản đầu vào.
         /// Có cơ chế retry với exponential backoff cho rate-limit.
         /// </summary>
-        private async Task<double[][]> EmbedBatchWithRetryAsync(List<string> texts)
-        {
-            if (texts.Count == 0)
-                return Array.Empty<double[]>();
-
-            const int batchSize = 96; // Cohere limit is 96 texts per embed request
-            var allEmbeddings = new List<double[]>();
-
-            for (int i = 0; i < texts.Count; i += batchSize)
-            {
-                var chunkTexts = texts.Skip(i).Take(batchSize).ToList();
-                
-                int retries = 3;
-                int delay   = 3;
-                bool success = false;
-
-                for (int attempt = 1; attempt <= retries; attempt++)
-                {
-                    try
-                    {
-                        var client = _httpClientFactory.CreateClient();
-                        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _cohereApiKey);
-                        
-                        var payload = new
-                        {
-                            texts = chunkTexts,
-                            model = EmbeddingModel,
-                            input_type = "search_document"
-                        };
-
-                        var response = await client.PostAsync(
-                            "https://api.cohere.com/v1/embed",
-                            new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
-
-                        if (response.IsSuccessStatusCode)
-                        {
-                            var json = await response.Content.ReadAsStringAsync();
-                            using var doc = JsonDocument.Parse(json);
-                            if (doc.RootElement.TryGetProperty("embeddings", out var embeddingsProp))
-                            {
-                                var embeddings = embeddingsProp.EnumerateArray()
-                                    .Select(e => e.EnumerateArray().Select(v => v.GetDouble()).ToArray())
-                                    .ToList();
-                                
-                                allEmbeddings.AddRange(embeddings);
-                                success = true;
-                                break;
-                            }
-                        }
-                        else if (response.StatusCode == (System.Net.HttpStatusCode)429)
-                        {
-                            if (attempt == retries) throw new InvalidOperationException("Cohere Rate Limit Exceeded");
-                            
-                            int waitSeconds = delay;
-                            if (response.Headers.RetryAfter?.Delta.HasValue == true)
-                            {
-                                waitSeconds = (int)response.Headers.RetryAfter.Delta.Value.TotalSeconds + 1;
-                            }
-
-                            _logger.LogWarning("[EmbedBatch] Rate limit 429. Thử lại sau {D}s... (Attempt {A}/{R})", 
-                                waitSeconds, attempt, retries);
-                            
-                            await Task.Delay(TimeSpan.FromSeconds(waitSeconds));
-                            delay = Math.Max(delay * 2, 3);
-                        }
-                        else
-                        {
-                            var error = await response.Content.ReadAsStringAsync();
-                            _logger.LogError("Cohere Embed API Error: {Error}", error);
-                            throw new InvalidOperationException($"Cohere Embed API Error ({response.StatusCode}): {error}");
-                        }
-                    }
-                    catch (Exception ex) when (attempt < retries && ex.Message.Contains("Rate Limit"))
-                    {
-                        // Đã xử lý ở trên
-                    }
-                }
-
-                if (!success)
-                {
-                    throw new InvalidOperationException("Không thể lấy batch embedding từ Cohere sau nhiều lần thử.");
-                }
-
-                if (i + batchSize < texts.Count)
-                {
-                    await Task.Delay(200); // Cohere is faster, slight delay is enough
-                }
-            }
-
-            return allEmbeddings.ToArray();
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // HELPERS: Toán học và xử lý văn bản
-        // ─────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Tính cosine similarity giữa 2 vector.
-        /// Kết quả trong [-1, 1]; với embedding văn bản thường trong [0, 1].
-        /// </summary>
-        private static double CosineSimilarity(double[] a, double[] b)
-        {
-            if (a.Length != b.Length)
-                throw new ArgumentException("Hai vector phải có cùng số chiều.");
-
-            double dot    = 0.0;
-            double normA  = 0.0;
-            double normB  = 0.0;
-
-            for (int i = 0; i < a.Length; i++)
-            {
-                dot   += a[i] * b[i];
-                normA += a[i] * a[i];
-                normB += b[i] * b[i];
-            }
-
-            double denom = Math.Sqrt(normA) * Math.Sqrt(normB);
-            return denom < 1e-10 ? 0.0 : dot / denom;
-        }
-
-        /// <summary>
-        /// Tạo các cụm từ sliding window từ một đoạn văn bản.
-        /// Ví dụ: "A B C D E" với window=3, step=1 → ["A B C", "B C D", "C D E"]
-        /// Mỗi cụm được kèm theo vị trí bắt đầu (character index) trong văn bản gốc.
         /// </summary>
         private static List<(string Chunk, int StartPos)> BuildSlidingWindowChunks(
             string text,

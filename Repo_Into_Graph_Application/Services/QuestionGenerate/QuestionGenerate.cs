@@ -26,7 +26,6 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
         private readonly IFeatureMethodMappingRepository _featureMethodMappingRepository;
         private readonly IFewShotExampleRepository _fewShotExampleRepository;
         private readonly IAIService _aIService;
-        private readonly ICaculationService _caculationService;
 
         public QuestionGenerate(
             IBusinessRepository businessRepository,
@@ -34,8 +33,7 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             IFeatureRepository featureRepository,
             IFeatureMethodMappingRepository featureMethodMappingRepository,
             IFewShotExampleRepository fewShotExampleRepository,
-            IAIService aIService, 
-            ICaculationService caculationService)
+            IAIService aIService)
         {
             _businessRepository = businessRepository ?? throw new ArgumentNullException(nameof(businessRepository));
             _featureBusinessMappingRepository = featureBusinessMappingRepository ?? throw new ArgumentNullException(nameof(featureBusinessMappingRepository));
@@ -43,7 +41,6 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             _featureMethodMappingRepository = featureMethodMappingRepository ?? throw new ArgumentNullException(nameof(featureMethodMappingRepository));
             _fewShotExampleRepository = fewShotExampleRepository ?? throw new ArgumentNullException(nameof(fewShotExampleRepository));
             _aIService = aIService;
-            _caculationService = caculationService;
         }
 
 
@@ -94,20 +91,6 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 foreach (var feature in features)
                 {
                     contextBuilder.AppendLine($"### Tên luồng: {feature.Name}");
-                    //contextBuilder.AppendLine($"Entry Point: {feature.EntryPoint}");
-
-                    //contextBuilder.AppendLine("Chuỗi bước gọi (Call chain):");
-                    //if (feature.Steps != null && feature.Steps.Count > 0)
-                    //{
-                    //    foreach (var step in feature.Steps.OrderBy(s => s.StepOrder))
-                    //    {
-                    //        contextBuilder.AppendLine($"  [{step.StepOrder}] {step.CallerClass}.{step.CallerMethod} --> {step.CalleeClass}.{step.CalleeMethod}");
-                    //    }
-                    //}
-                    //else
-                    //{
-                    //    contextBuilder.AppendLine("  (Không có dữ liệu bước gọi)");
-                    //}
 
                     if (!string.IsNullOrWhiteSpace(feature.DataFlowMermaidGraph))
                     {
@@ -148,8 +131,6 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 
                 fewShotExamples: fewShotExamples);
 
-            var codeCoverage = await _caculationService.CalculateCodeCoverage(questions, request.BusinessId);
-
             return new GenerateQuestionsResponse
             {
                 BusinessId = businessModel.Id,
@@ -157,8 +138,7 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
                 TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
                 FewShotUsed = fewShotExamples?.Count() ?? 0,
-                GeneratedQuestionDtos = questions,
-                CodeCoverage = codeCoverage,
+                GeneratedQuestionDtos = questions
             };
         }
     }

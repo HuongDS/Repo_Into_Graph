@@ -17,7 +17,6 @@ namespace Repo_Into_Graph_Application.Dtos.QuestionGenerate
 
         //public QuestionEvaluationResultDto questionEvaluationResultDto { get; set; }
         public IEnumerable<GeneratedQuestionDto> GeneratedQuestionDtos { get; set; }
-        public double CodeCoverage { get; set; }
         // public IEnumerable<Repo_Into_Graph_Application.Dtos.QuestionEvalution.QuestionEvaluationResultDto> EvaluatedQuestions { get; set; } = new List<Repo_Into_Graph_Application.Dtos.QuestionEvalution.QuestionEvaluationResultDto>();
     }
 }

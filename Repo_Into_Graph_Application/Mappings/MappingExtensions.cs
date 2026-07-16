@@ -7,7 +7,7 @@ namespace Repo_Into_Graph_Application.Mappings
 {
     public static class MappingExtensions
     {
-        public static BusinessViewDto ToDto(this Business record)
+        public static BusinessViewDto ToDto(this Bussiness record)
         {
             if (record == null) return null!;
             return new BusinessViewDto

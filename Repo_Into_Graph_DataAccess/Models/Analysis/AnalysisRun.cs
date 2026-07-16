@@ -24,7 +24,7 @@ public class AnalysisRun
 
     public List<CallGraphEdge> CallGraphEdges { get; set; } = new();
     public List<MethodSourceRecord> MethodSources { get; set; } = new();
-    public List<Business.Business> Businesses { get; set; } = new();
+    public List<Business.Bussiness> Businesses { get; set; } = new();
     public List<Feature.Feature> Features { get; set; } = new();
 }
 

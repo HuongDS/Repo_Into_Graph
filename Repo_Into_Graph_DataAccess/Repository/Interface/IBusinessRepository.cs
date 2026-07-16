@@ -1,4 +1,4 @@
-using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Business;
+using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Bussiness;
 
 namespace Repo_Into_Graph_DataAccess.Repository.Interface
 {

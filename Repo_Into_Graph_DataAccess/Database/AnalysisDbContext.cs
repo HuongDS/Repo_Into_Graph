@@ -6,7 +6,7 @@ using Repo_Into_Graph_DataAccess.Models.Feature;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_DataAccess.Models.Method;
 using Microsoft.Extensions.Configuration;
-using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Business;
+using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Bussiness;
 using FeatureModel = Repo_Into_Graph_DataAccess.Models.Feature.Feature;
 
 namespace Repo_Into_Graph_DataAccess.Database;

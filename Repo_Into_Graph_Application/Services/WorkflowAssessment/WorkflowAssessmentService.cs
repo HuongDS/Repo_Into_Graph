@@ -6,9 +6,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
+using Repo_Into_Graph_Application.Dtos.Method;
 using Repo_Into_Graph_Application.Services.AI;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
-using Repo_Into_Graph_Application.Services.AI;
+using Microsoft.Extensions.Caching.Distributed;
 
 namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 {
@@ -43,9 +44,10 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         private readonly IFeatureBusinessMappingRepository _featureBusinessMappingRepository;
         private readonly IFeatureMethodMappingRepository _featureMethodMappingRepository;
         private readonly IEmbeddingService _embeddingService;
-        private readonly IAccuracyAssessmentService _accuracyAssessmentService;
+        private readonly ISemanticMappingHelper _semanticMappingHelper;
         private readonly IDifficultyAssessmentService _difficultyAssessmentService;
         private readonly IMethodSourceRepository _methodSourceRepository;
+        private readonly IDistributedCache _cache;
 
         public WorkflowAssessmentService(
             ILogger<WorkflowAssessmentService> logger,
@@ -53,9 +55,10 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             IFeatureBusinessMappingRepository featureBusinessMappingRepository,
             IFeatureMethodMappingRepository featureMethodMappingRepository,
             IEmbeddingService embeddingService,
-            IAccuracyAssessmentService accuracyAssessmentService,
+            ISemanticMappingHelper semanticMappingHelper,
             IDifficultyAssessmentService difficultyAssessmentService,
-            IMethodSourceRepository methodSourceRepository)
+            IMethodSourceRepository methodSourceRepository,
+            IDistributedCache cache)
         {
             _logger = logger
                 ?? throw new ArgumentNullException(nameof(logger));
@@ -65,15 +68,16 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 ?? throw new ArgumentNullException(nameof(featureBusinessMappingRepository));
             _featureMethodMappingRepository = featureMethodMappingRepository
                 ?? throw new ArgumentNullException(nameof(featureMethodMappingRepository));
-            _accuracyAssessmentService = accuracyAssessmentService
-                ?? throw new ArgumentNullException(nameof(accuracyAssessmentService));
+            _embeddingService = embeddingService
+                ?? throw new ArgumentNullException(nameof(embeddingService));
+            _semanticMappingHelper = semanticMappingHelper
+                ?? throw new ArgumentNullException(nameof(semanticMappingHelper));
             _difficultyAssessmentService = difficultyAssessmentService
                 ?? throw new ArgumentNullException(nameof(difficultyAssessmentService));
             _methodSourceRepository = methodSourceRepository
                 ?? throw new ArgumentNullException(nameof(methodSourceRepository));
 
-            _embeddingService = embeddingService
-                ?? throw new ArgumentNullException(nameof(embeddingService));
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -95,7 +99,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             _logger.LogInformation("[WorkflowAssessment] Đánh giá câu hỏi cho Workflow '{WorkflowName}'.",
                 request.SelectedWorkflow.WorkflowName);
 
-            return await RunPipelineAsync(request.Question, request.SelectedWorkflow, request.GlobalGraph);
+            return await RunPipelineAsync(Guid.Empty, request.Question, request.SelectedWorkflow, request.GlobalGraph);
         }
 
         public async Task<CoverageAssessmentResultDto> AssessCoverageAsync(GenerateQuestionsResponse response)
@@ -120,6 +124,15 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             _logger.LogInformation("[AssessFromResponse] Business '{Name}' – {Count} câu hỏi.",
                 response.BusinessName, questions.Count);
 
+            // 0. Kiểm tra Cache trước
+            string cacheKey = $"coverage_batch_{response.BusinessId}_{string.Join("_", questions.Select(q => q.Question.GetHashCode()))}";
+            var cachedData = await _cache.GetStringAsync(cacheKey);
+            if (!string.IsNullOrEmpty(cachedData))
+            {
+                _logger.LogInformation("[AssessCoverageAsync] Đã lấy kết quả từ Redis/StashUp Cache.");
+                return JsonSerializer.Deserialize<CoverageAssessmentResultDto>(cachedData)!;
+            }
+
             // ── Phase A: Xây dựng đồ thị từ DB ───────────────────────────────
             var (workflowGraph, globalGraph) = await BuildGraphsFromDbAsync(response.BusinessId);
 
@@ -140,7 +153,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 AssessmentResultDto? graphResult = null;
                 try
                 {
-                    graphResult = await RunPipelineAsync(q.Question, workflowGraph, globalGraph);
+                    graphResult = await RunPipelineAsync(response.BusinessId, q.Question, workflowGraph, globalGraph);
                 }
                 catch (Exception ex)
                 {
@@ -165,7 +178,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 ? questionResults.Select(r => r.Coverage).DefaultIfEmpty(0.0).Average()
                 : 0.0;
 
-            return new CoverageAssessmentResultDto
+            var finalResult = new CoverageAssessmentResultDto
             {
                 BusinessId = response.BusinessId,
                 BusinessName = response.BusinessName,
@@ -175,6 +188,16 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 GlobalNodeCount = globalGraph.AllNodes.Count,
                 QuestionResults = questionResults
             };
+
+            // Lưu vào Cache
+            var cacheOptions = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(60)
+            };
+            await _cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(finalResult), cacheOptions);
+            _logger.LogInformation("[AssessCoverageAsync] Đã lưu kết quả vào Redis/StashUp Cache.");
+
+            return finalResult;
         }
 
         /// <inheritdoc/>
@@ -341,14 +364,30 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         // ─────────────────────────────────────────────────────────────────────
 
         private async Task<AssessmentResultDto> RunPipelineAsync(
+            Guid businessId,
             string question,
             WorkflowGraphDto workflowGraph,
             GlobalGraphDto globalGraph)
         {
             var result = new AssessmentResultDto();
 
-            // Bước 1: Semantic Mapping (Gemini Embedding thực)
-            var activeNodes = await Step1_EmbeddingMappingAsync(question, workflowGraph.Nodes);
+            // Convert NodeDto to WorkflowNodeInputDto
+            var inputNodes = workflowGraph.Nodes.Select(n => new Repo_Into_Graph_Application.Dtos.WorkflowAssessment.WorkflowNodeInputDto
+            {
+                NodeId = n.Id,
+                NodeName = n.Name,
+                Description = n.Description,
+                SourceCode = n.SourceCode
+            }).ToList();
+
+            // Bước 1: Semantic Mapping (Sử dụng chung với Accuracy qua Helper)
+            var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(businessId, question, inputNodes);
+            
+            // Map back to NodeDto
+            var activeNodes = workflowGraph.Nodes
+                .Where(n => extractedPath.Any(p => p.NodeId == n.Id))
+                .ToList();
+
             result.ActiveNodeIds = activeNodes.Select(n => n.Id).ToList();
             result.ActiveNodes = activeNodes;
 
@@ -358,58 +397,6 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             return result;
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // BƯỚC 1: Semantic Mapping — Gemini text-embedding-004 THỰC
-        // ─────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Sử dụng Gemini Embedding API để tính cosine similarity giữa Câu hỏi
-        /// và Description+Keywords của từng nút.
-        ///
-        /// Quy trình BATCH (1 request duy nhất):
-        ///   1. Gom [question] + [nodeText_0, …, nodeText_N] vào textBatch
-        ///   2. Gọi EmbedBatchWithRetryAsync(textBatch) → vectors[]
-        ///   3. vectors[0] = questionVector; vectors[1..N] = nodeVectors
-        ///   4. Tính cosine similarity(Q, N_i) bằng CPU; giữ nút có sim > SimilarityThreshold
-        ///   5. Sắp xếp theo similarity giảm dần (nút liên quan nhất trước)
-        /// </summary>
-        private async Task<List<NodeDto>> Step1_EmbeddingMappingAsync(
-            string question,
-            List<NodeDto> workflowNodes)
-        {
-            if (workflowNodes == null || workflowNodes.Count == 0)
-                return new List<NodeDto>();
-
-            // Nhúng Câu hỏi (với input_type = search_query)
-            var qVectors = await _embeddingService.EmbedBatchAsync(new List<string> { question }, "search_query");
-            var questionVector = qVectors[0];
-
-            // Gom văn bản cần embed cho các nút (với input_type = search_document)
-            var nodeTexts = workflowNodes.Select(BuildNodeText).ToList();
-
-            _logger.LogInformation(
-                "[Bước 1] Gọi Cohere Embed: 1 search_query và {N} search_document.", nodeTexts.Count);
-
-            var nodeVectors = await _embeddingService.EmbedBatchAsync(nodeTexts, "search_document");
-
-            // Tính cosine similarity hoàn toàn bằng CPU
-            var scoredNodes = new List<(NodeDto Node, double Similarity)>(workflowNodes.Count);
-            for (int i = 0; i < workflowNodes.Count; i++)
-            {
-                double sim = _embeddingService.CosineSimilarity(questionVector, nodeVectors[i]);
-
-                _logger.LogInformation("[Bước 1] Node '{Name}' | sim={Sim:F4}", workflowNodes[i].Name, sim);
-
-                if (sim >= SimilarityThreshold)
-                    scoredNodes.Add((workflowNodes[i], sim));
-            }
-
-            // Sắp xếp theo similarity giảm dần (nút liên quan nhất → đứng đầu)
-            return scoredNodes
-                .OrderByDescending(x => x.Similarity)
-                .Select(x => x.Node)
-                .ToList();
-        }
 
         // ─────────────────────────────────────────────────────────────────────
         // BƯỚC 2: Metrics — Coverage

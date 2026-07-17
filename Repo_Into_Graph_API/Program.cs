@@ -74,7 +74,14 @@ builder.Services.AddScoped<ICaculationService, CaculationService>();
 builder.Services.AddScoped<IWorkflowAssessmentService, WorkflowAssessmentService>();
 builder.Services.AddScoped<IAccuracyAssessmentService, AccuracyAssessmentService>();
 builder.Services.AddScoped<IDifficultyAssessmentService, DifficultyAssessmentService>();
+builder.Services.AddScoped<ISemanticMappingHelper, SemanticMappingHelper>();
 builder.Services.AddScoped<Repo_Into_Graph_Application.Services.AI.IEmbeddingService, Repo_Into_Graph_Application.Services.AI.EmbeddingService>();
+
+// Add Redis Distributed Cache
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("RedisConnection");
+});
 
 // Add support for controllers
 builder.Services.AddControllers();

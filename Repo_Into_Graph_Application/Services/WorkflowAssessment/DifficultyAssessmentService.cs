@@ -173,35 +173,34 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             var sb = new System.Text.StringBuilder();
 
             sb.Append($"Câu hỏi đạt mức {level.ToUpper()} (Path Type: {pathType}). ");
-            sb.Append($"Người trả lời phải tư duy qua chuỗi domino {vq} nút tích cực, ");
-            sb.Append($"tạo thành {impactPathLength} bước dịch chuyển logic liên tiếp ");
-            sb.Append($"(L_q = V_q - 1 = {vq} - 1 = {impactPathLength}). ");
+            sb.Append($"Luồng nghiệp vụ trải qua {vq} bước xử lý, ");
+            sb.Append($"tạo thành {impactPathLength} bước chuyển tiếp logic (L_q = V_q - 1 = {vq} - 1 = {impactPathLength}). ");
 
             // Độ phức tạp tuần hoàn
             sb.Append($"Độ phức tạp tuần hoàn V(G) = E_q - V_q + 2 = {eq} - {vq} + 2 = {cyclomaticComplexity}, ");
-            sb.Append($"nghĩa là có {cyclomaticComplexity} kịch bản kiểm thử độc lập. ");
+            sb.Append($"tương ứng với {cyclomaticComplexity} kịch bản kiểm thử (test cases) cần thiết. ");
 
             // Gateways
             if (gatewaysCount == 0)
             {
-                sb.Append("Luồng đi thẳng, không qua bất kỳ cổng quyết định nào — đây là Happy Path đơn giản nhất.");
+                sb.Append("Luồng đi thẳng tuyến tính (Happy Path), không có rẽ nhánh điều kiện.");
             }
             else if (gatewaysCount == 1)
             {
-                sb.Append($"Luồng đi qua đúng 1 cổng quyết định ngoại lệ ");
+                sb.Append($"Luồng kích hoạt đúng 1 điều kiện rẽ nhánh ngoại lệ ");
                 if (gatewayNames.Count > 0)
                     sb.Append($"('{gatewayNames[0]}') ");
-                sb.Append("— buộc người trả lời hiểu một trường hợp kiểm tra điều kiện nghiệp vụ.");
+                sb.Append("— đòi hỏi người trả lời nắm được tình huống kiểm tra nghiệp vụ cơ bản.");
             }
             else
             {
-                sb.Append($"Luồng kích hoạt đồng thời {gatewaysCount} cổng quyết định ngoại lệ");
+                sb.Append($"Luồng kích hoạt đồng thời {gatewaysCount} điều kiện rẽ nhánh ngoại lệ");
                 if (gatewayNames.Count > 0)
                 {
                     sb.Append(": ");
                     sb.Append(string.Join(", ", gatewayNames.Select((n, i) => $"({i + 1}) '{n}'")));
                 }
-                sb.Append(" — yêu cầu người trả lời hiểu thứ tự ưu tiên và tính xung đột giữa các nhánh rẽ.");
+                sb.Append(" — đòi hỏi người trả lời nắm vững thứ tự ưu tiên và xử lý xung đột logic phức tạp.");
             }
 
             return sb.ToString();

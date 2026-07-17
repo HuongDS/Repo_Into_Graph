@@ -94,6 +94,7 @@ public class AnalysisDbContext : DbContext
             entity.Property(x => x.ClassName).IsRequired();
             entity.Property(x => x.MethodName).IsRequired();
             entity.Property(x => x.SourceCode).IsRequired();
+            entity.Property(x => x.Type).HasConversion<string>().HasDefaultValue(Repo_Into_Graph_DataAccess.Consts.NodeType.Activity);
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             entity.HasIndex(x => x.AnalysisRunId);
         });

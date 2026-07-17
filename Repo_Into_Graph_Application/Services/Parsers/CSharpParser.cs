@@ -173,14 +173,24 @@ public class CSharpParser : ILanguageParser
             string actualClassName = parentType != null ? parentType.Identifier.Text.Trim() : _currentClass;
             if (!IsMigrationClass(actualClassName))
             {
+                bool isDecisionGateway = node.DescendantNodes().Any(n => 
+                    n is IfStatementSyntax || 
+                    n is SwitchStatementSyntax || 
+                    n is SwitchExpressionSyntax || 
+                    n is ConditionalExpressionSyntax ||
+                    n is WhileStatementSyntax ||
+                    n is DoStatementSyntax ||
+                    n is ForStatementSyntax ||
+                    n is ForEachStatementSyntax);
+
                 MethodSources.Add(new MethodSource
                 {
                     ClassName = actualClassName,
                     MethodName = _currentMethod,
                     SourceCode = node.ToString(),
-                    Language = _language
+                    Language = _language,
+                    Type = isDecisionGateway ? Repo_Into_Graph_DataAccess.Consts.NodeType.DecisionGateway : Repo_Into_Graph_DataAccess.Consts.NodeType.Activity
                 });
-         
             }
 
             base.VisitMethodDeclaration(node);

@@ -120,6 +120,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                         ClassName = source.ClassName,
                         MethodName = source.MethodName,
                         SourceCode = source.SourceCode,
+                        Type = source.Type,
                         CreatedAt = DateTime.UtcNow
                     }).ToList()
                 };

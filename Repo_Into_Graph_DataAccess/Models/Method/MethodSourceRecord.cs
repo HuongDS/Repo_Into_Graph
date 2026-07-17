@@ -12,6 +12,7 @@ public class MethodSourceRecord
     public string MethodName { get; set; } = string.Empty;
     public string SourceCode { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public Consts.NodeType Type { get; set; } = Consts.NodeType.Activity;
     public AnalysisRun? AnalysisRun { get; set; }
     public List<Repo_Into_Graph_DataAccess.Models.Feature.FeatureMethodMapping> FeatureMethodMappings { get; set; } = new();
 }

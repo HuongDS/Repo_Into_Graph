@@ -92,4 +92,27 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
         /// </summary>
         public string Reasoning { get; set; } = string.Empty;
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DTO: Kết quả Đánh giá Độ Khó Hàng Loạt (Batch)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Kết quả đánh giá độ khó cho một danh sách câu hỏi.
+    /// </summary>
+    public class BatchDifficultyAssessmentResultDto
+    {
+        public Guid BusinessId { get; set; }
+        public string BusinessName { get; set; } = string.Empty;
+        public List<QuestionDifficultyAssessmentResultDto> QuestionResults { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Kết quả đánh giá độ khó của một câu hỏi riêng lẻ trong danh sách.
+    /// </summary>
+    public class QuestionDifficultyAssessmentResultDto
+    {
+        public string Question { get; set; } = string.Empty;
+        public DifficultyAssessmentResultDto DifficultyResult { get; set; } = new();
+    }
 }

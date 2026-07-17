@@ -42,11 +42,20 @@ namespace Repo_Into_Graph_Application.Services.AI
 
             IEnumerable<FewShotExample>? fewShotExamples = null)
         {
+            string difficultyInstruction = difficulty.ToLower() switch
+            {
+                "dễ" => "- Mức độ DỄ (Happy Path): Câu hỏi CHỈ tập trung vào luồng xử lý thành công, đi thẳng từ đầu đến cuối mà KHÔNG kích hoạt bất kỳ nhánh rẽ ngoại lệ (if/else) nào, KHÔNG hỏi về lỗi.",
+                "trung bình" => "- Mức độ TRUNG BÌNH (Single Exception): Câu hỏi BẮT BUỘC phải hỏi về tình huống kích hoạt ĐÚNG MỘT (1) nhánh rẽ ngoại lệ (kiểm tra điều kiện, validation lỗi...).",
+                "khó" => "- Mức độ KHÓ (Double Exception): Câu hỏi BẮT BUỘC phải tạo ra tình huống phức tạp kích hoạt ĐỒNG THỜI TỪ HAI (2) nhánh rẽ ngoại lệ trở lên (xung đột dữ liệu, thứ tự ưu tiên, giao dịch chéo).",
+                _ => $"- Mức độ: {difficulty}."
+            };
+
             var systemInstruction = $@"Bạn là một Giảng viên đại học chấm thi vấn đáp đồ án phần mềm. Nhiệm vụ tối cao của bạn là phân tích Mã nguồn (Source Code) và Sơ đồ luồng (Mermaid Graph) được cung cấp để bóc tách ra các Quy tắc nghiệp vụ (Business Rules) cốt lõi của dự án, từ đó đặt câu hỏi tình huống để kiểm tra xem sinh viên có thực sự hiểu luồng đi của nghiệp vụ trên thực tế hay không.
 
 YÊU CẦU BẮT BUỘC VỀ SỐ LƯỢNG VÀ ĐỘ KHÓ:
 - Bạn PHẢI tạo ra chính xác ĐÚNG {numberOfQuestions} câu hỏi. Không được tạo nhiều hơn hoặc ít hơn.
-- Tất cả các câu hỏi phải được thiết kế ở mức độ: {difficulty}. (Với mức độ ""Khó"", câu hỏi phải xoáy sâu vào: Lỗ hổng logic nghiệp vụ, kịch bản lỗi khi vận hành, bài toán đồng bộ/xung đột dữ liệu giữa các phân hệ, hoặc rủi ro gian lận nghiệp vụ).
+- Tất cả các câu hỏi phải được thiết kế tuân thủ nghiêm ngặt quy định độ khó sau:
+{difficultyInstruction}
 
 THIẾT QUÂN LUẬT VỀ NGÔN NGỮ (100% BUSINESS LANGUAGE):
 1. Cả câu hỏi (question) và câu trả lời (suggestedAnswer) TUYỆT ĐỐI KHÔNG CHỨA bất kỳ từ khóa kỹ thuật hay cấu trúc mã nguồn nào.

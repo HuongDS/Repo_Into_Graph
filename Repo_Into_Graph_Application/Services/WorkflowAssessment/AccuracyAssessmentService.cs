@@ -4,8 +4,15 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Google.GenAI;
 using Google.GenAI.Types;
+using Microsoft.Extensions.Caching.Distributed;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 using Repo_Into_Graph_Application.Services.AI;
 
@@ -22,18 +29,24 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly string _geminiApiKey;
+        private readonly IDistributedCache _cache;
+        private readonly ISemanticMappingHelper _semanticMappingHelper;
 
-        public AccuracyAssessmentService(IEmbeddingService embeddingService, IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<AccuracyAssessmentService> logger)
+        public AccuracyAssessmentService(
+            IEmbeddingService embeddingService, 
+            IHttpClientFactory httpClientFactory, 
+            IConfiguration configuration, 
+            ILogger<AccuracyAssessmentService> logger,
+            IDistributedCache cache,
+            ISemanticMappingHelper semanticMappingHelper)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
             _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _geminiApiKey = configuration["GeminiConfig:ApiKey"] ?? throw new InvalidOperationException("Thiếu cấu hình GeminiConfig:ApiKey.");
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            _semanticMappingHelper = semanticMappingHelper ?? throw new ArgumentNullException(nameof(semanticMappingHelper));
         }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // PUBLIC ENTRY POINT
-        // ─────────────────────────────────────────────────────────────────────
 
         /// <inheritdoc/>
                 public async Task<BatchAccuracyAssessmentResultDto> AssessAccuracyBatchAsync(Repo_Into_Graph_Application.Dtos.QuestionGenerate.GenerateQuestionsResponse response, WorkflowDataDto workflowData)
@@ -46,6 +59,17 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 
             if (workflowData == null || workflowData.Nodes == null || workflowData.Nodes.Count == 0)
                 return batchResult;
+
+            // 1. Kiểm tra Cache trước
+            var questionsList = response.GeneratedQuestionDtos ?? Enumerable.Empty<Repo_Into_Graph_Application.Dtos.QuestionGenerate.GeneratedQuestionDto>();
+            string cacheKey = $"accuracy_batch_{response.BusinessId}_{string.Join("_", questionsList.Select(q => q.Question.GetHashCode()))}";
+
+            var cachedData = await _cache.GetStringAsync(cacheKey);
+            if (!string.IsNullOrEmpty(cachedData))
+            {
+                _logger.LogInformation("[AssessAccuracyBatchAsync] Đã lấy kết quả đánh giá từ Redis/StashUp Cache.");
+                return JsonSerializer.Deserialize<BatchAccuracyAssessmentResultDto>(cachedData)!;
+            }
 
             // Precompute node embeddings ONCE for the entire batch
             var nodeTexts = workflowData.Nodes.Select(n => $"{n.NodeName}. {n.Description}".Trim()).ToList();
@@ -71,7 +95,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 if (string.IsNullOrWhiteSpace(q.Question)) continue;
 
                 // Steps 1 & 2 & 3 manually for each question reusing nodeVectors
-                var extractedPath = await Step1_EmbeddingMappingAsync(q.Question, workflowData.Nodes, nodeVectors);
+                var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(response.BusinessId, q.Question, workflowData.Nodes, nodeVectors);
                 
                 // Gọi LLM as a Judge để xác thực
                 var (isAccurate, brokenTransitions, finalVerdict) = await ValidateAccuracyWithGeminiAsync(q.Question, workflowContext, extractedPath, workflowData.Nodes);
@@ -82,12 +106,22 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                     AccuracyResult = new AccuracyAssessmentResultDto
                     {
                         IsAccurate = isAccurate,
+                        AccuracyScore = CalculateAccuracyScore(isAccurate, extractedPath.Count, brokenTransitions.Count),
                         ExtractedPath = extractedPath,
                         BrokenTransitions = brokenTransitions,
                         FinalVerdict = finalVerdict
                     }
                 });
             }
+
+            // 2. Lưu vào Cache (Tồn tại trong 60 phút)
+            var cacheOptions = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(60)
+            };
+            await _cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(batchResult), cacheOptions);
+            _logger.LogInformation("[AssessAccuracyBatchAsync] Đã lưu kết quả vào Redis/StashUp Cache.");
+
             return batchResult;
         }
 
@@ -110,7 +144,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             // ══════════════════════════════════════════════════════════════════
             // BƯỚC 1: Semantic-to-Node Mapping (Gemini Embedding thực)
             // ══════════════════════════════════════════════════════════════════
-            var extractedPath = await Step1_EmbeddingMappingAsync(request.Question, nodes);
+            var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(Guid.Empty, request.Question, nodes);
 
             _logger.LogInformation("[Bước 1] Ánh xạ thành công {Count} nút Active.", extractedPath.Count);
 
@@ -133,100 +167,23 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             return new AccuracyAssessmentResultDto
             {
                 IsAccurate        = isAccurate,
+                AccuracyScore     = CalculateAccuracyScore(isAccurate, extractedPath.Count, brokenTransitions.Count),
                 ExtractedPath     = extractedPath,
                 BrokenTransitions = brokenTransitions,
                 FinalVerdict      = finalVerdict
             };
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // BƯỚC 1: Semantic-to-Node Mapping – BATCH EMBEDDING (1 lần gọi API)
-        // ─────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Nhúng Câu hỏi (với input_type = search_query)
-        /// Gom văn bản cần embed cho các nút (với input_type = search_document)
-        /// </summary>
-        private async Task<List<ExtractedPathStepDto>> Step1_EmbeddingMappingAsync(
-            string question,
-            List<WorkflowNodeInputDto> nodes,
-            double[][]? precomputedNodeVectors = null)
+        private double CalculateAccuracyScore(bool isAccurate, int extractedPathCount, int brokenTransitionsCount)
         {
-            if (nodes.Count == 0)
-                return new List<ExtractedPathStepDto>();
-
-            var questionChunks = BuildSlidingWindowChunks(question, windowSize: 5, stepSize: 2);
-            var chunkTexts = questionChunks.Select(c => c.Chunk).ToList();
-
-            // Nhúng Câu hỏi và chunk (với input_type = search_query)
-            var queryBatch = new List<string>(1 + chunkTexts.Count);
-            queryBatch.Add(question);
-            queryBatch.AddRange(chunkTexts);
+            if (isAccurate) return 1.0;
+            if (extractedPathCount <= 1) return 0.0;
             
-            var queryVectors = await _embeddingService.EmbedBatchAsync(queryBatch, "search_query");
-            var questionVector = queryVectors[0];
-            var chunkVectors = queryVectors.Skip(1).ToArray();
-
-            // Nhúng Nodes (với input_type = search_document)
-            var nodeTexts = nodes.Select(n => $"{n.NodeName}. {n.Description}".Trim()).ToList();
-            
-            _logger.LogInformation(
-                "[Bước 1] Gọi Cohere Embed: {Q} search_query và {N} search_document.", queryBatch.Count, nodeTexts.Count);
-
-            var nodeVectors = await _embeddingService.EmbedBatchAsync(nodeTexts, "search_document");
-
-            // ── Tính cosine similarity + lọc theo ngưỡng (hoàn toàn bằng CPU) ─
-            var candidates = new List<(WorkflowNodeInputDto Node, double Similarity, string MatchedPhrase, int PhrasePosition)>();
-
-            for (int i = 0; i < nodes.Count; i++)
-            {
-                double sim = _embeddingService.CosineSimilarity(questionVector, nodeVectors[i]);
-                if (sim < SimilarityThreshold) continue;
-
-                // Tìm chunk gần nhất với node này (CPU-only cosine)
-                string bestPhrase = questionChunks.Count > 0 ? questionChunks[0].Chunk : question;
-                int    bestPos    = questionChunks.Count > 0 ? questionChunks[0].StartPos : 0;
-                double bestChunkSim = double.MinValue;
-
-                for (int j = 0; j < questionChunks.Count && j < chunkVectors.Length; j++)
-                {
-                    double chunkSim = _embeddingService.CosineSimilarity(nodeVectors[i], chunkVectors[j]);
-                    if (chunkSim > bestChunkSim)
-                    {
-                        bestChunkSim = chunkSim;
-                        bestPhrase   = questionChunks[j].Chunk;
-                        bestPos      = questionChunks[j].StartPos;
-                    }
-                }
-
-                candidates.Add((nodes[i], sim, bestPhrase, bestPos));
-
-                _logger.LogDebug("[Bước 1] Node '{Name}' | sim={Sim:F3} | phrase='{P}'",
-                    nodes[i].NodeName, sim, bestPhrase);
-            }
-
-            // ── Loại bỏ trùng lặp: Mỗi cụm từ (PhrasePosition) chỉ lấy 1 Node liên quan nhất ──
-            var filteredCandidates = candidates
-                .GroupBy(c => c.PhrasePosition)
-                .Select(g => g.OrderByDescending(c => c.Similarity).First())
-                .ToList();
-
-            // ── Sắp xếp theo thứ tự tiến trình thời gian trong câu hỏi ───────
-            var orderedCandidates = filteredCandidates
-                .OrderBy(c => c.PhrasePosition)
-                .ToList();
-
-            return orderedCandidates
-                .Select((c, idx) => new ExtractedPathStepDto
-                {
-                    Step            = idx + 1,
-                    NodeId          = c.Node.NodeId,
-                    NodeName        = c.Node.NodeName,
-                    MatchedPhrase   = c.MatchedPhrase,
-                    SimilarityScore = Math.Round(c.Similarity, 4)
-                })
-                .ToList();
+            int totalTransitions = extractedPathCount - 1;
+            int validTransitions = Math.Max(0, totalTransitions - brokenTransitionsCount);
+            return Math.Round((double)validTransitions / totalTransitions, 2);
         }
+
 
                 // ─────────────────────────────────────────────────────────────────────
         // BƯỚC 2: Validate Accuracy With Gemini (LLM-as-a-Judge)
@@ -252,6 +209,8 @@ QUY TẮC ĐÁNH GIÁ TÍNH CHÍNH XÁC (IsAccurate):
    - Câu hỏi mô tả một trình tự hoàn toàn ngược ngạo (A xảy ra sau B, nhưng trong đồ thị B xảy ra sau A).
    - Câu hỏi cố tình kết hợp 2 nhánh rẽ đối lập (XOR) bắt buộc phải chạy đồng thời.
    - Câu hỏi nhắc đến một sự kiện ảo không hề tồn tại hoặc không thể đi tới được trong luồng chính.
+5. NHÁNH SONG SONG vs ĐỨT GÃY TUẦN TỰ: Nếu 2 nodes được trích xuất là 2 nhánh kiểm tra song song hoặc độc lập từ cùng một quy trình (ví dụ: cùng kiểm tra các điều kiện khác nhau), việc chúng không nối trực tiếp với nhau là HỢP LỆ (Bỏ qua lỗi đứt gãy). TUY NHIÊN, nếu câu hỏi mô tả 2 hành động bắt buộc phải xảy ra tuần tự (A phải xong rồi mới tới B) mà chúng không hề có đường đi liên kết trực tiếp hay gián tiếp trên đồ thị, thì đó LÀ LỖI ĐỨT GÃY THỰC SỰ.
+6. NẾU KHÔNG CÓ BƯỚC NÀO ĐƯỢC TRÍCH XUẤT (Extracted Path rỗng): Bạn hãy tự dựa vào Đồ thị luồng để đánh giá xem câu hỏi có hợp lý về mặt nghiệp vụ không. Nếu hợp lý (nói đúng tên, đúng luồng, đúng điều kiện), hãy trả về IsAccurate = true và brokenTransitions rỗng. Đừng tự tạo ra lỗi đứt gãy nếu không thực sự chắc chắn.
 
 YÊU CẦU ĐẦU RA (Trả về ĐÚNG định dạng JSON sau, TUYỆT ĐỐI không có markdown ```json):
 {

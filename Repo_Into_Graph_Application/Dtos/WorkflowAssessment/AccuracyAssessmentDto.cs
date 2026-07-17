@@ -153,6 +153,12 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
         public bool IsAccurate { get; set; }
 
         /// <summary>
+        /// Điểm số chính xác (0.0 đến 1.0) tính dựa trên tỷ lệ bước chuyển tiếp đúng.
+        /// Công thức: (Tổng số bước - Số bước gãy) / Tổng số bước.
+        /// </summary>
+        public double AccuracyScore { get; set; }
+
+        /// <summary>
         /// Chuỗi G_q = [Node_1 → Node_2 → … → Node_n] được trích xuất từ Câu hỏi
         /// sau khi ánh xạ ngữ nghĩa bằng Gemini Embedding.
         /// </summary>

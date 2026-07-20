@@ -117,7 +117,9 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 {
                     Id = m.Id.ToString(),
                     Name = $"{m.ClassName}.{m.MethodName}",
-                    Type = InferNodeType(m.MethodName),
+                    Type = m.Type == Repo_Into_Graph_DataAccess.Consts.NodeType.DecisionGateway
+                        ? NodeType.DecisionGateway
+                        : NodeType.Activity,
                     Description = $"{m.ClassName} {m.MethodName} {string.Join(" ", kws)} {ExtractKeywordsFromSource(m.SourceCode)}",
                     Keywords = kws,
                     SourceCode = m.SourceCode ?? string.Empty
@@ -172,19 +174,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             return (workflowGraph, globalGraph);
         }
 
-        private static NodeType InferNodeType(string methodName)
-        {
-            if (string.IsNullOrWhiteSpace(methodName)) return NodeType.Activity;
-            var lower = methodName.ToLowerInvariant();
 
-            if (lower.StartsWith("check") || lower.StartsWith("validate") ||
-                lower.StartsWith("should") || lower.StartsWith("has") ||
-                lower.StartsWith("is") || lower.StartsWith("can") ||
-                lower.Contains("decision") || lower.Contains("gateway"))
-                return NodeType.DecisionGateway;
-
-            return NodeType.Activity;
-        }
 
         private static string ExtractKeywordsFromSource(string sourceCode)
         {

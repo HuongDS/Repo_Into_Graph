@@ -122,7 +122,8 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                         SourceCode = source.SourceCode,
                         Type = source.Type,
                         CreatedAt = DateTime.UtcNow
-                    }).ToList()
+                    }).ToList(),
+                    GlobalNodeCount = result.MethodSources.Count
                 };
 
                 await _analysisRunRepository.AddAsync(analysisRun);

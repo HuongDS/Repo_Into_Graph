@@ -22,5 +22,15 @@ namespace Repo_Into_Graph_DataAccess.Repository.Impl
                 .Where(m => featureIds.Contains(m.FeatureId))
                 .ToListAsync();
         }
+
+        public async Task<List<Repo_Into_Graph_DataAccess.Models.Method.MethodSourceRecord>> GetMethodSourcesByFeatureIdsAsync(IEnumerable<Guid> featureIds)
+        {
+            return await _dbSet
+                .Where(m => featureIds.Contains(m.FeatureId))
+                .Select(m => m.MethodSource)
+                .Where(ms => ms != null)
+                .Distinct()
+                .ToListAsync();
+        }
     }
 }

@@ -117,6 +117,9 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
 
         /// <summary>Toàn bộ cạnh của hệ thống.</summary>
         public List<EdgeDto> AllEdges { get; set; } = new();
+
+        /// <summary>Tổng số lượng nút của hệ thống.</summary>
+        public int TotalNodeCount { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

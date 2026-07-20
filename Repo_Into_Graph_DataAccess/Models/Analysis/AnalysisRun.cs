@@ -22,6 +22,8 @@ public class AnalysisRun
     public bool? IsPublic { get; set; }
     public DateTime? RepoUpdatedAt { get; set; }
 
+    public int GlobalNodeCount { get; set; }
+
     public List<CallGraphEdge> CallGraphEdges { get; set; } = new();
     public List<MethodSourceRecord> MethodSources { get; set; } = new();
     public List<Business.Bussiness> Businesses { get; set; } = new();

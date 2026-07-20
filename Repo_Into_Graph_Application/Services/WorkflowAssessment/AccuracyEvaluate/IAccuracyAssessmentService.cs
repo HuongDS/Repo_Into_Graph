@@ -1,6 +1,6 @@
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 
-namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
+namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvaluate
 {
     /// <summary>
     /// Service thực thi Pipeline 2 bước đánh giá tính chính xác của Câu hỏi nghiệp vụ:

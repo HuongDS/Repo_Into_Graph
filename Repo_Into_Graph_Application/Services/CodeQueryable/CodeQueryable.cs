@@ -27,18 +27,16 @@ namespace Repo_Into_Graph_Application.Services.CodeQueryable
             _featureMethodMappingRepository = featureMethodMappingRepository ?? throw new ArgumentNullException(nameof(featureMethodMappingRepository));
         }
 
-        public async Task<IEnumerable<BusinessViewDto>> GetBusinessesAsync(Guid? id)
+        public async Task<IEnumerable<BusinessViewDto>> GetBusinessesByAnalysisRunIdAsync(Guid analysisRunId)
         {
-            if (id != null)
-            {
-                var record = await _businessRepository.GetByIdAsync(id.Value);
-                if (record == null) return Enumerable.Empty<BusinessViewDto>();
-
-                return new List<BusinessViewDto> { record.ToDto() };
-            }
-
-            var res = await _businessRepository.GetAllAsync();
+            var res = await _businessRepository.FindAsync(b => b.AnalysisRunId == analysisRunId);
             return res.Select(r => r.ToDto());
+        }
+
+        public async Task<BusinessViewDto?> GetBusinessByIdAsync(Guid id)
+        {
+            var record = await _businessRepository.GetByIdAsync(id);
+            return record?.ToDto();
         }
 
         public async Task<CodeFlowDto?> GetCodeFlowAsync(Guid businessId)

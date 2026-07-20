@@ -27,17 +27,19 @@ namespace Repo_Into_Graph_API.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<BusinessViewDto>>> GetAll()
+        public async Task<ActionResult<IEnumerable<BusinessViewDto>>> GetAll([FromQuery] Guid analysisRunId)
         {
-            var businesses = await _codeQueryable.GetBusinessesAsync(null);
+            if (analysisRunId == Guid.Empty)
+                return BadRequest(new { message = "analysisRunId query parameter là bắt buộc." });
+
+            var businesses = await _codeQueryable.GetBusinessesByAnalysisRunIdAsync(analysisRunId);
             return Ok(businesses);
         }
 
         [HttpGet("{id:guid}")]
         public async Task<ActionResult<BusinessViewDto>> GetById(Guid id)
         {
-            var businesses = await _codeQueryable.GetBusinessesAsync(id);
-            var business = businesses.FirstOrDefault();
+            var business = await _codeQueryable.GetBusinessByIdAsync(id);
             if (business == null)
             {
                 return NotFound(new { message = $"Không tìm thấy Business với ID: {id}" });
@@ -59,8 +61,7 @@ namespace Repo_Into_Graph_API.Controllers
         [HttpGet("{businessId:guid}/graph")]
         public async Task<ActionResult<BusinessWorkflowGraphDto>> GetGraph(Guid businessId)
         {
-            var businesses = await _codeQueryable.GetBusinessesAsync(businessId);
-            var business = businesses.FirstOrDefault();
+            var business = await _codeQueryable.GetBusinessByIdAsync(businessId);
             if (business == null)
             {
                 return NotFound(new { message = $"Không tìm thấy Business với ID: {businessId}" });

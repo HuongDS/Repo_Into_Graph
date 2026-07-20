@@ -16,7 +16,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 using Repo_Into_Graph_Application.Services.AI;
 
-namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
+namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvaluate
 {
     public class AccuracyAssessmentService : IAccuracyAssessmentService
     {
@@ -75,7 +75,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             var nodeTexts = workflowData.Nodes.Select(n => $"{n.NodeName}. {n.Description}".Trim()).ToList();
             var nodeVectors = await _embeddingService.EmbedBatchAsync(nodeTexts, "search_document");
 
-                        // ── Tạo Workflow Context text để gửi cho Gemini ──
+            // Tạo Workflow Context text để gửi cho Gemini
             var sb = new StringBuilder();
             sb.AppendLine($"Workflow Name: {workflowData.WorkflowName}");
             sb.AppendLine("Nodes:");
@@ -141,16 +141,12 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 request.WorkflowData?.WorkflowName, nodes.Count, edges.Count,
                 request.Question.Length > 80 ? request.Question[..80] + "…" : request.Question);
 
-            // ══════════════════════════════════════════════════════════════════
             // BƯỚC 1: Semantic-to-Node Mapping (Gemini Embedding thực)
-            // ══════════════════════════════════════════════════════════════════
             var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(Guid.Empty, request.Question, nodes);
 
             _logger.LogInformation("[Bước 1] Ánh xạ thành công {Count} nút Active.", extractedPath.Count);
 
-                        // ══════════════════════════════════════════════════════════════════
             // BƯỚC 2: LLM-as-a-Judge (Gemini Flash)
-            // ══════════════════════════════════════════════════════════════════
             var sb = new StringBuilder();
             sb.AppendLine($"Workflow Name: {request.WorkflowData?.WorkflowName}");
             sb.AppendLine("Nodes:");
@@ -185,9 +181,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
         }
 
 
-                // ─────────────────────────────────────────────────────────────────────
         // BƯỚC 2: Validate Accuracy With Gemini (LLM-as-a-Judge)
-        // ─────────────────────────────────────────────────────────────────────
         private async Task<(bool IsAccurate, List<BrokenTransitionDto> BrokenTransitions, string FinalVerdict)> ValidateAccuracyWithGeminiAsync(
             string question,
             string workflowContext,
@@ -315,15 +309,10 @@ Lưu ý: Nếu isAccurate = true, hãy để mảng brokenTransitions rỗng [].
             return (false, new List<BrokenTransitionDto>(), "Lỗi hệ thống.");
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // HELPERS: Gemini Embedding (Batch)
-        // ─────────────────────────────────────────────────────────────────────
+        // HELPERS: Sliding Window Chunks
 
         /// <summary>
-        /// Gọi Gemini Embedding API với danh sách văn bản (batch) duy nhất 1 lần.
-        /// Trả về mảng double[][] – mỗi phần tử tương ứng với 1 văn bản đầu vào.
-        /// Có cơ chế retry với exponential backoff cho rate-limit.
-        /// </summary>
+        /// Tách văn bản thành các chunk cửa sổ trượt (sliding window) để xử lý ngữ nghĩa.
         /// </summary>
         private static List<(string Chunk, int StartPos)> BuildSlidingWindowChunks(
             string text,

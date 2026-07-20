@@ -1,6 +1,6 @@
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 
-namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
+namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.DifficultyEvaluate
 {
     /// <summary>
     /// Service tính toán các chỉ số đồ thị để chứng minh và lượng hóa Độ Khó

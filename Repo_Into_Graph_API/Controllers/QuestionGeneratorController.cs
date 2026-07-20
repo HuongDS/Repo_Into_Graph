@@ -43,7 +43,7 @@ namespace Repo_Into_Graph_API.Controllers
             if (string.IsNullOrWhiteSpace(request.Question))
                 throw new BadRequestException("Trường 'question' không được để trống.");
 
-            var result = await _workflowAssessmentService.AssessAsync(request);
+            var result = await _workflowAssessmentService.Coverage.AssessAsync(request);
             return Ok(result);
         }
     }

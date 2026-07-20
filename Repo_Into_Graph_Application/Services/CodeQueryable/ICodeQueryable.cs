@@ -8,7 +8,8 @@ namespace Repo_Into_Graph_Application.Services.CodeQueryable
 {
     public interface ICodeQueryable
     {
-        Task<IEnumerable<BusinessViewDto>> GetBusinessesAsync(Guid? id);
+        Task<IEnumerable<BusinessViewDto>> GetBusinessesByAnalysisRunIdAsync(Guid analysisRunId);
+        Task<BusinessViewDto?> GetBusinessByIdAsync(Guid id);
         Task<CodeFlowDto?> GetCodeFlowAsync(Guid businessId);
     }
 }

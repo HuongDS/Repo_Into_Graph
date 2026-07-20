@@ -1,44 +1,10 @@
 using Microsoft.Extensions.Logging;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 
-namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
+namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.DifficultyEvaluate
 {
     /// <summary>
-    /// Triển khai <see cref="IDifficultyAssessmentService"/>.
-    ///
-    /// <para>
-    /// Thực thi thuần toán học — không cần Gemini API, không cần Database.
-    /// Ba chỉ số được tính theo lý thuyết đồ thị:
-    /// </para>
-    ///
-    /// <list type="number">
-    ///   <item>
-    ///     <term>Cyclomatic Complexity V(G)</term>
-    ///     <description>V(G) = E_q - V_q + 2 (công thức McCabe)</description>
-    ///   </item>
-    ///   <item>
-    ///     <term>Impact Path Length L_q</term>
-    ///     <description>L_q = |ActiveNodes| - 1 (số bước dịch chuyển)</description>
-    ///   </item>
-    ///   <item>
-    ///     <term>Path Type Classification</term>
-    ///     <description>
-    ///       Happy Path (0 gateway) |
-    ///       Single Exception (1 gateway) |
-    ///       Double Exception (≥ 2 gateways)
-    ///     </description>
-    ///   </item>
-    /// </list>
-    ///
-    /// <para>
-    /// Phân loại Độ Khó cuối cùng dựa theo logic <c>ClassifyDifficulty</c>
-    /// nhất quán với <see cref="WorkflowAssessmentService"/>:
-    /// <code>
-    ///   gateways ≥ 2 || pathLength ≥ 3  → "Khó"
-    ///   gateways == 1                   → "Trung bình"
-    ///   default                         → "Dễ"
-    /// </code>
-    /// </para>
+    /// Triển khai tính toán các chỉ số Độ Khó theo lý thuyết đồ thị (V(G), L_q, Path Type).
     /// </summary>
     public class DifficultyAssessmentService : IDifficultyAssessmentService
     {
@@ -60,9 +26,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 "[DifficultyAssessment] Bắt đầu – {N} Active Nodes | E_q={E}",
                 activeNodes.Count, request.TotalEdgesInSubgraph);
 
-            // ──────────────────────────────────────────────────────────────────
             // Chỉ số 1: Cyclomatic Complexity – V(G) = E_q - V_q + 2
-            // ──────────────────────────────────────────────────────────────────
             int vq = activeNodes.Count;      // Số nút của đồ thị con G_q
             int eq = request.TotalEdgesInSubgraph;
             // Đảm bảo E_q hợp lệ: phải >= V_q - 1 (cây tối giản)
@@ -77,14 +41,10 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 
             int cyclomaticComplexity = eq - vq + 2;
 
-            // ──────────────────────────────────────────────────────────────────
             // Chỉ số 2: Impact Path Length – L_q = V_q - 1
-            // ──────────────────────────────────────────────────────────────────
             int impactPathLength = Math.Max(0, activeNodes.Count - 1);
 
-            // ──────────────────────────────────────────────────────────────────
             // Chỉ số 3: Đếm DecisionGateway trong chuỗi Active Nodes
-            // ──────────────────────────────────────────────────────────────────
             int gatewaysCount = activeNodes.Count(n =>
                 string.Equals(n.NodeType, "DecisionGateway", StringComparison.OrdinalIgnoreCase));
 
@@ -93,19 +53,13 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 .Select(n => n.NodeName)
                 .ToList();
 
-            // ──────────────────────────────────────────────────────────────────
             // Phân loại Path Type
-            // ──────────────────────────────────────────────────────────────────
             string pathType = ClassifyPathType(gatewaysCount);
 
-            // ──────────────────────────────────────────────────────────────────
             // Phân loại Độ Khó (nhất quán với WorkflowAssessmentService.cs)
-            // ──────────────────────────────────────────────────────────────────
             string level = ClassifyDifficulty(gatewaysCount, impactPathLength);
 
-            // ──────────────────────────────────────────────────────────────────
             // Xây dựng Reasoning
-            // ──────────────────────────────────────────────────────────────────
             string reasoning = BuildReasoning(
                 level, cyclomaticComplexity, impactPathLength,
                 gatewaysCount, gatewayNames, vq, eq, pathType);
@@ -127,17 +81,10 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             return Task.FromResult(result);
         }
 
-        // ─────────────────────────────────────────────────────────────────────
         // PRIVATE: Phân loại helpers
-        // ─────────────────────────────────────────────────────────────────────
 
         /// <summary>
         /// Phân loại loại nhánh kích hoạt dựa trên số DecisionGateway.
-        /// <list type="bullet">
-        ///   <item>0 gateway → "Happy Path"</item>
-        ///   <item>1 gateway → "Single Exception"</item>
-        ///   <item>≥2 gateways → "Double Exception"</item>
-        /// </list>
         /// </summary>
         private static string ClassifyPathType(int gatewaysCount) => gatewaysCount switch
         {

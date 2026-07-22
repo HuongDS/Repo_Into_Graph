@@ -9,45 +9,39 @@ namespace Repo_Into_Graph_DataAccess.Repository.Impl
     {
         private readonly AnalysisDbContext _context;
         private bool _disposed;
-
-        private IAnalysisRunRepository? _analysisRuns;
-        private ICallGraphEdgeRepository? _callGraphEdges;
-        private IMethodSourceRepository? _methodSources;
-        private IBusinessRepository? _businesses;
-        private IFeatureMethodMappingRepository? _featureMethodMappings;
-        private IFeatureRepository? _features;
-        private IFeatureBusinessMappingRepository? _featureBusinessMappings;
-        private IFewShotExampleRepository? _fewShotExamples;
+        private IAnalysisRunRepository? analysisRuns;
+        private ICallGraphEdgeRepository? callGraphEdges;
+        private IMethodSourceRepository? methodSources;
+        private IBusinessRepository? businesses;
+        private IFeatureMethodMappingRepository? featureMethodMappings;
+        private IFeatureRepository? features;
+        private IFeatureBusinessMappingRepository? featureBusinessMappings;
+        private IFewShotExampleRepository? fewShotExamples;
 
         public UnitOfWork(AnalysisDbContext context)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
+            analysisRuns = new AnalysisRunRepository(_context);
+            callGraphEdges = new CallGraphEdgeRepository(_context);
+            methodSources = new MethodSourceRepository(_context);
+            businesses = new BusinessRepository(_context);
+            featureMethodMappings = new FeatureMethodMappingRepository(_context);
+            features = new FeatureRepository(_context);
+            featureBusinessMappings = new FeatureBusinessMappingRepository(_context);
+            fewShotExamples = new FewShotExampleRepository(_context);
         }
+        public IAnalysisRunRepository AnalysisRuns => analysisRuns ??= new AnalysisRunRepository(_context);
 
-        public IAnalysisRunRepository AnalysisRuns =>
-            _analysisRuns ??= new AnalysisRunRepository(_context);
+        public ICallGraphEdgeRepository CallGraphEdges => callGraphEdges ??= new CallGraphEdgeRepository(_context);
 
-        public ICallGraphEdgeRepository CallGraphEdges =>
-            _callGraphEdges ??= new CallGraphEdgeRepository(_context);
+        public IMethodSourceRepository MethodSources => methodSources ??= new MethodSourceRepository(_context);
 
-        public IMethodSourceRepository MethodSources =>
-            _methodSources ??= new MethodSourceRepository(_context);
+        public IBusinessRepository Businesses => businesses ??= new BusinessRepository(_context);
 
-        public IBusinessRepository Businesses =>
-            _businesses ??= new BusinessRepository(_context);
-
-        public IFeatureMethodMappingRepository FeatureMethodMappings =>
-            _featureMethodMappings ??= new FeatureMethodMappingRepository(_context);
-
-        public IFeatureRepository Features =>
-            _features ??= new FeatureRepository(_context);
-
-        public IFeatureBusinessMappingRepository FeatureBusinessMappings =>
-            _featureBusinessMappings ??= new FeatureBusinessMappingRepository(_context);
-
-        public IFewShotExampleRepository FewShotExamples =>
-            _fewShotExamples ??= new FewShotExampleRepository(_context);
-
+        public IFeatureMethodMappingRepository FeatureMethodMappings => featureMethodMappings ??= new FeatureMethodMappingRepository(_context);
+        public IFeatureRepository Features => features ??= new FeatureRepository(_context);
+        public IFeatureBusinessMappingRepository FeatureBusinessMappings => featureBusinessMappings ??= new FeatureBusinessMappingRepository(_context);
+        public IFewShotExampleRepository FewShotExamples => fewShotExamples ??= new FewShotExampleRepository(_context);
         public async Task<int> SaveChangesAsync()
         {
             return await _context.SaveChangesAsync();

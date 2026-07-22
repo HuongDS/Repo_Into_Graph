@@ -71,24 +71,6 @@ namespace Repo_Into_Graph_API.Controllers
 
             return Ok(dto);
         }
-
-        // ─────────────────────────────────────────────────────────────────────────
-        // Private helper
-        // ─────────────────────────────────────────────────────────────────────────
-        private static AnalysisRunDto ToDto(AnalysisRun x) => new()
-        {
-            Id = x.Id,
-            RepositoryPath = x.RepositoryPath,
-            CreatedAt = x.CreatedAt,
-            RepoName = x.RepoName,
-            RepoOwner = x.RepoOwner,
-            RepoDescription = x.RepoDescription,
-            RepoUrl = x.RepoUrl,
-            RepoLanguage = x.RepoLanguage,
-            RepoStars = x.RepoStars,
-            IsPublic = x.IsPublic,
-            RepoUpdatedAt = x.RepoUpdatedAt
-        };
     }
 }
 

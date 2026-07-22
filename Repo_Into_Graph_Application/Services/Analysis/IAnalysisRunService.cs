@@ -19,10 +19,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
         Task<AnalysisRunDto> CreateAsync(CreateAnalysisRunRequest request);
 
         Task<AnalysisRunDto?> UpdateAsync(Guid id, UpdateAnalysisRunRequest request);
-
-        /// <summary>
-        /// Trả về false nếu không tìm thấy, true nếu xóa thành công.
-        /// </summary>
         Task<bool> DeleteAsync(Guid id);
     }
 }

@@ -28,10 +28,41 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             Guid businessId,
             string question,
             List<WorkflowNodeInputDto> nodes,
-            double[][]? precomputedNodeVectors = null)
+            double[][]? precomputedNodeVectors = null,
+            string[]? targetedEntryPoints = null)
         {
             if (nodes.Count == 0)
                 return new List<ExtractedPathStepDto>();
+
+            // Nếu đã biết TargetedEntryPoints, bypass vector search!
+            if (targetedEntryPoints != null && targetedEntryPoints.Length > 0)
+            {
+                var matchedNodes = nodes.Where(n =>
+                    !string.IsNullOrWhiteSpace(n.NodeName) && targetedEntryPoints.Any(t =>
+                        !string.IsNullOrWhiteSpace(t) &&
+                        (string.Equals(t.Trim(), n.NodeName.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                         t.Trim().Contains(n.NodeName.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                         n.NodeName.Trim().Contains(t.Trim(), StringComparison.OrdinalIgnoreCase))
+                    )
+                ).ToList();
+
+                if (matchedNodes.Count > 0)
+                {
+                    _logger.LogInformation("[GetSemanticMappingAsync] Bypass Vector Search, sử dụng {C} TargetedEntryPoints.", matchedNodes.Count);
+                    return matchedNodes.Select((n, idx) => new ExtractedPathStepDto
+                    {
+                        Step = idx + 1,
+                        NodeId = n.NodeId,
+                        NodeName = n.NodeName,
+                        MatchedPhrase = "Exact Match from TargetedEntryPoints",
+                        SimilarityScore = 1.0
+                    }).ToList();
+                }
+                else
+                {
+                    _logger.LogWarning("[GetSemanticMappingAsync] Cảnh báo: Có {C} TargetedEntryPoints nhưng không Node nào khớp tên (VD: {T})! Chuyển sang Vector Search.", targetedEntryPoints.Length, targetedEntryPoints[0]);
+                }
+            }
 
             string cacheKey = $"active_nodes_{businessId}_{question.GetHashCode()}";
             var cachedData = await _cache.GetStringAsync(cacheKey);

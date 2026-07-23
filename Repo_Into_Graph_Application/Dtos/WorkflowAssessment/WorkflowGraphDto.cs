@@ -139,6 +139,9 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
 
         /// <summary>Đồ thị toàn cục của hệ thống.</summary>
         public GlobalGraphDto GlobalGraph { get; set; } = new();
+
+        /// <summary>Danh sách các điểm vào mục tiêu (từ AI Generator) để bypass Vector Search.</summary>
+        public string[]? TargetedEntryPoints { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

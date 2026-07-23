@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -18,8 +18,11 @@ namespace Repo_Into_Graph_Application.Mappings
             CreateMap<EdgeDto, BusinessWorkflowEdgeDto>()
                 .ForMember(dest => dest.Condition, opt => opt.MapFrom(src => src.Label));
 
-            CreateMap<NodeDto, WorkflowNodeInputDto>();
-            CreateMap<EdgeDto, WorkflowEdgeInputDto>();
+            CreateMap<NodeDto, WorkflowNodeInputDto>()
+                .ForMember(dest => dest.NodeId, opt => opt.MapFrom(src => src.Id))
+                .ForMember(dest => dest.NodeName, opt => opt.MapFrom(src => src.Name));
+            CreateMap<EdgeDto, WorkflowEdgeInputDto>()
+                .ForMember(dest => dest.Condition, opt => opt.MapFrom(src => src.Label));
         }
     }
 }

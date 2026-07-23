@@ -90,7 +90,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
                 if (string.IsNullOrWhiteSpace(q.Question)) continue;
 
                 // Steps 1 & 2 & 3 manually for each question reusing nodeVectors
-                var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(response.BusinessId, q.Question, workflowData.Nodes, nodeVectors);
+                var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(response.BusinessId, q.Question, workflowData.Nodes, nodeVectors, q.TargetedEntryPoints);
 
                 // Gọi LLM as a Judge để xác thực
                 var (isAccurate, brokenTransitions, finalVerdict) = await ValidateAccuracyWithGeminiAsync(q.Question, workflowContext, extractedPath, workflowData.Nodes);
@@ -200,6 +200,7 @@ QUY TẮC ĐÁNH GIÁ TÍNH CHÍNH XÁC (IsAccurate):
    - Câu hỏi nhắc đến một sự kiện ảo không hề tồn tại hoặc không thể đi tới được trong luồng chính.
 5. NHÁNH SONG SONG vs ĐỨT GÃY TUẦN TỰ: Nếu 2 nodes được trích xuất là 2 nhánh kiểm tra song song hoặc độc lập từ cùng một quy trình (ví dụ: cùng kiểm tra các điều kiện khác nhau), việc chúng không nối trực tiếp với nhau là HỢP LỆ (Bỏ qua lỗi đứt gãy). TUY NHIÊN, nếu câu hỏi mô tả 2 hành động bắt buộc phải xảy ra tuần tự (A phải xong rồi mới tới B) mà chúng không hề có đường đi liên kết trực tiếp hay gián tiếp trên đồ thị, thì đó LÀ LỖI ĐỨT GÃY THỰC SỰ.
 6. NẾU KHÔNG CÓ BƯỚC NÀO ĐƯỢC TRÍCH XUẤT (Extracted Path rỗng): Bạn hãy tự dựa vào Đồ thị luồng để đánh giá xem câu hỏi có hợp lý về mặt nghiệp vụ không. Nếu hợp lý (nói đúng tên, đúng luồng, đúng điều kiện), hãy trả về IsAccurate = true và brokenTransitions rỗng. Đừng tự tạo ra lỗi đứt gãy nếu không thực sự chắc chắn.
+7. KIỂM TRA NGHIÊM NGẶT THUẬT NGỮ NGHIỆP VỤ (DOMAIN TERMINOLOGY): Nếu câu hỏi sử dụng sai thuật ngữ cốt lõi so với bối cảnh nghiệp vụ (Ví dụ: Hệ thống ""Quản lý Đặt lịch hẹn"" nhưng câu hỏi lại nhắc đến ""trường học"", ""bài đấu giá"", ""đơn hàng"", ""giỏ hàng"", v.v.), BẠN PHẢI đánh giá câu hỏi này là KHÔNG CHÍNH XÁC (isAccurate = false) và ghi rõ lý do vào brokenTransitions. Lỗi sai thuật ngữ là lỗi sai bản chất nghiệp vụ, TUYỆT ĐỐI không được nhân nhượng hay tự động nội suy (map) sang từ tương đương.
 
 YÊU CẦU ĐẦU RA (Trả về ĐÚNG định dạng JSON sau, TUYỆT ĐỐI không có markdown ```json):
 {

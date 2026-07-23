@@ -39,7 +39,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.CoverageEvalua
             }).ToList();
 
             // Bước 1: Semantic Mapping
-            var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(Guid.Empty, request.Question, inputNodes);
+            var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(Guid.Empty, request.Question, inputNodes, null, request.TargetedEntryPoints);
             
             var activeNodes = request.SelectedWorkflow.Nodes
                 .Where(n => extractedPath.Any(p => p.NodeId == n.Id))
@@ -93,7 +93,8 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.CoverageEvalua
                     {
                         Question = q.Question,
                         SelectedWorkflow = workflowGraph,
-                        GlobalGraph = globalGraph
+                        GlobalGraph = globalGraph,
+                        TargetedEntryPoints = q.TargetedEntryPoints
                     };
                     graphResult = await AssessAsync(request);
                 }

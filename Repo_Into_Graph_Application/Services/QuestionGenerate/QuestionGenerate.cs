@@ -20,30 +20,15 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 {
     public class QuestionGenerate : IQuestionGenerate
     {
-        private readonly IBusinessRepository _businessRepository;
-        private readonly IFeatureBusinessMappingRepository _featureBusinessMappingRepository;
-        private readonly IFeatureRepository _featureRepository;
-        private readonly IFeatureMethodMappingRepository _featureMethodMappingRepository;
-        private readonly IFewShotExampleRepository _fewShotExampleRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IAIService _aIService;
 
-        public QuestionGenerate(
-            IBusinessRepository businessRepository,
-            IFeatureBusinessMappingRepository featureBusinessMappingRepository,
-            IFeatureRepository featureRepository,
-            IFeatureMethodMappingRepository featureMethodMappingRepository,
-            IFewShotExampleRepository fewShotExampleRepository,
+        public QuestionGenerate(IUnitOfWork unitOfWork,
             IAIService aIService)
         {
-            _businessRepository = businessRepository ?? throw new ArgumentNullException(nameof(businessRepository));
-            _featureBusinessMappingRepository = featureBusinessMappingRepository ?? throw new ArgumentNullException(nameof(featureBusinessMappingRepository));
-            _featureRepository = featureRepository ?? throw new ArgumentNullException(nameof(featureRepository));
-            _featureMethodMappingRepository = featureMethodMappingRepository ?? throw new ArgumentNullException(nameof(featureMethodMappingRepository));
-            _fewShotExampleRepository = fewShotExampleRepository ?? throw new ArgumentNullException(nameof(fewShotExampleRepository));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _aIService = aIService;
         }
-
-
 
         public async Task<GenerateQuestionsResponse> GenerateQuestionsAsync(GenerateQuestionsRequest request)
         {
@@ -51,18 +36,18 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 throw new BadRequestException("Yêu cầu không được để trống.");
 
             // 1. Load Business
-            var businessModel = await _businessRepository.GetByIdAsync(request.BusinessId);
+            var businessModel = await _unitOfWork.Businesses.GetByIdAsync(request.BusinessId);
 
             if (businessModel == null)
                 throw new NotFoundException("Business", request.BusinessId);
 
             // 2. Load các Feature (Luồng nghiệp vụ) được map với Business này
-            var featureBusinessMappings = await _featureBusinessMappingRepository.GetFeatureIdsByBusinessIdAsync(request.BusinessId);
+            var featureBusinessMappings = await _unitOfWork.FeatureBusinessMappings.GetFeatureIdsByBusinessIdAsync(request.BusinessId);
 
-            var features = await _featureRepository.GetFeaturesWithStepsByIdsAsync(featureBusinessMappings);
+            var features = await _unitOfWork.Features.GetFeaturesWithStepsByIdsAsync(featureBusinessMappings);
 
             // 3. Load Source Code (MethodSource) từ các Feature đó
-            var featureMethodMappings = await _featureMethodMappingRepository.GetMappingsWithMethodSourceByFeatureIdsAsync(featureBusinessMappings);
+            var featureMethodMappings = await _unitOfWork.FeatureMethodMappings.GetMappingsWithMethodSourceByFeatureIdsAsync(featureBusinessMappings);
 
             var methodSources = featureMethodMappings
                 .Where(m => m.MethodSource != null)
@@ -109,11 +94,11 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             IEnumerable<FewShotExample>? fewShotExamples = null;
             if (request.FewShotExampleIds != null && request.FewShotExampleIds.Count > 0)
             {
-                fewShotExamples = await _fewShotExampleRepository.GetByIdsAsync(request.FewShotExampleIds);
+                fewShotExamples = await _unitOfWork.FewShotExamples.GetByIdsAsync(request.FewShotExampleIds);
             }
             else if (!string.IsNullOrWhiteSpace(request.Difficulty))
             {
-                fewShotExamples = await _fewShotExampleRepository.GetByDifficultyAsync(request.Difficulty, 5);
+                fewShotExamples = await _unitOfWork.FewShotExamples.GetByDifficultyAsync(request.Difficulty, 5);
             }
 
             int numberOfQuestions = request.NumberOfQuestions;
@@ -128,7 +113,6 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 numberOfQuestions: numberOfQuestions,
                 difficulty: request.Difficulty,
                 additionalContext: request.Description,
-
                 fewShotExamples: fewShotExamples);
 
             return new GenerateQuestionsResponse

@@ -20,22 +20,17 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
 {
     public class AccuracyAssessmentService : IAccuracyAssessmentService
     {
-        private const double SimilarityThreshold = 0.55;
-        private const string EmbeddingModel = "embed-multilingual-v3.0";
-        private const string VerdictModel = "command-r-08-2024";
-
         private readonly IEmbeddingService _embeddingService;
         private readonly ILogger<AccuracyAssessmentService> _logger;
-
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly string _geminiApiKey;
         private readonly IDistributedCache _cache;
         private readonly ISemanticMappingHelper _semanticMappingHelper;
 
         public AccuracyAssessmentService(
-            IEmbeddingService embeddingService, 
-            IHttpClientFactory httpClientFactory, 
-            IConfiguration configuration, 
+            IEmbeddingService embeddingService,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration,
             ILogger<AccuracyAssessmentService> logger,
             IDistributedCache cache,
             ISemanticMappingHelper semanticMappingHelper)
@@ -49,7 +44,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
         }
 
         /// <inheritdoc/>
-                public async Task<BatchAccuracyAssessmentResultDto> AssessAccuracyBatchAsync(Repo_Into_Graph_Application.Dtos.QuestionGenerate.GenerateQuestionsResponse response, WorkflowDataDto workflowData)
+        public async Task<BatchAccuracyAssessmentResultDto> AssessAccuracyBatchAsync(Repo_Into_Graph_Application.Dtos.QuestionGenerate.GenerateQuestionsResponse response, WorkflowDataDto workflowData)
         {
             var batchResult = new BatchAccuracyAssessmentResultDto
             {
@@ -60,7 +55,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
             if (workflowData == null || workflowData.Nodes == null || workflowData.Nodes.Count == 0)
                 return batchResult;
 
-            // 1. Kiểm tra Cache trước
+            // Check cache first to avoid redundant processing
             var questionsList = response.GeneratedQuestionDtos ?? Enumerable.Empty<Repo_Into_Graph_Application.Dtos.QuestionGenerate.GeneratedQuestionDto>();
             string cacheKey = $"accuracy_batch_{response.BusinessId}_{string.Join("_", questionsList.Select(q => q.Question.GetHashCode()))}";
 
@@ -75,18 +70,18 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
             var nodeTexts = workflowData.Nodes.Select(n => $"{n.NodeName}. {n.Description}".Trim()).ToList();
             var nodeVectors = await _embeddingService.EmbedBatchAsync(nodeTexts, "search_document");
 
-            // Tạo Workflow Context text để gửi cho Gemini
+            // Create a string representation of the workflow context for LLM evaluation
             var sb = new StringBuilder();
             sb.AppendLine($"Workflow Name: {workflowData.WorkflowName}");
             sb.AppendLine("Nodes:");
             if (workflowData.Nodes != null)
             {
-                foreach(var n in workflowData.Nodes) sb.AppendLine($"- [{n.NodeId}] {n.NodeName}");
+                foreach (var n in workflowData.Nodes) sb.AppendLine($"- [{n.NodeId}] {n.NodeName}");
             }
             sb.AppendLine("Edges:");
             if (workflowData.Edges != null)
             {
-                foreach(var e in workflowData.Edges) sb.AppendLine($"- {e.FromNodeId} -> {e.ToNodeId}");
+                foreach (var e in workflowData.Edges) sb.AppendLine($"- {e.FromNodeId} -> {e.ToNodeId}");
             }
             string workflowContext = sb.ToString();
 
@@ -96,7 +91,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
 
                 // Steps 1 & 2 & 3 manually for each question reusing nodeVectors
                 var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(response.BusinessId, q.Question, workflowData.Nodes, nodeVectors);
-                
+
                 // Gọi LLM as a Judge để xác thực
                 var (isAccurate, brokenTransitions, finalVerdict) = await ValidateAccuracyWithGeminiAsync(q.Question, workflowContext, extractedPath, workflowData.Nodes);
 
@@ -114,7 +109,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
                 });
             }
 
-            // 2. Lưu vào Cache (Tồn tại trong 60 phút)
+            // Save the batch result to Redis/StashUp Cache for future requests
             var cacheOptions = new DistributedCacheEntryOptions
             {
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(60)
@@ -150,9 +145,9 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
             var sb = new StringBuilder();
             sb.AppendLine($"Workflow Name: {request.WorkflowData?.WorkflowName}");
             sb.AppendLine("Nodes:");
-            foreach(var n in nodes) sb.AppendLine($"- [{n.NodeId}] {n.NodeName}");
+            foreach (var n in nodes) sb.AppendLine($"- [{n.NodeId}] {n.NodeName}");
             sb.AppendLine("Edges:");
-            foreach(var e in edges) sb.AppendLine($"- {e.FromNodeId} -> {e.ToNodeId}");
+            foreach (var e in edges) sb.AppendLine($"- {e.FromNodeId} -> {e.ToNodeId}");
             string workflowContext = sb.ToString();
 
             var (isAccurate, brokenTransitions, finalVerdict) = await ValidateAccuracyWithGeminiAsync(
@@ -162,11 +157,11 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
 
             return new AccuracyAssessmentResultDto
             {
-                IsAccurate        = isAccurate,
-                AccuracyScore     = CalculateAccuracyScore(isAccurate, extractedPath.Count, brokenTransitions.Count),
-                ExtractedPath     = extractedPath,
+                IsAccurate = isAccurate,
+                AccuracyScore = CalculateAccuracyScore(isAccurate, extractedPath.Count, brokenTransitions.Count),
+                ExtractedPath = extractedPath,
                 BrokenTransitions = brokenTransitions,
-                FinalVerdict      = finalVerdict
+                FinalVerdict = finalVerdict
             };
         }
 
@@ -174,7 +169,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
         {
             if (isAccurate) return 1.0;
             if (extractedPathCount <= 1) return 0.0;
-            
+
             int totalTransitions = extractedPathCount - 1;
             int validTransitions = Math.Max(0, totalTransitions - brokenTransitionsCount);
             return Math.Round((double)validTransitions / totalTransitions, 2);
@@ -309,46 +304,6 @@ Lưu ý: Nếu isAccurate = true, hãy để mảng brokenTransitions rỗng [].
             return (false, new List<BrokenTransitionDto>(), "Lỗi hệ thống.");
         }
 
-        // HELPERS: Sliding Window Chunks
 
-        /// <summary>
-        /// Tách văn bản thành các chunk cửa sổ trượt (sliding window) để xử lý ngữ nghĩa.
-        /// </summary>
-        private static List<(string Chunk, int StartPos)> BuildSlidingWindowChunks(
-            string text,
-            int windowSize = 5,
-            int stepSize   = 2)
-        {
-            var result = new List<(string, int)>();
-            if (string.IsNullOrWhiteSpace(text)) return result;
-
-            // Tách câu thành danh sách (word, startIndex)
-            var words = new List<(string Word, int StartIdx)>();
-            int i     = 0;
-            while (i < text.Length)
-            {
-                // Bỏ qua khoảng trắng
-                while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
-                if (i >= text.Length) break;
-
-                int wordStart = i;
-                while (i < text.Length && !char.IsWhiteSpace(text[i])) i++;
-                words.Add((text[wordStart..i], wordStart));
-            }
-
-            // Tạo sliding window chunks
-            for (int w = 0; w <= words.Count - windowSize; w += stepSize)
-            {
-                var chunk     = string.Join(" ", words.Skip(w).Take(windowSize).Select(x => x.Word));
-                int startPos  = words[w].StartIdx;
-                result.Add((chunk, startPos));
-            }
-
-            // Đảm bảo luôn có ít nhất 1 chunk (toàn bộ câu hỏi)
-            if (result.Count == 0)
-                result.Add((text.Trim(), 0));
-
-            return result;
-        }
     }
 }

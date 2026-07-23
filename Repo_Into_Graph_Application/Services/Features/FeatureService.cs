@@ -1,3 +1,4 @@
+using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_Application.Dtos.Feature;
 using Repo_Into_Graph_DataAccess.Models.Feature;
@@ -12,13 +13,13 @@ namespace Repo_Into_Graph_Application.Services.Features
     public class FeatureService : IFeatureService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IMapper _mapper;
 
-        public FeatureService(IUnitOfWork unitOfWork)
+        public FeatureService(IUnitOfWork unitOfWork, IMapper mapper)
         {
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
-
-        // ─── GET paged ────────────────────────────────────────────────────────────
 
         public async Task<FeaturePagedResult> GetPagedAsync(
             int page,
@@ -44,27 +45,17 @@ namespace Repo_Into_Graph_Application.Services.Features
             var items = await query
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(x => new FeatureSummaryDto
-                {
-                    Id            = x.Id,
-                    AnalysisRunId = x.AnalysisRunId,
-                    Name          = x.Name,
-                    EntryPoint    = x.EntryPoint,
-                    StepCount     = x.Steps.Count,
-                    CreatedAt     = x.CreatedAt
-                })
+                .Select(x => _mapper.Map<FeatureSummaryDto>(x))
                 .ToListAsync();
 
             return new FeaturePagedResult
             {
-                Items      = items,
-                Page       = page,
-                PageSize   = pageSize,
+                Items = items,
+                Page = page,
+                PageSize = pageSize,
                 TotalCount = totalCount
             };
         }
-
-        // ─── GET all by analysisRunId ─────────────────────────────────────────────
 
         public async Task<IEnumerable<FeatureDetailDto>> GetAllByAnalysisRunAsync(Guid analysisRunId)
         {
@@ -75,10 +66,8 @@ namespace Repo_Into_Graph_Application.Services.Features
                 .OrderBy(x => x.Name)
                 .ToListAsync();
 
-            return features.Select(ToDetailDto).ToList();
+            return features.Select(f => _mapper.Map<FeatureDetailDto>(f)).ToList();
         }
-
-        // ─── GET by ID ────────────────────────────────────────────────────────────
 
         public async Task<FeatureDetailDto?> GetByIdAsync(Guid id)
         {
@@ -87,36 +76,7 @@ namespace Repo_Into_Graph_Application.Services.Features
                 .Include(x => x.Steps)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
-            return feature is null ? null : ToDetailDto(feature);
+            return feature is null ? null : _mapper.Map<FeatureDetailDto>(feature);
         }
-
-        // ─── Private mappers ──────────────────────────────────────────────────────
-
-        private static FeatureDetailDto ToDetailDto(Feature feature) => new()
-        {
-            Id                   = feature.Id,
-            AnalysisRunId        = feature.AnalysisRunId,
-            Name                 = feature.Name,
-            EntryPoint           = feature.EntryPoint,
-            CreatedAt            = feature.CreatedAt,
-            MermaidGraph         = feature.MermaidGraph,
-            DataFlowMermaidGraph = feature.DataFlowMermaidGraph,
-            Steps = feature.Steps
-                .OrderBy(s => s.StepOrder)
-                .Select(ToStepDto)
-                .ToList()
-        };
-
-        private static FeatureStepDto ToStepDto(FeatureStep s) => new()
-        {
-            Id           = s.Id,
-            FeatureId    = s.FeatureId,
-            StepOrder    = s.StepOrder,
-            CallerClass  = s.CallerClass,
-            CallerMethod = s.CallerMethod,
-            CalleeClass  = s.CalleeClass,
-            CalleeMethod = s.CalleeMethod,
-            CreatedAt    = s.CreatedAt
-        };
     }
 }

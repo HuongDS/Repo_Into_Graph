@@ -1,3 +1,4 @@
+using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_Application.Dtos.FewShot;
 using Repo_Into_Graph_Application.Exceptions;
@@ -12,13 +13,13 @@ namespace Repo_Into_Graph_Application.Services.FewShot
     public class FewShotService : IFewShotService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IMapper _mapper;
 
-        public FewShotService(IUnitOfWork unitOfWork)
+        public FewShotService(IUnitOfWork unitOfWork, IMapper mapper)
         {
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
-
-        // ─── GET paged ────────────────────────────────────────────────────────────
 
         public async Task<FewShotPagedResult> GetPagedAsync(
             int page,
@@ -45,55 +46,45 @@ namespace Repo_Into_Graph_Application.Services.FewShot
             var items = await query
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(x => ToDto(x))
+                .Select(x => _mapper.Map<FewShotExampleDto>(x))
                 .ToListAsync();
 
             return new FewShotPagedResult
             {
-                Items      = items,
-                Page       = page,
-                PageSize   = pageSize,
+                Items = items,
+                Page = page,
+                PageSize = pageSize,
                 TotalCount = totalCount
             };
         }
 
-        // ─── GET by ID ────────────────────────────────────────────────────────────
-
         public async Task<FewShotExampleDto?> GetByIdAsync(Guid id)
         {
             var entity = await _unitOfWork.FewShotExamples.GetByIdAsync(id);
-            return entity is null ? null : ToDto(entity);
+            return entity is null ? null : _mapper.Map<FewShotExampleDto>(entity);
         }
-
-        // ─── CREATE ───────────────────────────────────────────────────────────────
 
         public async Task<FewShotExampleDto> CreateAsync(CreateFewShotExampleRequest request)
         {
-            var entity = new FewShotExample
-            {
-                Id              = Guid.NewGuid(),
-                Question        = request.Question.Trim(),
-                SuggestedAnswer = request.SuggestedAnswer.Trim(),
-                Difficulty      = request.Difficulty.Trim(),
-                Tag             = request.Tag?.Trim(),
-                Description     = request.Description?.Trim(),
-                CreatedAt       = DateTime.UtcNow
-            };
+            var entity = _mapper.Map<FewShotExample>(request);
+            entity.Id = Guid.NewGuid();
+            entity.CreatedAt = DateTime.UtcNow;
+            entity.Question = entity.Question.Trim();
+            entity.SuggestedAnswer = entity.SuggestedAnswer.Trim();
+            entity.Difficulty = entity.Difficulty.Trim();
+            entity.Tag = entity.Tag?.Trim();
+            entity.Description = entity.Description?.Trim();
 
             await _unitOfWork.FewShotExamples.AddAsync(entity);
             await _unitOfWork.SaveChangesAsync();
-
-            return ToDto(entity);
+            return _mapper.Map<FewShotExampleDto>(entity);
         }
-
-        // ─── UPDATE ───────────────────────────────────────────────────────────────
 
         public async Task<FewShotExampleDto?> UpdateAsync(Guid id, UpdateFewShotExampleRequest request)
         {
             var entity = await _unitOfWork.FewShotExamples.GetByIdAsync(id);
             if (entity is null) return null;
 
-            // Chỉ ghi đè khi giá trị được truyền lên (khác null)
             if (request.Question is not null)
                 entity.Question = request.Question.Trim();
             if (request.SuggestedAnswer is not null)
@@ -104,38 +95,19 @@ namespace Repo_Into_Graph_Application.Services.FewShot
                 entity.Tag = request.Tag.Trim();
             if (request.Description is not null)
                 entity.Description = request.Description.Trim();
-
             _unitOfWork.FewShotExamples.Update(entity);
             await _unitOfWork.SaveChangesAsync();
-
-            return ToDto(entity);
+            return _mapper.Map<FewShotExampleDto>(entity);
         }
-
-        // ─── DELETE ───────────────────────────────────────────────────────────────
 
         public async Task<bool> DeleteAsync(Guid id)
         {
             var entity = await _unitOfWork.FewShotExamples.GetByIdAsync(id);
-            if (entity is null) return false;
-
+            if (entity is null) throw new NotFoundException($"Không tìm thấy few-shot example với ID: {id}");
             _unitOfWork.FewShotExamples.Delete(entity);
             await _unitOfWork.SaveChangesAsync();
-
             return true;
         }
-
-        // ─── Private mapper ───────────────────────────────────────────────────────
-
-        private static FewShotExampleDto ToDto(FewShotExample x) => new()
-        {
-            Id              = x.Id,
-            Question        = x.Question,
-            SuggestedAnswer = x.SuggestedAnswer,
-            Difficulty      = x.Difficulty,
-            Tag             = x.Tag,
-            Description     = x.Description,
-            CreatedAt       = x.CreatedAt
-        };
     }
 }
 

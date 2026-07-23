@@ -49,6 +49,8 @@ namespace Repo_Into_Graph_Application.Services.Analysis
         public async Task<AnalysisRunDto> CreateAsync(CreateAnalysisRunRequest request)
         {
             var entity = _mapper.Map<AnalysisRun>(request);
+            entity.Id = Guid.NewGuid();
+            entity.CreatedAt = DateTime.UtcNow;
             await _unitOfWork.AnalysisRuns.AddAsync(entity);
             await _unitOfWork.SaveChangesAsync();
             return _mapper.Map<AnalysisRunDto>(entity);

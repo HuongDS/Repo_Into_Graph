@@ -23,9 +23,7 @@ namespace Repo_Into_Graph_Application.Mappings
                 .ForMember(dest => dest.RepoUpdatedAt, opt => opt.MapFrom(src => src.RepoUpdatedAt))
                 .ForMember(dest => dest.RepoLanguage, opt => opt.MapFrom(src => src.RepoLanguage))
                 .ForMember(dest => dest.RepoStars, opt => opt.MapFrom(src => src.RepoStars))
-                .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => DateTime.UtcNow))
-                .ForMember(dest => dest.IsPublic, opt => opt.MapFrom(src => src.IsPublic))
-                .ForMember(dest => dest.Id, opt => opt.MapFrom(src => Guid.NewGuid()));
+                .ForMember(dest => dest.IsPublic, opt => opt.MapFrom(src => src.IsPublic));
 
         }
     }

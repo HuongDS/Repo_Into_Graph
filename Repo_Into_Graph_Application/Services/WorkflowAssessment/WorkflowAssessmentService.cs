@@ -9,43 +9,33 @@ using Repo_Into_Graph_Application.Services.WorkflowAssessment.CoverageEvaluate;
 using Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvaluate;
 using Repo_Into_Graph_Application.Services.WorkflowAssessment.DifficultyEvaluate;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
+using AutoMapper;
+using Repo_Into_Graph_Application.Helper;
 
 namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
 {
     public class WorkflowAssessmentService : IWorkflowAssessmentService
     {
-        private readonly ILogger<WorkflowAssessmentService> _logger;
-        private readonly IBusinessRepository _businessRepository;
-        private readonly IFeatureBusinessMappingRepository _featureBusinessMappingRepository;
-        private readonly IFeatureMethodMappingRepository _featureMethodMappingRepository;
-        private readonly IMethodSourceRepository _methodSourceRepository;
-        private readonly IAnalysisRunRepository _analysisRunRepository;
+        private readonly IUnitOfWork _unitOfWork;
 
         public ICoverageAssessmentService Coverage { get; }
         public IAccuracyAssessmentService Accuracy { get; }
         public IDifficultyAssessmentService Difficulty { get; }
 
+        private readonly IMapper _mapper;
+
         public WorkflowAssessmentService(
-            ILogger<WorkflowAssessmentService> logger,
-            IBusinessRepository businessRepository,
-            IFeatureBusinessMappingRepository featureBusinessMappingRepository,
-            IFeatureMethodMappingRepository featureMethodMappingRepository,
-            IMethodSourceRepository methodSourceRepository,
-            IAnalysisRunRepository analysisRunRepository,
+            IUnitOfWork unitOfWork,
             ICoverageAssessmentService coverageAssessmentService,
             IAccuracyAssessmentService accuracyAssessmentService,
-            IDifficultyAssessmentService difficultyAssessmentService)
+            IDifficultyAssessmentService difficultyAssessmentService,
+            IMapper mapper)
         {
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _businessRepository = businessRepository ?? throw new ArgumentNullException(nameof(businessRepository));
-            _featureBusinessMappingRepository = featureBusinessMappingRepository ?? throw new ArgumentNullException(nameof(featureBusinessMappingRepository));
-            _featureMethodMappingRepository = featureMethodMappingRepository ?? throw new ArgumentNullException(nameof(featureMethodMappingRepository));
-            _methodSourceRepository = methodSourceRepository ?? throw new ArgumentNullException(nameof(methodSourceRepository));
-            _analysisRunRepository = analysisRunRepository ?? throw new ArgumentNullException(nameof(analysisRunRepository));
-            
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             Coverage = coverageAssessmentService ?? throw new ArgumentNullException(nameof(coverageAssessmentService));
             Accuracy = accuracyAssessmentService ?? throw new ArgumentNullException(nameof(accuracyAssessmentService));
             Difficulty = difficultyAssessmentService ?? throw new ArgumentNullException(nameof(difficultyAssessmentService));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
         public async Task<BusinessWorkflowGraphDto> GetBusinessWorkflowGraphAsync(Guid businessId)
@@ -58,19 +48,8 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                 BusinessName = workflowGraph.WorkflowName,
                 WorkflowNodeCount = workflowGraph.Nodes.Count,
                 GlobalNodeCount = globalGraph.TotalNodeCount,
-                Nodes = workflowGraph.Nodes.Select(n => new BusinessWorkflowNodeDto
-                {
-                    Id = n.Id,
-                    Name = n.Name,
-                    Type = n.Type.ToString(),
-                    Description = n.Description
-                }).ToList(),
-                Edges = workflowGraph.Edges.Select(e => new BusinessWorkflowEdgeDto
-                {
-                    FromNodeId = e.FromNodeId,
-                    ToNodeId = e.ToNodeId,
-                    Condition = e.Label
-                }).ToList()
+                Nodes = workflowGraph.Nodes.Select(n => _mapper.Map<BusinessWorkflowNodeDto>(n)).ToList(),
+                Edges = workflowGraph.Edges.Select(e => _mapper.Map<BusinessWorkflowEdgeDto>(e)).ToList()
             };
         }
 
@@ -81,38 +60,28 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             return new WorkflowDataDto
             {
                 WorkflowName = workflowGraph.WorkflowName,
-                Nodes = workflowGraph.Nodes.Select(n => new WorkflowNodeInputDto
-                {
-                    NodeId = n.Id,
-                    NodeName = n.Name,
-                    Description = n.Description,
-                    SourceCode = n.SourceCode
-                }).ToList(),
-                Edges = workflowGraph.Edges.Select(e => new WorkflowEdgeInputDto
-                {
-                    FromNodeId = e.FromNodeId,
-                    ToNodeId = e.ToNodeId
-                }).ToList()
+                Nodes = workflowGraph.Nodes.Select(n => _mapper.Map<WorkflowNodeInputDto>(n)).ToList(),
+                Edges = workflowGraph.Edges.Select(e => _mapper.Map<WorkflowEdgeInputDto>(e)).ToList()
             };
         }
 
         public async Task<(WorkflowGraphDto WorkflowGraph, GlobalGraphDto GlobalGraph)> BuildGraphsFromDbAsync(Guid businessId)
         {
-            var featureIds = await _featureBusinessMappingRepository.GetFeatureIdsByBusinessIdAsync(businessId);
+            var featureIds = await _unitOfWork.FeatureBusinessMappings.GetFeatureIdsByBusinessIdAsync(businessId);
 
             var featureMappings = featureIds.Count > 0
-                ? await _featureMethodMappingRepository.GetMappingsWithMethodSourceByFeatureIdsAsync(featureIds)
+                ? await _unitOfWork.FeatureMethodMappings.GetMappingsWithMethodSourceByFeatureIdsAsync(featureIds)
                 : new List<Repo_Into_Graph_DataAccess.Models.Feature.FeatureMethodMapping>();
 
             var workflowMethods = featureIds.Count > 0
-                ? await _featureMethodMappingRepository.GetMethodSourcesByFeatureIdsAsync(featureIds)
+                ? await _unitOfWork.FeatureMethodMappings.GetMethodSourcesByFeatureIdsAsync(featureIds)
                 : new List<Repo_Into_Graph_DataAccess.Models.Method.MethodSourceRecord>();
 
             var workflowNodes = workflowMethods.Select(m =>
             {
                 var kws = new List<string> { m.ClassName.Trim(), m.MethodName.Trim() };
-                kws.AddRange(SplitCamelCase(m.MethodName));
-                kws.AddRange(SplitCamelCase(m.ClassName));
+                kws.AddRange(SplitCamelCase.Split(m.MethodName));
+                kws.AddRange(SplitCamelCase.Split(m.ClassName));
                 return new NodeDto
                 {
                     Id = m.Id.ToString(),
@@ -120,7 +89,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
                     Type = m.Type == Repo_Into_Graph_DataAccess.Consts.NodeType.DecisionGateway
                         ? NodeType.DecisionGateway
                         : NodeType.Activity,
-                    Description = $"{m.ClassName} {m.MethodName} {string.Join(" ", kws)} {ExtractKeywordsFromSource(m.SourceCode)}",
+                    Description = $"{m.ClassName} {m.MethodName} {string.Join(" ", kws)} {ExtractKeywordsFromSource.Extract(m.SourceCode)}",
                     Keywords = kws,
                     SourceCode = m.SourceCode ?? string.Empty
                 };
@@ -149,7 +118,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             if (workflowMethods.Count > 0)
             {
                 var runId = workflowMethods.First().AnalysisRunId;
-                var analysisRun = await _analysisRunRepository.GetByIdAsync(runId);
+                var analysisRun = await _unitOfWork.AnalysisRuns.GetByIdAsync(runId);
                 if (analysisRun != null)
                 {
                     globalNodeCount = analysisRun.GlobalNodeCount;
@@ -172,30 +141,6 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             };
 
             return (workflowGraph, globalGraph);
-        }
-
-
-
-        private static string ExtractKeywordsFromSource(string sourceCode)
-        {
-            if (string.IsNullOrWhiteSpace(sourceCode)) return string.Empty;
-            return sourceCode.Length > 300 ? sourceCode[..300] : sourceCode;
-        }
-
-        private static IEnumerable<string> SplitCamelCase(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) yield break;
-            var current = new StringBuilder();
-            foreach (char c in name)
-            {
-                if (char.IsUpper(c) && current.Length > 0)
-                {
-                    yield return current.ToString();
-                    current.Clear();
-                }
-                current.Append(c);
-            }
-            if (current.Length > 0) yield return current.ToString();
         }
     }
 }

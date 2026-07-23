@@ -58,6 +58,9 @@ namespace Repo_Into_Graph_API.Extensions
             // AI Services
             services.AddScoped<Repo_Into_Graph_Application.Services.AI.IEmbeddingService, Repo_Into_Graph_Application.Services.AI.EmbeddingService>();
 
+            // AutoMapper
+            services.AddAutoMapper(cfg => cfg.AddMaps(AppDomain.CurrentDomain.GetAssemblies()));
+
             return services;
         }
     }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -11,7 +11,7 @@ namespace Repo_Into_Graph_Application.Mappings
 {
     public class BussinessProfile : Profile
     {
-        protected BussinessProfile()
+        public BussinessProfile()
         {
             CreateMap<Bussiness, BusinessViewDto>();
         }

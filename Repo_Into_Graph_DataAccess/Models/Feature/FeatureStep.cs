@@ -12,6 +12,7 @@ namespace Repo_Into_Graph_DataAccess.Models.Feature
         public string CalleeClass { get; set; } = string.Empty;
         public string CalleeMethod { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+        public string? ConditionContext { get; set; }
 
         public Feature? Feature { get; set; }
     }

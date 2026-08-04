@@ -32,7 +32,7 @@ namespace Repo_Into_Graph_Application.Services.AI
         }
 
 
-        public async Task<IEnumerable<GeneratedQuestionDto>> GenerateUnifiedQuestionsAsync(
+        public async Task<(IEnumerable<GeneratedQuestionDto> Questions, int InputTokens, int OutputTokens)> GenerateUnifiedQuestionsAsync(
             string businessName,
             string codeBuilder,
             string contextBuilder,
@@ -70,6 +70,9 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
 - VÍ DỤ MẪU CHUẨN LUỒNG:
   [ ""AuctionController.CreateAuction"", ""IAuctionService.CreateAuctionAsync"", ""AuctionServiceImpl.CreateAuctionAsync"", ""IAuctionRepository.AddAsync"" ]
 - TUYỆT ĐỐI KHÔNG ĐƯỢC bỏ sót việc bắt cặp giữa [Interface] và [Class triển khai]. Nếu thiếu bất kỳ tầng nào, kết quả sẽ bị coi là bất hợp lệ.
+- CHỈ THỊ CHỐNG SUY DIỄN (ANTI-HALLUCINATION):
+Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC tự phát minh hoặc suy diễn ra các tính năng, quy trình, rủi ro (như thanh toán, giao dịch chéo...) nếu nó không ĐƯỢC THỂ HIỆN RÕ RÀNG trong Mermaid Graph hoặc Source Code.
+Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (không có if/else phức tạp), bạn BẮT BUỘC phải đặt câu hỏi đơn giản tương ứng, KHÔNG ĐƯỢC cố tình tạo tình huống phức tạp nằm ngoài phạm vi tài liệu được cung cấp. Câu hỏi phải chỉ đích danh được dựa vào bước nào trong sơ đồ hoặc dòng code nào.
 
 ĐỊNH DẠNG ĐẦU RA BẮT BUỘC:
 - Trả về một mảng JSON chứa các đối tượng có cấu trúc chính xác như sau (Tuyệt đối không bọc mảng trong ký tự ```json, chỉ trả về JSON trần):
@@ -182,7 +185,11 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
                 {
                     PropertyNameCaseInsensitive = true
                 }) ?? new List<GeneratedQuestionDto>();
-                return questions;
+
+                int inputTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
+                int outputTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
+
+                return (questions, inputTokens, outputTokens);
 
             }
             catch (JsonException ex)

@@ -94,6 +94,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                         CallerMethod = edge.CallerMethod,
                         CalleeClass = edge.CalleeClass,
                         CalleeMethod = edge.CalleeMethod,
+                        ConditionContext = edge.ConditionContext,
                         CreatedAt = DateTime.UtcNow
                     }).ToList(),
                     MethodSources = result.MethodSources.Select(source => new MethodSourceRecord

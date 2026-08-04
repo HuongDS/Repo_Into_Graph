@@ -139,6 +139,7 @@ public class CSharpParser : ILanguageParser
         private readonly string _language;
         private string _currentClass = string.Empty;
         private string _currentMethod = string.Empty;
+        private Stack<string> _conditionStack = new();
 
         public List<CallGraphEdge> CallGraphEdges { get; } = new();
         public List<MethodSource> MethodSources { get; } = new();
@@ -161,6 +162,28 @@ public class CSharpParser : ILanguageParser
             _currentClass = node.Identifier.Text;
             base.VisitClassDeclaration(node);
             _currentClass = prev;
+        }
+
+        public override void VisitIfStatement(IfStatementSyntax node)
+        {
+            // Visit condition first to capture any method calls inside it
+            Visit(node.Condition);
+
+            var conditionText = node.Condition.ToString();
+            // Sanitize and trim if too long
+            if (conditionText.Length > 80) conditionText = conditionText.Substring(0, 77) + "...";
+            conditionText = conditionText.Replace("\"", "'").Replace("\n", " ").Replace("\r", "");
+
+            _conditionStack.Push(conditionText);
+            Visit(node.Statement);
+            _conditionStack.Pop();
+
+            if (node.Else != null)
+            {
+                _conditionStack.Push($"!({conditionText})");
+                Visit(node.Else);
+                _conditionStack.Pop();
+            }
         }
 
         public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
@@ -217,7 +240,8 @@ public class CSharpParser : ILanguageParser
                             CallerMethod = _currentMethod, // Dùng tên thuần túy đồng bộ
                             CalleeClass = calleeClass,
                             CalleeMethod = calleeName,
-                            Language = _language
+                            Language = _language,
+                            ConditionContext = _conditionStack.Count > 0 ? _conditionStack.Peek() : null
                         });
 
                         AddImplementationEdges(methodSymbol);
@@ -258,7 +282,8 @@ public class CSharpParser : ILanguageParser
                         CallerMethod = interfaceMethod.Name,
                         CalleeClass = calleeClass,
                         CalleeMethod = impl.Name,
-                        Language = _language
+                        Language = _language,
+                        ConditionContext = _conditionStack.Count > 0 ? _conditionStack.Peek() : null
                     });
                 }
             }

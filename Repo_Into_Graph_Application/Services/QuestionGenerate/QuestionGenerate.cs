@@ -106,7 +106,7 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 numberOfQuestions = 5;
 
             // 5. Generate Questions
-            var questions = await _aIService.GenerateUnifiedQuestionsAsync(
+            var (questions, inputTokens, outputTokens) = await _aIService.GenerateUnifiedQuestionsAsync(
                 businessName: businessModel.BusinessName,
                 codeBuilder: codeBuilder.ToString(),
                 contextBuilder: contextBuilder.ToString(),
@@ -122,6 +122,8 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
                 TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
                 FewShotUsed = fewShotExamples?.Count() ?? 0,
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens,
                 GeneratedQuestionDtos = questions
             };
         }

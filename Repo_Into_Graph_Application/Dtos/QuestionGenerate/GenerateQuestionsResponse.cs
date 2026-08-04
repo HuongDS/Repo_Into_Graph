@@ -14,6 +14,8 @@ namespace Repo_Into_Graph_Application.Dtos.QuestionGenerate
         public string EntryPoint { get; set; } = string.Empty;
         public int TotalSteps { get; set; }
         public int FewShotUsed { get; set; }
+        public int InputTokens { get; set; }
+        public int OutputTokens { get; set; }
 
         //public QuestionEvaluationResultDto questionEvaluationResultDto { get; set; }
         public IEnumerable<GeneratedQuestionDto> GeneratedQuestionDtos { get; set; }

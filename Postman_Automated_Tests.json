@@ -1,0 +1,195 @@
+{
+	"info": {
+		"name": "Repo Into Graph - Assessment Automation",
+		"description": "Bộ test tự động chạy luồng: Tạo câu hỏi -> Đánh giá Độ bao phủ -> Đánh giá Chính xác -> Đánh giá Độ khó.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Generate Questions",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"if(jsonData && jsonData.businessId) {",
+							"    // Lưu nguyên cục response lại vào biến môi trường để truyền cho các API sau",
+							"    pm.collectionVariables.set(\"generateResponse\", JSON.stringify(jsonData));",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"businessId\": \"{{businessId}}\",\n  \"numberOfQuestions\": 3,\n  \"difficulty\": \"Medium\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/QuestionGenerator/generate",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"QuestionGenerator",
+						"generate"
+					]
+				}
+			}
+		},
+		{
+			"name": "2. Assess Coverage",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{{generateResponse}}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-from-response",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"WorkflowAssessment",
+						"assess-from-response"
+					]
+				}
+			}
+		},
+		{
+			"name": "3. Assess Accuracy",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{{generateResponse}}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-accuracy",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"WorkflowAssessment",
+						"assess-accuracy"
+					]
+				}
+			}
+		},
+		{
+			"name": "4. Assess Difficulty",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{{generateResponse}}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-difficulty",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"WorkflowAssessment",
+						"assess-difficulty"
+					]
+				}
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7083",
+			"type": "string"
+		},
+		{
+			"key": "businessId",
+			"value": "YOUR_BUSINESS_ID_HERE",
+			"type": "string"
+		},
+		{
+			"key": "generateResponse",
+			"value": "{}",
+			"type": "string"
+		}
+	]
+}

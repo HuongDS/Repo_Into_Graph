@@ -24,6 +24,28 @@ namespace Repo_Into_Graph_API.Controllers
             _workflowAssessmentService = workflowAssessmentService ?? throw new ArgumentNullException(nameof(workflowAssessmentService));
         }
 
+        [HttpPost("generate-traditional")]
+        public async Task<IActionResult> GenerateTraditional([FromBody] GenerateQuestionsRequest request)
+        {
+            if (request.NumberOfQuestions <= 0)
+                throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
+
+            request.Mode = "Traditional";
+            var result = await _questionGenerate.GenerateQuestionsAsync(request);
+            return Ok(result);
+        }
+
+        [HttpPost("generate-graph")]
+        public async Task<IActionResult> GenerateGraph([FromBody] GenerateQuestionsRequest request)
+        {
+            if (request.NumberOfQuestions <= 0)
+                throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
+
+            request.Mode = "Graph";
+            var result = await _questionGenerate.GenerateQuestionsAsync(request);
+            return Ok(result);
+        }
+
         [HttpPost("generate")]
         public async Task<IActionResult> GenerateUnifiedQuestions([FromBody] GenerateQuestionsRequest request)
         {

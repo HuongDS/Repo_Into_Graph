@@ -105,11 +105,26 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             if (numberOfQuestions <= 0 || numberOfQuestions > 20)
                 numberOfQuestions = 5;
 
-            // 5. Generate Questions
+            // 5. Check Mode for A/B Testing
+            string finalCodeBuilder = codeBuilder.ToString();
+            string finalContextBuilder = contextBuilder.ToString();
+
+            if (request.Mode.Equals("Traditional", StringComparison.OrdinalIgnoreCase))
+            {
+                // Chế độ truyền thống: Ẩn toàn bộ Mermaid Graph, AI chỉ được đọc Code thô
+                finalContextBuilder = "Chế độ Truyền thống: Không cung cấp sơ đồ Mermaid Graph. Hãy phân tích trực tiếp từ Source Code.";
+            }
+            else if (request.Mode.Equals("Graph", StringComparison.OrdinalIgnoreCase))
+            {
+                // Chế độ Graph: Ẩn toàn bộ Source Code thô, ép AI chỉ được nhìn vào Graph
+                finalCodeBuilder = "Chế độ Graph: Không cung cấp mã nguồn thô. Hãy phân tích logic dựa hoàn toàn vào sơ đồ Mermaid Graph được cung cấp.";
+            }
+
+            // 6. Generate Questions
             var (questions, inputTokens, outputTokens) = await _aIService.GenerateUnifiedQuestionsAsync(
                 businessName: businessModel.BusinessName,
-                codeBuilder: codeBuilder.ToString(),
-                contextBuilder: contextBuilder.ToString(),
+                codeBuilder: finalCodeBuilder,
+                contextBuilder: finalContextBuilder,
                 numberOfQuestions: numberOfQuestions,
                 difficulty: request.Difficulty,
                 additionalContext: request.Description,

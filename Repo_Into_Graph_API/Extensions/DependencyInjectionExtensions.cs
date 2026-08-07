@@ -52,6 +52,7 @@ namespace Repo_Into_Graph_API.Extensions
             services.AddScoped<IWorkflowAssessmentService, WorkflowAssessmentService>();
             services.AddScoped<ICoverageAssessmentService, CoverageAssessmentService>();
             services.AddScoped<IAccuracyAssessmentService, AccuracyAssessmentService>();
+            services.AddScoped<IEvaluationLlmService, GroqEvaluationService>();
             services.AddScoped<IDifficultyAssessmentService, DifficultyAssessmentService>();
             services.AddScoped<ISemanticMappingHelper, SemanticMappingHelper>();
 

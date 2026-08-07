@@ -10,8 +10,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Google.GenAI;
-using Google.GenAI.Types;
 using Microsoft.Extensions.Caching.Distributed;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 using Repo_Into_Graph_Application.Services.AI;
@@ -22,23 +20,20 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
     {
         private readonly IEmbeddingService _embeddingService;
         private readonly ILogger<AccuracyAssessmentService> _logger;
-        private readonly IHttpClientFactory _httpClientFactory;
-        private readonly string _geminiApiKey;
         private readonly IDistributedCache _cache;
         private readonly ISemanticMappingHelper _semanticMappingHelper;
+        private readonly IEvaluationLlmService _evaluationLlmService;
 
         public AccuracyAssessmentService(
             IEmbeddingService embeddingService,
-            IHttpClientFactory httpClientFactory,
-            IConfiguration configuration,
+            IEvaluationLlmService evaluationLlmService,
             ILogger<AccuracyAssessmentService> logger,
             IDistributedCache cache,
             ISemanticMappingHelper semanticMappingHelper)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
-            _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
-            _geminiApiKey = configuration["GeminiConfig:ApiKey"] ?? throw new InvalidOperationException("Thiếu cấu hình GeminiConfig:ApiKey.");
+            _evaluationLlmService = evaluationLlmService ?? throw new ArgumentNullException(nameof(evaluationLlmService));
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _semanticMappingHelper = semanticMappingHelper ?? throw new ArgumentNullException(nameof(semanticMappingHelper));
         }
@@ -92,8 +87,8 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
                 // Steps 1 & 2 & 3 manually for each question reusing nodeVectors
                 var extractedPath = await _semanticMappingHelper.GetSemanticMappingAsync(response.BusinessId, q.Question, workflowData.Nodes, nodeVectors, q.TargetedEntryPoints);
 
-                // Gọi LLM as a Judge để xác thực
-                var (isAccurate, brokenTransitions, finalVerdict) = await ValidateAccuracyWithGeminiAsync(q.Question, workflowContext, extractedPath, workflowData.Nodes);
+                // Gọi LLM as a Judge để xác thực với Rubric
+                var (isAccurate, brokenTransitions, finalVerdict, rubricScores, overallScore) = await ValidateAccuracyWithJudgeAsync(q.Question, workflowContext, extractedPath, workflowData.Nodes);
 
                 batchResult.QuestionResults.Add(new QuestionAccuracyAssessmentResultDto
                 {
@@ -104,9 +99,15 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
                         AccuracyScore = CalculateAccuracyScore(isAccurate, extractedPath.Count, brokenTransitions.Count),
                         ExtractedPath = extractedPath,
                         BrokenTransitions = brokenTransitions,
-                        FinalVerdict = finalVerdict
+                        FinalVerdict = finalVerdict,
+                        RubricScores = rubricScores,
+                        OverallScore = overallScore
                     }
                 });
+
+                // Tách câu hỏi ra và gửi từng câu: Chờ 15 giây giữa các lần gọi để Groq hồi phục Token (12.000 TPM limit)
+                _logger.LogInformation("[AssessAccuracyBatchAsync] Đã chấm xong 1 câu, đang nghỉ 15s để tránh Rate Limit...");
+                await Task.Delay(TimeSpan.FromSeconds(15));
             }
 
             // Save the batch result to Redis/StashUp Cache for future requests
@@ -150,10 +151,10 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
             foreach (var e in edges) sb.AppendLine($"- {e.FromNodeId} -> {e.ToNodeId}");
             string workflowContext = sb.ToString();
 
-            var (isAccurate, brokenTransitions, finalVerdict) = await ValidateAccuracyWithGeminiAsync(
+            var (isAccurate, brokenTransitions, finalVerdict, rubricScores, overallScore) = await ValidateAccuracyWithJudgeAsync(
                 request.Question, workflowContext, extractedPath, nodes);
 
-            _logger.LogInformation("[LLM Verification] IsAccurate={A} | Broken={B}", isAccurate, brokenTransitions.Count);
+            _logger.LogInformation("[LLM Verification] IsAccurate={A} | Broken={B} | OverallScore={S}", isAccurate, brokenTransitions.Count, overallScore);
 
             return new AccuracyAssessmentResultDto
             {
@@ -161,7 +162,9 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
                 AccuracyScore = CalculateAccuracyScore(isAccurate, extractedPath.Count, brokenTransitions.Count),
                 ExtractedPath = extractedPath,
                 BrokenTransitions = brokenTransitions,
-                FinalVerdict = finalVerdict
+                FinalVerdict = finalVerdict,
+                RubricScores = rubricScores,
+                OverallScore = overallScore
             };
         }
 
@@ -175,46 +178,52 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
             return Math.Round((double)validTransitions / totalTransitions, 2);
         }
 
-
-        // BƯỚC 2: Validate Accuracy With Gemini (LLM-as-a-Judge)
-        private async Task<(bool IsAccurate, List<BrokenTransitionDto> BrokenTransitions, string FinalVerdict)> ValidateAccuracyWithGeminiAsync(
+        // BƯỚC 2: Validate Accuracy With LLM Judge
+        private async Task<(bool IsAccurate, List<BrokenTransitionDto> BrokenTransitions, string FinalVerdict, RubricScoresDto RubricScores, int OverallScore)> ValidateAccuracyWithJudgeAsync(
             string question,
             string workflowContext,
             List<ExtractedPathStepDto> extractedPath,
             List<WorkflowNodeInputDto> allNodes)
         {
-            var systemInstruction = @"Bạn là chuyên gia kiểm định quy trình nghiệp vụ (Business Analyst).
-Nhiệm vụ của bạn là đánh giá xem một CÂU HỎI TÌNH HUỐNG có phản ánh ĐÚNG logic của LUỒNG NGHIỆP VỤ (Workflow) hay không.
+            var systemInstruction = @"Bạn là chuyên gia kiểm định chất lượng LLM (LLM Evaluator) và quy trình nghiệp vụ (Business Analyst).
+Nhiệm vụ của bạn là đánh giá một CÂU HỎI TÌNH HUỐNG (được sinh tự động) dựa trên đồ thị LUỒNG NGHIỆP VỤ (Workflow).
 Bạn sẽ được cung cấp:
-1. Câu hỏi.
+1. Câu hỏi cần đánh giá.
 2. Cấu trúc đồ thị luồng nghiệp vụ (Nodes và Edges).
-3. Chuỗi các bước (Nodes) được trích xuất từ câu hỏi (Đây chỉ là gợi ý từ hệ thống tìm kiếm ngữ nghĩa, có thể thiếu sót hoặc dư thừa).
+3. Chuỗi các bước (Nodes) được trích xuất từ câu hỏi (chỉ là gợi ý, có thể thiếu hoặc dư).
 
-QUY TẮC ĐÁNH GIÁ TÍNH CHÍNH XÁC (IsAccurate):
-1. Ưu tiên cao nhất là đánh giá ý nghĩa logic của CÂU HỎI đối chiếu với ĐỒ THỊ LUỒNG.
-2. BỎ QUA LỖI THIẾU BƯỚC (Sub-step omission): Nếu câu hỏi chỉ nhắc đến một bước tổng quát (Ví dụ: Service layer kiểm tra giới hạn) mà bước đó ngầm gọi đến các bước con (Ví dụ: Repository layer đếm số lượng), thì câu hỏi hoàn toàn HỢP LỆ và CHÍNH XÁC.
-3. BỎ QUA LỖI NODE DƯ THỪA (Noise nodes): Danh sách trích xuất có thể chứa các Endpoint/Node độc lập hoặc dư thừa do thuật toán tìm kiếm từ khóa bắt nhầm (Ví dụ: Câu hỏi nói về hàm A có cập nhật trạng thái, thuật toán lại trích xuất thêm hàm B cũng tên là cập nhật trạng thái). BẠN PHẢI BỎ QUA các node không liên quan này thay vì đánh giá chúng là lỗi đứt gãy luồng (Broken Transition). Chỉ tập trung vào các Node thực sự thuộc về luồng nghiệp vụ đang xét.
-4. CHỈ BẮT LỖI SAI LOGIC KHI:
-   - Câu hỏi mô tả một trình tự hoàn toàn ngược ngạo (A xảy ra sau B, nhưng trong đồ thị B xảy ra sau A).
-   - Câu hỏi cố tình kết hợp 2 nhánh rẽ đối lập (XOR) bắt buộc phải chạy đồng thời.
-   - Câu hỏi nhắc đến một sự kiện ảo không hề tồn tại hoặc không thể đi tới được trong luồng chính.
-5. NHÁNH SONG SONG vs ĐỨT GÃY TUẦN TỰ: Nếu 2 nodes được trích xuất là 2 nhánh kiểm tra song song hoặc độc lập từ cùng một quy trình (ví dụ: cùng kiểm tra các điều kiện khác nhau), việc chúng không nối trực tiếp với nhau là HỢP LỆ (Bỏ qua lỗi đứt gãy). TUY NHIÊN, nếu câu hỏi mô tả 2 hành động bắt buộc phải xảy ra tuần tự (A phải xong rồi mới tới B) mà chúng không hề có đường đi liên kết trực tiếp hay gián tiếp trên đồ thị, thì đó LÀ LỖI ĐỨT GÃY THỰC SỰ.
-6. NẾU KHÔNG CÓ BƯỚC NÀO ĐƯỢC TRÍCH XUẤT (Extracted Path rỗng): Bạn hãy tự dựa vào Đồ thị luồng để đánh giá xem câu hỏi có hợp lý về mặt nghiệp vụ không. Nếu hợp lý (nói đúng tên, đúng luồng, đúng điều kiện), hãy trả về IsAccurate = true và brokenTransitions rỗng. Đừng tự tạo ra lỗi đứt gãy nếu không thực sự chắc chắn.
-7. KIỂM TRA NGHIÊM NGẶT THUẬT NGỮ NGHIỆP VỤ (DOMAIN TERMINOLOGY): Nếu câu hỏi sử dụng sai thuật ngữ cốt lõi so với bối cảnh nghiệp vụ (Ví dụ: Hệ thống ""Quản lý Đặt lịch hẹn"" nhưng câu hỏi lại nhắc đến ""trường học"", ""bài đấu giá"", ""đơn hàng"", ""giỏ hàng"", v.v.), BẠN PHẢI đánh giá câu hỏi này là KHÔNG CHÍNH XÁC (isAccurate = false) và ghi rõ lý do vào brokenTransitions. Lỗi sai thuật ngữ là lỗi sai bản chất nghiệp vụ, TUYỆT ĐỐI không được nhân nhượng hay tự động nội suy (map) sang từ tương đương.
+BẠN PHẢI CHẤM ĐIỂM CÂU HỎI THEO 5 TIÊU CHÍ (Thang điểm 1-5 cho mỗi tiêu chí, trong đó 5 là Tốt nhất, 1 là Tệ nhất):
+1. Correctness (Tính đúng đắn logic): Trình tự các hành động trong câu hỏi có diễn ra đúng theo logic luồng (A phải xảy ra trước B) trên đồ thị không?
+2. Faithfulness (Tính bám sát / Không ảo giác): Câu hỏi có KHÔNG bịa ra (hallucinate) các sự kiện, thuật ngữ, hoặc bước nghiệp vụ không hề tồn tại trong đồ thị không?
+3. Context Relevance (Độ liên quan ngữ cảnh): Câu hỏi có thực sự trích xuất đúng thông tin trọng tâm và có ích từ luồng nghiệp vụ không?
+4. Clarity (Tính mạch lạc & Rõ ràng): Câu hỏi có tự nhiên, dễ hiểu, không mơ hồ và đúng ngữ pháp không?
+5. Answerability (Khả năng trả lời được): Với lượng kiến thức có trong đồ thị luồng cung cấp, người dùng có thực sự đủ dữ kiện để trả lời được câu hỏi đó không?
 
-YÊU CẦU ĐẦU RA (Trả về ĐÚNG định dạng JSON sau, TUYỆT ĐỐI không có markdown ```json):
+QUY TẮC ĐÁNH GIÁ ĐỨT GÃY LUỒNG (isAccurate & brokenTransitions):
+- Ưu tiên cao nhất là logic thực sự của câu hỏi.
+- Bỏ qua các bước bị thiếu (sub-step omission) hoặc dư thừa (noise nodes) nếu câu hỏi tổng thể vẫn hợp lý.
+- Chỉ bắt lỗi (brokenTransitions) khi: Câu hỏi đi ngược trình tự đồ thị, kết hợp sai nhánh XOR, hoặc nhắc đến bước không thể xảy ra.
+- Nếu không có bước nào trích xuất được nhưng câu hỏi vẫn phản ánh đúng nghiệp vụ, hãy cho isAccurate = true.
+
+YÊU CẦU ĐẦU RA (Trả về ĐÚNG định dạng JSON sau, TUYỆT ĐỐI không có markdown text):
 {
+  ""scores"": {
+    ""correctness"": 5,
+    ""faithfulness"": 5,
+    ""contextRelevance"": 4,
+    ""clarity"": 5,
+    ""answerability"": 4
+  },
   ""isAccurate"": true,
   ""brokenTransitions"": [
     {
-      ""fromNode"": ""Tên_Node_1"",
-      ""toNode"": ""Tên_Node_2"",
-      ""reason"": ""Giải thích lý do tại sao bước nhảy này sai logic luồng.""
+      ""fromNode"": ""Node_A"",
+      ""toNode"": ""Node_B"",
+      ""reason"": ""Lý do chi tiết""
     }
   ],
-  ""finalVerdict"": ""Một đoạn văn tiếng Việt ngắn gọn (3-5 câu) phân tích kết luận cuối cùng.""
-}
-Lưu ý: Nếu isAccurate = true, hãy để mảng brokenTransitions rỗng [].";
+  ""finalVerdict"": ""Một đoạn văn tiếng Việt ngắn gọn (3-5 câu) phân tích tổng quan tại sao câu hỏi nhận được số điểm trên.""
+}";
 
             var prompt = new StringBuilder();
             prompt.AppendLine("--- LUỒNG NGHIỆP VỤ (WORKFLOW) ---");
@@ -243,68 +252,58 @@ Lưu ý: Nếu isAccurate = true, hãy để mảng brokenTransitions rỗng [].
                 prompt.AppendLine("(Không tìm thấy bước nào trong luồng khớp với câu hỏi này)");
             }
 
-            var clientOptions = new ClientOptions { HttpClientFactory = () => _httpClientFactory.CreateClient() };
-            var client = new Client(apiKey: _geminiApiKey, clientOptions: clientOptions);
-
-            var config = new GenerateContentConfig
+            try
             {
-                SystemInstruction = new Content { Parts = [new Part { Text = systemInstruction }] },
-                Temperature = 0.2f,
-                ResponseMimeType = "application/json"
-            };
-
-            int maxRetries = 3;
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
-            {
-                try
+                var aiJsonText = await _evaluationLlmService.EvaluateWithLlmAsync(systemInstruction, prompt.ToString());
+                if (string.IsNullOrWhiteSpace(aiJsonText))
                 {
-                    var response = await client.Models.GenerateContentAsync(
-                        model: "gemini-3.1-flash-lite",
-                        contents: prompt.ToString(),
-                        config: config
-                    );
+                    return (false, new List<BrokenTransitionDto>(), "Lỗi hệ thống khi gọi LLM Evaluation API.", new RubricScoresDto(), 0);
+                }
 
-                    var aiJsonText = response.Text?.Trim() ?? string.Empty;
+                // Clean markdown blocks if any
+                if (aiJsonText.StartsWith("```json")) aiJsonText = aiJsonText.Substring(7);
+                if (aiJsonText.EndsWith("```")) aiJsonText = aiJsonText.Substring(0, aiJsonText.Length - 3);
+                aiJsonText = aiJsonText.Trim();
 
-                    // Clean markdown blocks if any
-                    if (aiJsonText.StartsWith("```json")) aiJsonText = aiJsonText.Substring(7);
-                    if (aiJsonText.EndsWith("```")) aiJsonText = aiJsonText.Substring(0, aiJsonText.Length - 3);
-                    aiJsonText = aiJsonText.Trim();
+                var result = JsonSerializer.Deserialize<JsonElement>(aiJsonText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-                    var result = JsonSerializer.Deserialize<JsonElement>(aiJsonText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    bool isAccurate = result.TryGetProperty("isAccurate", out var isAccProp) && (isAccProp.ValueKind == JsonValueKind.True || isAccProp.ValueKind == JsonValueKind.False) ? isAccProp.GetBoolean() : false;
-                    string finalVerdict = result.TryGetProperty("finalVerdict", out var verdictProp) ? verdictProp.GetString() ?? "" : "";
+                bool isAccurate = result.TryGetProperty("isAccurate", out var isAccProp) && (isAccProp.ValueKind == JsonValueKind.True || isAccProp.ValueKind == JsonValueKind.False) ? isAccProp.GetBoolean() : false;
+                string finalVerdict = result.TryGetProperty("finalVerdict", out var verdictProp) ? verdictProp.GetString() ?? "" : "";
 
-                    var broken = new List<BrokenTransitionDto>();
-                    if (result.TryGetProperty("brokenTransitions", out var brokenProp) && brokenProp.ValueKind == JsonValueKind.Array)
+                var broken = new List<BrokenTransitionDto>();
+                if (result.TryGetProperty("brokenTransitions", out var brokenProp) && brokenProp.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in brokenProp.EnumerateArray())
                     {
-                        foreach (var item in brokenProp.EnumerateArray())
+                        broken.Add(new BrokenTransitionDto
                         {
-                            broken.Add(new BrokenTransitionDto
-                            {
-                                FromNode = item.TryGetProperty("fromNode", out var f) ? f.GetString() : "",
-                                ToNode = item.TryGetProperty("toNode", out var t) ? t.GetString() : "",
-                                Reason = item.TryGetProperty("reason", out var r) ? r.GetString() : ""
-                            });
-                        }
+                            FromNode = item.TryGetProperty("fromNode", out var f) ? f.GetString() : "",
+                            ToNode = item.TryGetProperty("toNode", out var t) ? t.GetString() : "",
+                            Reason = item.TryGetProperty("reason", out var r) ? r.GetString() : ""
+                        });
                     }
-
-                    return (isAccurate, broken, finalVerdict);
                 }
-                catch (Exception ex)
+
+                var rubric = new RubricScoresDto();
+                int overall = 0;
+                if (result.TryGetProperty("scores", out var scoresProp) && scoresProp.ValueKind == JsonValueKind.Object)
                 {
-                    if (attempt == maxRetries)
-                    {
-                        _logger.LogError(ex, "Gemini Accuracy Assessment failed after {Retries} attempts.", maxRetries);
-                        return (false, new List<BrokenTransitionDto>(), "Lỗi hệ thống khi gọi Gemini API để phân tích câu hỏi.");
-                    }
-                    await Task.Delay(2000 * attempt);
+                    rubric.Correctness = scoresProp.TryGetProperty("correctness", out var c) ? c.GetInt32() : 0;
+                    rubric.Faithfulness = scoresProp.TryGetProperty("faithfulness", out var fScore) ? fScore.GetInt32() : 0;
+                    rubric.ContextRelevance = scoresProp.TryGetProperty("contextRelevance", out var cr) ? cr.GetInt32() : 0;
+                    rubric.Clarity = scoresProp.TryGetProperty("clarity", out var cl) ? cl.GetInt32() : 0;
+                    rubric.Answerability = scoresProp.TryGetProperty("answerability", out var ans) ? ans.GetInt32() : 0;
+
+                    overall = rubric.Correctness + rubric.Faithfulness + rubric.ContextRelevance + rubric.Clarity + rubric.Answerability;
                 }
+
+                return (isAccurate, broken, finalVerdict, rubric, overall);
             }
-
-            return (false, new List<BrokenTransitionDto>(), "Lỗi hệ thống.");
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "LLM Assessment parsing failed.");
+                return (false, new List<BrokenTransitionDto>(), "Lỗi hệ thống.", new RubricScoresDto(), 0);
+            }
         }
-
-
     }
 }

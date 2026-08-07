@@ -141,6 +141,15 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
     // DTO: Result – Kết quả trả về của assess-accuracy
     // ─────────────────────────────────────────────────────────────────────────
 
+    public class RubricScoresDto
+    {
+        public int Correctness { get; set; }
+        public int Faithfulness { get; set; }
+        public int ContextRelevance { get; set; }
+        public int Clarity { get; set; }
+        public int Answerability { get; set; }
+    }
+
     /// <summary>
     /// Kết quả đầy đủ của Pipeline 2 bước đánh giá tính chính xác.
     /// </summary>
@@ -155,8 +164,19 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
         /// <summary>
         /// Điểm số chính xác (0.0 đến 1.0) tính dựa trên tỷ lệ bước chuyển tiếp đúng.
         /// Công thức: (Tổng số bước - Số bước gãy) / Tổng số bước.
+        /// (Giữ lại để tương thích ngược)
         /// </summary>
         public double AccuracyScore { get; set; }
+
+        /// <summary>
+        /// Điểm số đánh giá chi tiết theo Rubric (Correctness, Faithfulness, ContextRelevance, Clarity, Answerability).
+        /// </summary>
+        public RubricScoresDto RubricScores { get; set; } = new RubricScoresDto();
+
+        /// <summary>
+        /// Tổng điểm (Ví dụ: cộng tổng các điểm Rubric lại).
+        /// </summary>
+        public int OverallScore { get; set; }
 
         /// <summary>
         /// Chuỗi G_q = [Node_1 → Node_2 → … → Node_n] được trích xuất từ Câu hỏi

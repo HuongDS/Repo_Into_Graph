@@ -208,11 +208,11 @@ QUY TẮC ĐÁNH GIÁ ĐỨT GÃY LUỒNG (isAccurate & brokenTransitions):
 YÊU CẦU ĐẦU RA (Trả về ĐÚNG định dạng JSON sau, TUYỆT ĐỐI không có markdown text):
 {
   ""scores"": {
-    ""correctness"": 5,
-    ""faithfulness"": 5,
-    ""contextRelevance"": 4,
-    ""clarity"": 5,
-    ""answerability"": 4
+    ""correctness"": 0, // Thay số 0 bằng điểm thực tế từ 1-5
+    ""faithfulness"": 0, // Thay số 0 bằng điểm thực tế từ 1-5
+    ""contextRelevance"": 0, // Thay số 0 bằng điểm thực tế từ 1-5
+    ""clarity"": 0, // Thay số 0 bằng điểm thực tế từ 1-5
+    ""answerability"": 0 // Thay số 0 bằng điểm thực tế từ 1-5
   },
   ""isAccurate"": true,
   ""brokenTransitions"": [

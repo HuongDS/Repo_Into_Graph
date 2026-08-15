@@ -1,0 +1,156 @@
+using Microsoft.Extensions.Logging;
+using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
+
+namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.DifficultyEvaluate
+{
+    /// <summary>
+    /// Triển khai tính toán các chỉ số Độ Khó theo lý thuyết đồ thị (V(G), L_q, Path Type).
+    /// </summary>
+    public class DifficultyAssessmentService : IDifficultyAssessmentService
+    {
+        private readonly ILogger<DifficultyAssessmentService> _logger;
+
+        public DifficultyAssessmentService(ILogger<DifficultyAssessmentService> logger)
+        {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        /// <inheritdoc/>
+        public Task<DifficultyAssessmentResultDto> AssessAsync(DifficultyAssessmentRequestDto request)
+        {
+            ArgumentNullException.ThrowIfNull(request, nameof(request));
+
+            var activeNodes = request.ActiveNodes ?? new List<GraphNodeDto>();
+
+            _logger.LogInformation(
+                "[DifficultyAssessment] Bắt đầu – {N} Active Nodes | E_q={E}",
+                activeNodes.Count, request.TotalEdgesInSubgraph);
+
+            // Chỉ số 1: Cyclomatic Complexity – V(G) = E_q - V_q + 2
+            int vq = activeNodes.Count;      // Số nút của đồ thị con G_q
+            int eq = request.TotalEdgesInSubgraph;
+            // Đảm bảo E_q hợp lệ: phải >= V_q - 1 (cây tối giản)
+            if (eq < Math.Max(0, vq - 1))
+            {
+                _logger.LogWarning(
+                    "[DifficultyAssessment] TotalEdgesInSubgraph ({E}) nhỏ hơn V_q-1 ({V}). " +
+                    "Fallback: tính E_q = V_q - 1 (đồ thị tuyến tính).",
+                    eq, vq - 1);
+                eq = Math.Max(0, vq - 1);
+            }
+
+            int cyclomaticComplexity = eq - vq + 2;
+
+            // Chỉ số 2: Impact Path Length – L_q = V_q - 1
+            int impactPathLength = Math.Max(0, activeNodes.Count - 1);
+
+            // Chỉ số 3: Đếm DecisionGateway trong chuỗi Active Nodes
+            int gatewaysCount = activeNodes.Count(n =>
+                string.Equals(n.NodeType, "DecisionGateway", StringComparison.OrdinalIgnoreCase));
+
+            var gatewayNames = activeNodes
+                .Where(n => string.Equals(n.NodeType, "DecisionGateway", StringComparison.OrdinalIgnoreCase))
+                .Select(n => n.NodeName)
+                .ToList();
+
+            // Phân loại Path Type
+            string pathType = ClassifyPathType(gatewaysCount);
+
+            // Phân loại Độ Khó (nhất quán với WorkflowAssessmentService.cs)
+            string level = ClassifyDifficulty(gatewaysCount, impactPathLength);
+
+            // Xây dựng Reasoning
+            string reasoning = BuildReasoning(
+                level, cyclomaticComplexity, impactPathLength,
+                gatewaysCount, gatewayNames, vq, eq, pathType);
+
+            _logger.LogInformation(
+                "[DifficultyAssessment] Hoàn thành – Level={Level} | V(G)={VG} | L_q={L} | Gateways={G}",
+                level, cyclomaticComplexity, impactPathLength, gatewaysCount);
+
+            var result = new DifficultyAssessmentResultDto
+            {
+                Level                = level,
+                CyclomaticComplexity = cyclomaticComplexity,
+                ImpactPathLength     = impactPathLength,
+                GatewaysCount        = gatewaysCount,
+                PathType             = pathType,
+                Reasoning            = reasoning
+            };
+
+            return Task.FromResult(result);
+        }
+
+        // PRIVATE: Phân loại helpers
+
+        /// <summary>
+        /// Phân loại loại nhánh kích hoạt dựa trên số DecisionGateway.
+        /// </summary>
+        private static string ClassifyPathType(int gatewaysCount) => gatewaysCount switch
+        {
+            0 => "Happy Path",
+            1 => "Single Exception",
+            _ => "Double Exception"
+        };
+
+        /// <summary>
+        /// Phân loại Độ Khó — nhất quán với logic <c>ClassifyDifficulty</c>
+        /// trong <see cref="WorkflowAssessmentService"/> (dòng 543–548).
+        /// </summary>
+        private static string ClassifyDifficulty(int gateways, int pathLength)
+        {
+            if (gateways >= 2 || pathLength >= 3) return "Khó";
+            if (gateways == 1)                    return "Trung bình";
+            return "Dễ";
+        }
+
+        /// <summary>
+        /// Xây dựng chuỗi lời chứng minh định lượng đầy đủ cho người đọc.
+        /// </summary>
+        private static string BuildReasoning(
+            string   level,
+            int      cyclomaticComplexity,
+            int      impactPathLength,
+            int      gatewaysCount,
+            List<string> gatewayNames,
+            int      vq,
+            int      eq,
+            string   pathType)
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.Append($"Câu hỏi đạt mức {level.ToUpper()} (Path Type: {pathType}). ");
+            sb.Append($"Luồng nghiệp vụ trải qua {vq} bước xử lý, ");
+            sb.Append($"tạo thành {impactPathLength} bước chuyển tiếp logic (L_q = V_q - 1 = {vq} - 1 = {impactPathLength}). ");
+
+            // Độ phức tạp tuần hoàn
+            sb.Append($"Độ phức tạp tuần hoàn V(G) = E_q - V_q + 2 = {eq} - {vq} + 2 = {cyclomaticComplexity}, ");
+            sb.Append($"tương ứng với {cyclomaticComplexity} kịch bản kiểm thử (test cases) cần thiết. ");
+
+            // Gateways
+            if (gatewaysCount == 0)
+            {
+                sb.Append("Luồng đi thẳng tuyến tính (Happy Path), không có rẽ nhánh điều kiện.");
+            }
+            else if (gatewaysCount == 1)
+            {
+                sb.Append($"Luồng kích hoạt đúng 1 điều kiện rẽ nhánh ngoại lệ ");
+                if (gatewayNames.Count > 0)
+                    sb.Append($"('{gatewayNames[0]}') ");
+                sb.Append("— đòi hỏi người trả lời nắm được tình huống kiểm tra nghiệp vụ cơ bản.");
+            }
+            else
+            {
+                sb.Append($"Luồng kích hoạt đồng thời {gatewaysCount} điều kiện rẽ nhánh ngoại lệ");
+                if (gatewayNames.Count > 0)
+                {
+                    sb.Append(": ");
+                    sb.Append(string.Join(", ", gatewayNames.Select((n, i) => $"({i + 1}) '{n}'")));
+                }
+                sb.Append(" — đòi hỏi người trả lời nắm vững thứ tự ưu tiên và xử lý xung đột logic phức tạp.");
+            }
+
+            return sb.ToString();
+        }
+    }
+}

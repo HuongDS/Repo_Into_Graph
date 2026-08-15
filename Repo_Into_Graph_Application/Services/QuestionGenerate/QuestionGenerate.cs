@@ -7,9 +7,7 @@ using Repo_Into_Graph_Application.Services.Analysis;
 using Repo_Into_Graph_Application.Services.Caculation;
 using Repo_Into_Graph_Application.Services.GitService;
 using Repo_Into_Graph_DataAccess.Database;
-using Repo_Into_Graph_DataAccess.Enums;
-using Repo_Into_Graph_DataAccess.Models;
-using Repo_Into_Graph_DataAccess.Models.FewShot;
+using Repo_Into_Graph_DataAccess.Repository.Interface;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,21 +20,15 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 {
     public class QuestionGenerate : IQuestionGenerate
     {
-        private readonly AnalysisDbContext _context;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IAIService _aIService;
-        private readonly ICaculationService _caculationService;
-        private readonly IGitService _gitService;
 
-
-        public QuestionGenerate(AnalysisDbContext context, IAIService aIService, ICaculationService caculationService, IGitService gitService)
+        public QuestionGenerate(IUnitOfWork unitOfWork,
+            IAIService aIService)
         {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _aIService = aIService;
-            _caculationService = caculationService;
-            _gitService = gitService;
         }
-
-        
 
         public async Task<GenerateQuestionsResponse> GenerateQuestionsAsync(GenerateQuestionsRequest request)
         {
@@ -44,28 +36,18 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 throw new BadRequestException("Yêu cầu không được để trống.");
 
             // 1. Load Business
-            var businessModel = await _context.Businesses
-                .FirstOrDefaultAsync(b => b.Id == request.BusinessId);
+            var businessModel = await _unitOfWork.Businesses.GetByIdAsync(request.BusinessId);
 
             if (businessModel == null)
                 throw new NotFoundException("Business", request.BusinessId);
 
             // 2. Load các Feature (Luồng nghiệp vụ) được map với Business này
-            var featureBusinessMappings = await _context.FeatureBusinessMappings
-                .Where(m => m.BusinessId == request.BusinessId)
-                .Select(m => m.FeatureId)
-                .ToListAsync();
+            var featureBusinessMappings = await _unitOfWork.FeatureBusinessMappings.GetFeatureIdsByBusinessIdAsync(request.BusinessId);
 
-            var features = await _context.Features
-                .Include(f => f.Steps)
-                .Where(f => featureBusinessMappings.Contains(f.Id))
-                .ToListAsync();
+            var features = await _unitOfWork.Features.GetFeaturesWithStepsByIdsAsync(featureBusinessMappings);
 
             // 3. Load Source Code (MethodSource) từ các Feature đó
-            var featureMethodMappings = await _context.FeatureMethodMappings
-                .Include(m => m.MethodSource)
-                .Where(m => featureBusinessMappings.Contains(m.FeatureId))
-                .ToListAsync();
+            var featureMethodMappings = await _unitOfWork.FeatureMethodMappings.GetMappingsWithMethodSourceByFeatureIdsAsync(featureBusinessMappings);
 
             var methodSources = featureMethodMappings
                 .Where(m => m.MethodSource != null)
@@ -94,20 +76,6 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 foreach (var feature in features)
                 {
                     contextBuilder.AppendLine($"### Tên luồng: {feature.Name}");
-                    //contextBuilder.AppendLine($"Entry Point: {feature.EntryPoint}");
-
-                    //contextBuilder.AppendLine("Chuỗi bước gọi (Call chain):");
-                    //if (feature.Steps != null && feature.Steps.Count > 0)
-                    //{
-                    //    foreach (var step in feature.Steps.OrderBy(s => s.StepOrder))
-                    //    {
-                    //        contextBuilder.AppendLine($"  [{step.StepOrder}] {step.CallerClass}.{step.CallerMethod} --> {step.CalleeClass}.{step.CalleeMethod}");
-                    //    }
-                    //}
-                    //else
-                    //{
-                    //    contextBuilder.AppendLine("  (Không có dữ liệu bước gọi)");
-                    //}
 
                     if (!string.IsNullOrWhiteSpace(feature.DataFlowMermaidGraph))
                     {
@@ -126,34 +94,41 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             IEnumerable<FewShotExample>? fewShotExamples = null;
             if (request.FewShotExampleIds != null && request.FewShotExampleIds.Count > 0)
             {
-                fewShotExamples = await _context.FewShotExamples
-                    .Where(e => request.FewShotExampleIds.Contains(e.Id))
-                    .ToListAsync();
+                fewShotExamples = await _unitOfWork.FewShotExamples.GetByIdsAsync(request.FewShotExampleIds);
             }
             else if (request.Difficulty != null)
             {
-                fewShotExamples = await _context.FewShotExamples
-                    .Where(e => e.Difficulty == request.Difficulty)
-                    .Take(5)
-                    .ToListAsync();
+                fewShotExamples = await _unitOfWork.FewShotExamples.GetByDifficultyAsync(request.Difficulty, 5);
             }
 
             int numberOfQuestions = request.NumberOfQuestions;
             if (numberOfQuestions <= 0 || numberOfQuestions > 20)
                 numberOfQuestions = 5;
 
-            // 5. Generate Questions
-            var questions = await _aIService.GenerateUnifiedQuestionsAsync(
+            // 5. Check Mode for A/B Testing
+            string finalCodeBuilder = codeBuilder.ToString();
+            string finalContextBuilder = contextBuilder.ToString();
+
+            if (request.Mode.Equals("Traditional", StringComparison.OrdinalIgnoreCase))
+            {
+                // Chế độ truyền thống: Ẩn toàn bộ Mermaid Graph, AI chỉ được đọc Code thô
+                finalContextBuilder = "Chế độ Truyền thống: Không cung cấp sơ đồ Mermaid Graph. Hãy phân tích trực tiếp từ Source Code.";
+            }
+            else if (request.Mode.Equals("Graph", StringComparison.OrdinalIgnoreCase))
+            {
+                // Chế độ Graph: Ẩn toàn bộ Source Code thô, ép AI chỉ được nhìn vào Graph
+                finalCodeBuilder = "Chế độ Graph: Không cung cấp mã nguồn thô. Hãy phân tích logic dựa hoàn toàn vào sơ đồ Mermaid Graph được cung cấp.";
+            }
+
+            // 6. Generate Questions
+            var (questions, inputTokens, outputTokens) = await _aIService.GenerateUnifiedQuestionsAsync(
                 businessName: businessModel.BusinessName,
-                codeBuilder: codeBuilder.ToString(),
-                contextBuilder: contextBuilder.ToString(),
+                codeBuilder: finalCodeBuilder,
+                contextBuilder: finalContextBuilder,
                 numberOfQuestions: numberOfQuestions,
                 difficulty: request.Difficulty.GetDescription(),
                 additionalContext: request.Description,
-
                 fewShotExamples: fewShotExamples);
-
-            var codeCoverage = await _caculationService.CalculateCodeCoverage(questions,request.BusinessId);
 
             return new GenerateQuestionsResponse
             {
@@ -162,9 +137,9 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
                 TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
                 FewShotUsed = fewShotExamples?.Count() ?? 0,
-                GeneratedQuestionDtos= questions,
-                CodeCoverage = codeCoverage,
-
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens,
+                GeneratedQuestionDtos = questions
             };
         }
 
@@ -179,7 +154,7 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
             if (isGitUrl)
             {
                 targetPath = await _gitService.CloneRepositoryAsync(trimmedRepoPath);
-               // isTempDirectory = true;
+                // isTempDirectory = true;
             }
             var analyzer = new CodeAnalyzer(targetPath);
             var result = await analyzer.AnalyzeAsync();
@@ -188,19 +163,19 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                businessName: request.BusinessName,
                codeBuilder: result.MethodSources.ToString(),
                contextBuilder: "",
-               numberOfQuestions:request.NumberOfQuestions,
+               numberOfQuestions: request.NumberOfQuestions,
                difficulty: request.Difficulty,
                additionalContext: "",
 
-               fewShotExamples: new List<FewShotExample>() );
+               fewShotExamples: new List<FewShotExample>());
 
 
             return new GenerateQuestionsResponse
             {
-                
-                BusinessName = request.BusinessName,  
+
+                BusinessName = request.BusinessName,
                 GeneratedQuestionDtos = questions,
-         
+
             };
 
 

@@ -14,6 +14,6 @@ namespace Repo_Into_Graph_DataAccess.Models.Business
 
         // Navigation properties
         public Feature.Feature? Feature { get; set; }
-        public Business? Business { get; set; }
+        public Bussiness? Business { get; set; }
     }
 }

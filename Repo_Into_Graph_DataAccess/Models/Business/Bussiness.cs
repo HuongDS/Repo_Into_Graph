@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 namespace Repo_Into_Graph_DataAccess.Models.Business;
 
-public class Business
+public class Bussiness
 {
     public Guid Id { get; set; }
     public Guid AnalysisRunId { get; set; }

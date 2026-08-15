@@ -1,4 +1,5 @@
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_DataAccess.Repository.Interface;
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_DataAccess.Models.Business;
@@ -10,11 +11,12 @@ namespace Repo_Into_Graph_Application.Services.Mapper;
 
 public class GraphMapperService
 {
-    private readonly AnalysisDbContext _context;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public GraphMapperService(AnalysisDbContext context)
+    public GraphMapperService(
+        IUnitOfWork unitOfWork)
     {
-        _context = context;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
     public async Task ProcessAndMapGraphAsync(Guid analysisRunId, string businessJsonPath)
@@ -29,7 +31,7 @@ public class GraphMapperService
 
         if (businessData == null || !businessData.Any()) return;
 
-        var businessRecords = businessData.Select(b => new Business
+        var businessRecords = businessData.Select(b => new Bussiness
         {
             Id = Guid.NewGuid(),
             AnalysisRunId = analysisRunId,
@@ -37,16 +39,11 @@ public class GraphMapperService
             CreatedAt = DateTime.UtcNow
         }).ToList();
 
-        await _context.Set<Business>().AddRangeAsync(businessRecords);
-        await _context.SaveChangesAsync();
+        await _unitOfWork.Businesses.AddRangeAsync(businessRecords);
 
-        var methodSourcesInRam = await _context.Set<MethodSourceRecord>()
-            .Where(m => m.AnalysisRunId == analysisRunId)
-            .ToListAsync();
+        var methodSourcesInRam = await _unitOfWork.MethodSources.GetByAnalysisRunIdAsync(analysisRunId);
 
-        var callGraphEdgesInRam = await _context.Set<CallGraphEdge>()
-            .Where(e => e.AnalysisRunId == analysisRunId)
-            .ToListAsync();
+        var callGraphEdgesInRam = await _unitOfWork.CallGraphEdges.GetByAnalysisRunIdAsync(analysisRunId);
 
         var graphLookup = callGraphEdgesInRam.ToLookup(
             e => $"{e.CallerClass.Trim().ToLower()}.{e.CallerMethod.Trim().ToLower()}"
@@ -67,10 +64,8 @@ public class GraphMapperService
         var mappingsToInsert = new List<FeatureMethodMapping>();
         var featureBusinessMappingsToInsert = new List<FeatureBusinessMapping>();
 
-        var featuresInRam = await _context.Set<Feature>()
-            .Where(f => f.AnalysisRunId == analysisRunId)
-            .ToListAsync();
-            
+        var featuresInRam = await _unitOfWork.Features.GetByAnalysisRunIdAsync(analysisRunId);
+
         var mappedFeatureIds = new HashSet<Guid>();
 
         foreach (var bizConfig in businessData)
@@ -131,15 +126,15 @@ public class GraphMapperService
 
         if (featureBusinessMappingsToInsert.Any())
         {
-            await _context.Set<FeatureBusinessMapping>().AddRangeAsync(featureBusinessMappingsToInsert);
+            await _unitOfWork.FeatureBusinessMappings.AddRangeAsync(featureBusinessMappingsToInsert);
         }
 
         if (mappingsToInsert.Any())
         {
-            await _context.Set<FeatureMethodMapping>().AddRangeAsync(mappingsToInsert);
+            await _unitOfWork.FeatureMethodMappings.AddRangeAsync(mappingsToInsert);
         }
-        
-        await _context.SaveChangesAsync();
+
+        await _unitOfWork.SaveChangesAsync();
     }
 
     private void FindAllMethodsInSubTree(

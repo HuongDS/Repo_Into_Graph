@@ -77,7 +77,27 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                     else if (step.CalleeMethod.Contains("Save")) inputLabel = "Lệnh lưu dữ liệu";
                 }
 
-                string callLine = $"    {callerNodeId} -->| {orderCounter++}. {inputLabel} | {calleeNodeId}";
+                string callLine = "";
+                if (!string.IsNullOrEmpty(step.ConditionContext))
+                {
+                    string cleanCondition = CleanLabel(step.ConditionContext);
+                    string decisionNodeId = CleanNodeId($"{step.CallerClass}_{step.CallerMethod}_cond_{cleanCondition}");
+                    if (decisionNodeId.Length > 50) decisionNodeId = decisionNodeId.Substring(0, 50); // limit length
+                    
+                    if (!declaredNodes.Contains(decisionNodeId))
+                    {
+                        sb.AppendLine($"    {decisionNodeId}{{\"{cleanCondition}\"}}");
+                        sb.AppendLine($"    {callerNodeId} -.->| K.tra Đ.kiện | {decisionNodeId}");
+                        declaredNodes.Add(decisionNodeId);
+                    }
+                    
+                    callLine = $"    {decisionNodeId} -->| {orderCounter++}. {inputLabel} | {calleeNodeId}";
+                }
+                else
+                {
+                    callLine = $"    {callerNodeId} -->| {orderCounter++}. {inputLabel} | {calleeNodeId}";
+                }
+
                 if (!renderedLines.Contains(callLine))
                 {
                     sb.AppendLine(callLine);

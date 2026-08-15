@@ -33,6 +33,9 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<int>("GlobalNodeCount")
+                        .HasColumnType("integer");
+
                     b.Property<bool?>("IsPublic")
                         .HasColumnType("boolean");
 
@@ -71,7 +74,7 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                     b.ToTable("analysis_runs", (string)null);
                 });
 
-            modelBuilder.Entity("Repo_Into_Graph_DataAccess.Models.Business.Business", b =>
+            modelBuilder.Entity("Repo_Into_Graph_DataAccess.Models.Business.Bussiness", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -143,6 +146,9 @@ namespace Repo_Into_Graph_DataAccess.Migrations
 
                     b.Property<string>("CallerMethod")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ConditionContext")
                         .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
@@ -243,6 +249,9 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("ConditionContext")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -324,6 +333,12 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("Activity");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AnalysisRunId");
@@ -331,7 +346,7 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                     b.ToTable("method_sources", (string)null);
                 });
 
-            modelBuilder.Entity("Repo_Into_Graph_DataAccess.Models.Business.Business", b =>
+            modelBuilder.Entity("Repo_Into_Graph_DataAccess.Models.Business.Bussiness", b =>
                 {
                     b.HasOne("Repo_Into_Graph_DataAccess.Models.Analysis.AnalysisRun", "AnalysisRun")
                         .WithMany("Businesses")
@@ -344,7 +359,7 @@ namespace Repo_Into_Graph_DataAccess.Migrations
 
             modelBuilder.Entity("Repo_Into_Graph_DataAccess.Models.Business.FeatureBusinessMapping", b =>
                 {
-                    b.HasOne("Repo_Into_Graph_DataAccess.Models.Business.Business", "Business")
+                    b.HasOne("Repo_Into_Graph_DataAccess.Models.Business.Bussiness", "Business")
                         .WithMany("FeatureBusinessMappings")
                         .HasForeignKey("BusinessId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -435,7 +450,7 @@ namespace Repo_Into_Graph_DataAccess.Migrations
                     b.Navigation("MethodSources");
                 });
 
-            modelBuilder.Entity("Repo_Into_Graph_DataAccess.Models.Business.Business", b =>
+            modelBuilder.Entity("Repo_Into_Graph_DataAccess.Models.Business.Bussiness", b =>
                 {
                     b.Navigation("FeatureBusinessMappings");
                 });

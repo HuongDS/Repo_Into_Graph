@@ -22,7 +22,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
         private readonly IUnitOfWork _unitOfWork;
         private readonly GraphMapperService _graphMapper;
         private readonly IGitService _gitService;
-        private readonly AnalysisDbContext _context;
         private readonly BusinessFlowParser _businessFlowParser;
         private readonly DataFlowParseService _dataFlowParser;
         private readonly BusinessCallDataFlowGenerator _businessCallDataFlowGenerator;
@@ -31,7 +30,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
             IUnitOfWork unitOfWork,
             GraphMapperService graphMapper,
             IGitService gitService,
-            AnalysisDbContext context,
             BusinessFlowParser businessFlowParser,
             BusinessCallDataFlowGenerator businessCallDataFlowGenerator,
             DataFlowParseService dataFlowParser)
@@ -39,7 +37,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _graphMapper = graphMapper ?? throw new ArgumentNullException(nameof(graphMapper));
             _gitService = gitService ?? throw new ArgumentNullException(nameof(gitService));
-            _context = context ?? throw new ArgumentNullException(nameof(context));
             _businessFlowParser = businessFlowParser ?? throw new ArgumentNullException(nameof(businessFlowParser));
             _dataFlowParser = dataFlowParser ?? throw new ArgumentNullException(nameof(dataFlowParser));
             _businessCallDataFlowGenerator = businessCallDataFlowGenerator ?? throw new ArgumentNullException(nameof(businessCallDataFlowGenerator));
@@ -52,7 +49,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
 
             string trimmedRepoPath = repositoryPath.Trim('"', ' ');
             string targetOutputDir = string.IsNullOrWhiteSpace(outputDir) ? "./output" : outputDir.Trim('"', ' ');
-
             bool isGitUrl = _gitService.IsGitUrl(trimmedRepoPath);
             string targetPath = trimmedRepoPath;
             bool isTempDirectory = false;
@@ -66,7 +62,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
             {
                 throw new NotFoundException($"Thư mục local không tồn tại: {trimmedRepoPath}");
             }
-
 
             try
             {
@@ -84,7 +79,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                     _unitOfWork.Features.DeleteRange(existingRuns.SelectMany(r => r.Features));
                     _unitOfWork.Businesses.DeleteRange(existingRuns.SelectMany(r => r.Businesses));
                     _unitOfWork.CallGraphEdges.DeleteRange(existingRuns.SelectMany(r => r.CallGraphEdges));
-                    await _unitOfWork.SaveChangesAsync();
                 }
 
                 // Tạo AnalysisRun mới
@@ -100,6 +94,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                         CallerMethod = edge.CallerMethod,
                         CalleeClass = edge.CalleeClass,
                         CalleeMethod = edge.CalleeMethod,
+                        ConditionContext = edge.ConditionContext,
                         CreatedAt = DateTime.UtcNow
                     }).ToList(),
                     MethodSources = result.MethodSources.Select(source => new MethodSourceRecord
@@ -108,24 +103,20 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                         ClassName = source.ClassName,
                         MethodName = source.MethodName,
                         SourceCode = source.SourceCode,
+                        Type = source.Type,
                         CreatedAt = DateTime.UtcNow
-                    }).ToList()
+                    }).ToList(),
+                    GlobalNodeCount = result.MethodSources.Count
                 };
 
                 await _unitOfWork.AnalysisRuns.AddAsync(analysisRun);
-                await _unitOfWork.SaveChangesAsync();
                 var allIntraEdges = new List<DataFlowEdge>();
                 foreach (var source in analysisRun.MethodSources)
                 {
                     var methodDataFlows = _dataFlowParser.ParseIntraMethodDataFlow(analysisRun.Id, source.ClassName, source.MethodName, source.SourceCode);
                     allIntraEdges.AddRange(methodDataFlows);
                 }
-                //if(allIntraEdges.Any())
-                //{
-                //    await _context.DataFlowEdges.AddRangeAsync(allIntraEdges);
-                //    await _context.SaveChangesAsync();
-                //}
-                // Phan tich va luu Features (luong xu ly)
+
                 var features = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
                 if (features.Any())
                 {
@@ -134,30 +125,23 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                     {
                         flow.DataFlowMermaidGraph = _businessCallDataFlowGenerator.GenerateCallDataFlow(flow, methodSourcesList, allIntraEdges);
                     }
-                    await _context.Features.AddRangeAsync(features);
-                    await _context.SaveChangesAsync();
+                    await _unitOfWork.Features.AddRangeAsync(features);
                 }
 
-                // Thuc hien anh xa do thi voi Business (doc tu template_business.json)
-                // Uu tien doc template_business.json tu ben trong repository duoc phan tich,
-                // neu khong co thi fallback ve file local cua server
+                await _unitOfWork.SaveChangesAsync();
+
                 string businessJsonPath = Path.Combine(targetPath, "template_business.json");
-                Console.WriteLine($"[DEBUG] Đang tìm kiếm file template tại: {businessJsonPath}");
-                
+
                 if (!File.Exists(businessJsonPath))
                 {
-                    Console.WriteLine($"[DEBUG] Không tìm thấy file ở targetPath. Đang tìm file dự phòng...");
-                    businessJsonPath = "template_business.json";
-                    Console.WriteLine("Ahihihihi1");
+                    throw new NotFoundException($"File template_business.json không tồn tại trong thư mục: {targetPath}");
                 }
-
 
                 if (File.Exists(businessJsonPath))
                 {
                     await _graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, businessJsonPath);
 
                 }
-
 
                 // Xuất file output
                 var outputJsonPath = Path.Combine(targetOutputDir, "output_graph.json");

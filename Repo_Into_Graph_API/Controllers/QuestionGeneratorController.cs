@@ -4,6 +4,8 @@ using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
 using Repo_Into_Graph_Application.Exceptions;
 using System;
 using System.Threading.Tasks;
+using Repo_Into_Graph_Application.Services.WorkflowAssessment;
+using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 
 namespace Repo_Into_Graph_API.Controllers
 {
@@ -12,10 +14,36 @@ namespace Repo_Into_Graph_API.Controllers
     public class QuestionGeneratorController : ControllerBase
     {
         private readonly IQuestionGenerate _questionGenerate;
+        private readonly IWorkflowAssessmentService _workflowAssessmentService;
 
-        public QuestionGeneratorController(IQuestionGenerate questionGenerate)
+        public QuestionGeneratorController(
+            IQuestionGenerate questionGenerate,
+            IWorkflowAssessmentService workflowAssessmentService)
         {
             _questionGenerate = questionGenerate ?? throw new ArgumentNullException(nameof(questionGenerate));
+            _workflowAssessmentService = workflowAssessmentService ?? throw new ArgumentNullException(nameof(workflowAssessmentService));
+        }
+
+        [HttpPost("generate-traditional")]
+        public async Task<IActionResult> GenerateTraditional([FromBody] GenerateQuestionsRequest request)
+        {
+            if (request.NumberOfQuestions <= 0)
+                throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
+
+            request.Mode = "Traditional";
+            var result = await _questionGenerate.GenerateQuestionsAsync(request);
+            return Ok(result);
+        }
+
+        [HttpPost("generate-graph")]
+        public async Task<IActionResult> GenerateGraph([FromBody] GenerateQuestionsRequest request)
+        {
+            if (request.NumberOfQuestions <= 0)
+                throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
+
+            request.Mode = "Graph";
+            var result = await _questionGenerate.GenerateQuestionsAsync(request);
+            return Ok(result);
         }
 
         [HttpPost("generate")]
@@ -28,13 +56,16 @@ namespace Repo_Into_Graph_API.Controllers
             return Ok(result);
         }
 
-        [HttpPost("generate/full")]
-        public async Task<IActionResult> GenerateQuestionsFull([FromBody] GenerateQuestionFullRequest request)
+        [HttpPost("highlight-graph")]
+        public async Task<IActionResult> HighlightGraph([FromBody] AssessmentRequestDto request)
         {
-            if (request.NumberOfQuestions <= 0)
-                throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
+            if (request == null)
+                throw new BadRequestException("Request body không được để trống.");
 
-            var result = await _questionGenerate.GenerateQuestionsFullAsync(request);
+            if (string.IsNullOrWhiteSpace(request.Question))
+                throw new BadRequestException("Trường 'question' không được để trống.");
+
+            var result = await _workflowAssessmentService.Coverage.AssessAsync(request);
             return Ok(result);
         }
     }

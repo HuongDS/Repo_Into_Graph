@@ -10,7 +10,7 @@ namespace Repo_Into_Graph_Application.Services.AI
         /// Sinh câu hỏi vấn đáp dựa trên một Business (gồm Source Code và Business Flow Context).
         /// Cung cấp một cái nhìn toàn diện (Unified) cho mô hình AI để ra câu hỏi chất lượng nhất.
         /// </summary>
-        Task<IEnumerable<GeneratedQuestionDto>> GenerateUnifiedQuestionsAsync(
+        Task<(IEnumerable<GeneratedQuestionDto> Questions, int InputTokens, int OutputTokens)> GenerateUnifiedQuestionsAsync(
             string businessName,
             string codeBuilder,
             string contextBuilder,

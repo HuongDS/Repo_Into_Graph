@@ -9,6 +9,7 @@ namespace Repo_Into_Graph_Application.Dtos.QuestionGenerate
         public DifficultyLevel? Difficulty { get; set; }
         public string? Description { get; set; }
         public List<Guid>? FewShotExampleIds { get; set; }
+        public string Mode { get; set; } = "Graph"; // "Graph" (Current) or "Traditional"
     }
 }
 

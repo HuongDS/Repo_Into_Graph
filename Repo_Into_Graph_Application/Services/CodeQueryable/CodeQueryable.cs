@@ -8,50 +8,43 @@ using Repo_Into_Graph_DataAccess.Repository.Interface;
 using Repo_Into_Graph_Application.Mappings;
 using Repo_Into_Graph_Application.Dtos.Code;
 using Repo_Into_Graph_Application.Dtos.Business;
+using AutoMapper;
+using Repo_Into_Graph_Application.Dtos.Method;
 
 namespace Repo_Into_Graph_Application.Services.CodeQueryable
 {
     public class CodeQueryable : ICodeQueryable
     {
-        private readonly IBusinessRepository _businessRepo;
-        private readonly AnalysisDbContext _context;
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IMapper _mapper;
 
-        public CodeQueryable(IBusinessRepository businessRepo, AnalysisDbContext context)
+        public CodeQueryable(
+           IUnitOfWork unitOfWork, IMapper mapper)
         {
-            _businessRepo = businessRepo ?? throw new ArgumentNullException(nameof(businessRepo));
-            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
-        public async Task<IEnumerable<BusinessViewDto>> GetBusinessesAsync(Guid? id)
+        public async Task<IEnumerable<BusinessViewDto>> GetBusinessesByAnalysisRunIdAsync(Guid analysisRunId)
         {
-            if (id != null)
-            {
-                var record = await _businessRepo.GetByIdAsync(id.Value);
-                if (record == null) return Enumerable.Empty<BusinessViewDto>();
+            var res = await _unitOfWork.Businesses.FindAsync(b => b.AnalysisRunId == analysisRunId);
+            return res.Select(r => _mapper.Map<BusinessViewDto>(r));
+        }
 
-                return new List<BusinessViewDto> { record.ToDto() };
-            }
-
-            var res = await _businessRepo.GetAllAsync();
-            return res.Select(r => r.ToDto());
+        public async Task<BusinessViewDto?> GetBusinessByIdAsync(Guid id)
+        {
+            var record = await _unitOfWork.Businesses.GetByIdAsync(id);
+            return _mapper.Map<BusinessViewDto?>(record);
         }
 
         public async Task<CodeFlowDto?> GetCodeFlowAsync(Guid businessId)
         {
-            var business = await _context.Businesses
-                .FirstOrDefaultAsync(b => b.Id == businessId);
+            var business = await _unitOfWork.Businesses.GetByIdAsync(businessId);
 
             if (business == null) return null;
 
-            var featureBusinessMappings = await _context.FeatureBusinessMappings
-                .Where(m => m.BusinessId == businessId)
-                .Select(m => m.FeatureId)
-                .ToListAsync();
-
-            var featureMethodMappings = await _context.FeatureMethodMappings
-                .Include(m => m.MethodSource)
-                .Where(m => featureBusinessMappings.Contains(m.FeatureId))
-                .ToListAsync();
+            var featureBusinessMappings = await _unitOfWork.FeatureBusinessMappings.GetFeatureIdsByBusinessIdAsync(businessId);
+            var featureMethodMappings = await _unitOfWork.FeatureMethodMappings.GetMappingsWithMethodSourceByFeatureIdsAsync(featureBusinessMappings);
 
             var methods = featureMethodMappings
                 .Where(m => m.MethodSource != null)
@@ -61,8 +54,8 @@ namespace Repo_Into_Graph_Application.Services.CodeQueryable
 
             return new CodeFlowDto
             {
-                Business = business.ToDto(),
-                Methods = methods.Select(m => m.ToDto()).ToList()
+                Business = _mapper.Map<BusinessViewDto>(business),
+                Methods = methods.Select(m => _mapper.Map<MethodSourceDto>(m)).ToList()
             };
         }
     }

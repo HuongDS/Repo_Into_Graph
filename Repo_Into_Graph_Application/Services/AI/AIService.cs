@@ -32,7 +32,7 @@ namespace Repo_Into_Graph_Application.Services.AI
         }
 
 
-        public async Task<IEnumerable<GeneratedQuestionDto>> GenerateUnifiedQuestionsAsync(
+        public async Task<(IEnumerable<GeneratedQuestionDto> Questions, int InputTokens, int OutputTokens)> GenerateUnifiedQuestionsAsync(
             string businessName,
             string codeBuilder,
             string contextBuilder,
@@ -42,31 +42,20 @@ namespace Repo_Into_Graph_Application.Services.AI
 
             IEnumerable<FewShotExample>? fewShotExamples = null)
         {
+            string difficultyInstruction = difficulty.ToLower() switch
+            {
+                "dễ" => "- Mức độ DỄ (Happy Path): Câu hỏi CHỈ tập trung vào luồng xử lý thành công, đi thẳng từ đầu đến cuối mà KHÔNG kích hoạt bất kỳ nhánh rẽ ngoại lệ (if/else) nào, KHÔNG hỏi về lỗi.",
+                "trung bình" => "- Mức độ TRUNG BÌNH (Single Exception): Câu hỏi BẮT BUỘC phải hỏi về tình huống kích hoạt ĐÚNG MỘT (1) nhánh rẽ ngoại lệ (kiểm tra điều kiện, validation lỗi...).",
+                "khó" => "- Mức độ KHÓ (Double Exception): Câu hỏi BẮT BUỘC phải tạo ra tình huống phức tạp kích hoạt ĐỒNG THỜI TỪ HAI (2) nhánh rẽ ngoại lệ trở lên (xung đột dữ liệu, thứ tự ưu tiên, giao dịch chéo).",
+                _ => $"- Mức độ: {difficulty}."
+            };
+
             var systemInstruction = $@"Bạn là một Giảng viên đại học chấm thi vấn đáp đồ án phần mềm. Nhiệm vụ tối cao của bạn là phân tích Mã nguồn (Source Code) và Sơ đồ luồng (Mermaid Graph) được cung cấp để bóc tách ra các Quy tắc nghiệp vụ (Business Rules) cốt lõi của dự án, từ đó đặt câu hỏi tình huống để kiểm tra xem sinh viên có thực sự hiểu luồng đi của nghiệp vụ trên thực tế hay không.
 
 YÊU CẦU BẮT BUỘC VỀ SỐ LƯỢNG VÀ ĐỘ KHÓ:
 - Bạn PHẢI tạo ra chính xác ĐÚNG {numberOfQuestions} câu hỏi. Không được tạo nhiều hơn hoặc ít hơn.
-- Tất cả các câu hỏi phải được thiết kế cấu trúc dựa trên mức độ: {difficulty} với tiêu chí như sau:
-TIÊU CHÍ ĐÁNH GIÁ ĐỊNH LƯỢNG CHI TIẾT VỀ ĐỘ KHÓ (AI BẮT BUỘC TUÂN THỦ):
-
-1. THẾ NÀO LÀ MỨC ĐỘ ""de"" (DỄ) - KIỂM TRA ĐƠN LUỒNG:
-   - Bản chất: Chỉ kiểm tra khả năng đọc hiểu một chuỗi hành động tuyến tính trong MỘT Feature duy nhất.
-   - Tiêu chí Code/Graph: Toàn bộ Call Stack trong ""targetedEntryPoints"" chỉ được phép đi qua đúng 1 Controller và luồng Service trực tiếp của chính nó. Không có sự xuất hiện của các Service thuộc phân hệ khác.
-   - Kịch bản nghiệp vụ: Xoay quanh việc thiếu thông tin đầu vào, sai định dạng dữ liệu, hoặc không đủ điều kiện cơ bản để thực hiện (Ví dụ: Đặt giá thấp hơn mức giá hiện tại, Đăng ký thông tin bị thiếu trường bắt buộc).
-
-2. THẾ NÀO LÀ MỨC ĐỘ ""trungbinh"" (TRUNG BÌNH) - KIỂM TRA ĐA LUỒNG KẾ THỪA:
-   - Bản chất: Kiểm tra tính liên đới logic giữa các Feature hoạt động theo chuỗi (Tính năng này là tiền đề hoặc kết quả của tính năng kia).
-   - Tiêu chí Code/Graph: ""targetedEntryPoints"" PHẢI xuất hiện Call Stack của ít nhất 2 cụm Controller/Service khác nhau (Ví dụ: Luồng của WalletService kết hợp luồng của AuctionService).
-   - Kịch bản nghiệp vụ: Đặt câu hỏi tại ""điểm giao thoa"" của chuỗi hành động. Khi một mắt xích thành công nhưng mắt xích sau thất bại thì xử lý dòng tiền/tài sản trên thực tế thế nào (Ví dụ: Tài khoản ví đủ tiền -> Trừ tiền thành công -> Hệ thống ghi nhận Đặt giá bị lỗi mạng -> Tiền của khách hàng xử lý ra sao?).
-
-3. THẾ NÀO LÀ MỨC ĐỘ ""kho"" (KHÓ) - KIỂM TRA TOÀN DIỆN, ĐỒNG THỜI VÀ RỦI RO:
-   - Bản chất: Kiểm tra tư duy hệ thống trước các biến cố nghiêm trọng liên quan đến toàn vẹn dữ liệu, tranh chấp tài nguyên, hoặc lỗ hổng quy trình vận hành.
-   - Tiêu chí Code/Graph: Kết hợp tùy ý không giới hạn số lượng Feature. Đặc biệt tập trung vào các hàm xử lý có sử dụng Transaction, các Background Job (như Hangfire), Queue, hoặc các hàm tính toán logic phức tạp có tính chất cập nhật trạng thái chung.
-   - Kịch bản nghiệp vụ: Tình huống phải mô tả các kịch bản bất đối xứng, bao gồm:
-     + Tranh chấp đồng thời (Concurrency): Hai người cùng bấm đặt giá một tài sản tại cùng một phần nghìn giây cuối cùng khi đồng hồ đếm ngược kết thúc.
-     + Lỗ hổng quy trình (Business Logic Flaw): Người bán lợi dụng việc hệ thống đang xử lý lệnh kết thúc để rút hạ bài đăng hòng bùng tiền cọc.
-     + Lỗi hệ thống mất đồng bộ: Giao dịch ngân hàng báo thành công, ví hệ thống đã cộng tiền, nhưng trạng thái đơn hàng bị kẹt ở mức ""Chờ thanh toán"".
-   
+- Tất cả các câu hỏi phải được thiết kế tuân thủ nghiêm ngặt quy định độ khó sau:
+{difficultyInstruction}
 
 THIẾT QUÂN LUẬT VỀ NGÔN NGỮ (100% BUSINESS LANGUAGE):
 1. Cả câu hỏi (question) và câu trả lời (suggestedAnswer) TUYỆT ĐỐI KHÔNG CHỨA bất kỳ từ khóa kỹ thuật hay cấu trúc mã nguồn nào.
@@ -80,7 +69,10 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
   [ ""TênController.TênAction"", ""TênInterfaceService.TênHàmAsync"", ""TênClassServiceImpl.TênHàmAsync"", ""TênRepository.TênHàmAsync (nếu có)"" ]
 - VÍ DỤ MẪU CHUẨN LUỒNG:
   [ ""AuctionController.CreateAuction"", ""IAuctionService.CreateAuctionAsync"", ""AuctionServiceImpl.CreateAuctionAsync"", ""IAuctionRepository.AddAsync"" ]
-- **LƯU Ý ĐẶC BIỆT CHO MỨC ĐỘ TRUNGBINH/KHO:** Vì câu hỏi kết hợp nhiều tính năng, mảng ""targetedEntryPoints"" PHẢI liệt kê đầy đủ luồng đi của TẤT CẢ các tính năng xuất hiện trong tình huống đó (liệt kê tuần tự luồng của tính năng A rồi nối tiếp luồng của tính năng B). Nếu thiếu bất kỳ tầng nào, kết quả sẽ bị coi là bất hợp lệ.
+- TUYỆT ĐỐI KHÔNG ĐƯỢC bỏ sót việc bắt cặp giữa [Interface] và [Class triển khai]. Nếu thiếu bất kỳ tầng nào, kết quả sẽ bị coi là bất hợp lệ.
+- CHỈ THỊ CHỐNG SUY DIỄN (ANTI-HALLUCINATION):
+Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC tự phát minh hoặc suy diễn ra các tính năng, quy trình, rủi ro (như thanh toán, giao dịch chéo...) nếu nó không ĐƯỢC THỂ HIỆN RÕ RÀNG trong Mermaid Graph hoặc Source Code.
+Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (không có if/else phức tạp), bạn BẮT BUỘC phải đặt câu hỏi đơn giản tương ứng, KHÔNG ĐƯỢC cố tình tạo tình huống phức tạp nằm ngoài phạm vi tài liệu được cung cấp. Câu hỏi phải chỉ đích danh được dựa vào bước nào trong sơ đồ hoặc dòng code nào.
 
 ĐỊNH DẠNG ĐẦU RA BẮT BUỘC:
 - Trả về một mảng JSON chứa các đối tượng có cấu trúc chính xác như sau (Tuyệt đối không bọc mảng trong ký tự ```json, chỉ trả về JSON trần):
@@ -193,7 +185,11 @@ QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
                 {
                     PropertyNameCaseInsensitive = true
                 }) ?? new List<GeneratedQuestionDto>();
-                return questions;
+
+                int inputTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
+                int outputTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
+
+                return (questions, inputTokens, outputTokens);
 
             }
             catch (JsonException ex)

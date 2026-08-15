@@ -15,8 +15,9 @@ using Repo_Into_Graph_Application.Services.GitService;
 using Repo_Into_Graph_Application.Services.Mapper;
 using Repo_Into_Graph_Application.Services.QuestionGenerate;
 using Repo_Into_Graph_DataAccess.Database;
-using Repo_Into_Graph_DataAccess.Repository.Impl;
-using Repo_Into_Graph_DataAccess.Repository.Interface;
+using Repo_Into_Graph_Application.Services.Caculation;
+using Repo_Into_Graph_Application.Services.WorkflowAssessment;
+using Repo_Into_Graph_API.Extensions;
 
 if (File.Exists(".env"))
 {
@@ -47,30 +48,14 @@ builder.Services.AddHttpClient("BaseModel", client =>
 // Register DB Context
 builder.Services.AddDbContext<AnalysisDbContext>();
 
-// Register repositories & services under Dependency Injection
-builder.Services.AddScoped<IAnalysisRunRepository, AnalysisRunRepository>();
-builder.Services.AddScoped<ICallGraphEdgeRepository, CallGraphEdgeRepository>();
-builder.Services.AddScoped<IMethodSourceRepository, MethodSourceRepository>();
-builder.Services.AddScoped<IBusinessRepository, BusinessRepository>();
-builder.Services.AddScoped<IFeatureMethodMappingRepository, FeatureMethodMappingRepository>();
-builder.Services.AddScoped<IFeatureRepository, FeatureRepository>();
-builder.Services.AddScoped<IFeatureBusinessMappingRepository, FeatureBusinessMappingRepository>();
-builder.Services.AddScoped<IFewShotExampleRepository, FewShotExampleRepository>();
-builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+// Register all project dependencies (Repositories & Services)
+builder.Services.AddProjectDependencies();
 
-builder.Services.AddScoped<ICodeQueryable, CodeQueryable>();
-builder.Services.AddScoped<GraphMapperService>();
-builder.Services.AddScoped<IGitService, GitService>();
-builder.Services.AddScoped<IAnalysisService, AnalysisService>();
-builder.Services.AddScoped<IAnalysisRunService, AnalysisRunService>();
-builder.Services.AddScoped<IFeatureService, FeatureService>();
-builder.Services.AddScoped<IFewShotService, FewShotService>();
-builder.Services.AddScoped<BusinessFlowParser>();
-builder.Services.AddScoped<IQuestionGenerate, QuestionGenerate>();
-builder.Services.AddScoped<IAIService, AIService>();
-builder.Services.AddScoped<DataFlowParseService>();
-builder.Services.AddScoped<BusinessCallDataFlowGenerator>();
-builder.Services.AddScoped<ICaculationService, CaculationService>();
+// Add Redis Distributed Cache
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("RedisConnection");
+});
 
 // Add support for controllers
 builder.Services.AddControllers()

@@ -65,7 +65,8 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                                 CalleeClass = edge.CalleeClass,
                                 CalleeMethod = edge.CalleeMethod,
                                 StepOrder = order++,
-                                CreatedAt = DateTime.UtcNow
+                                CreatedAt = DateTime.UtcNow,
+                                ConditionContext = edge.ConditionContext
                             });
 
                             flowEdges.Add(($"{edge.CallerClass}.{edge.CallerMethod}", $"{edge.CalleeClass}.{edge.CalleeMethod}"));

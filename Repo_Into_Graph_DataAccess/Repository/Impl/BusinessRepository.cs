@@ -1,4 +1,4 @@
-using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Business;
+using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Bussiness;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
 using Repo_Into_Graph_DataAccess.Database;
 using Microsoft.EntityFrameworkCore;

@@ -6,7 +6,7 @@ using Repo_Into_Graph_DataAccess.Models.Feature;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_DataAccess.Models.Method;
 using Microsoft.Extensions.Configuration;
-using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Business;
+using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Bussiness;
 using FeatureModel = Repo_Into_Graph_DataAccess.Models.Feature.Feature;
 
 namespace Repo_Into_Graph_DataAccess.Database;
@@ -94,6 +94,7 @@ public class AnalysisDbContext : DbContext
             entity.Property(x => x.ClassName).IsRequired();
             entity.Property(x => x.MethodName).IsRequired();
             entity.Property(x => x.SourceCode).IsRequired();
+            entity.Property(x => x.Type).HasConversion<string>().HasDefaultValue(Repo_Into_Graph_DataAccess.Consts.NodeType.Activity);
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             entity.HasIndex(x => x.AnalysisRunId);
         });

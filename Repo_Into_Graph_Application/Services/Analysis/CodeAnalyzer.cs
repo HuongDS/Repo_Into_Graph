@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Repo_Into_Graph_DataAccess.Models.Analysis;
 using Repo_Into_Graph_DataAccess.Models.Method;
+using System.Text.Json;
 
 
 namespace Repo_Into_Graph_Application.Services.Analysis;
@@ -28,6 +29,16 @@ public class CodeAnalyzer
         "target"
     };
 
+    // Dependency nào xuất hiện trong package.json thì coi thư mục chứa nó là 1 sub-project frontend
+    // (UI framework thuần) và loại bỏ hoàn toàn khỏi phân tích - vì đây là repo full-stack, phần
+    // logic nghiệp vụ cần trace nằm ở backend, code frontend chỉ gây nhiễu (component/UI, không phải
+    // luồng nghiệp vụ; class/method trùng tên với backend có thể bị nối nhầm vào cùng 1 flow).
+    private static readonly HashSet<string> _frontendFrameworkMarkers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "react", "react-dom", "vue", "@vue/cli-service", "@angular/core", "svelte",
+        "next", "nuxt", "gatsby", "vite", "@sveltejs/kit", "solid-js", "preact"
+    };
+
     public CodeAnalyzer(string repositoryPath)
     {
         _repositoryPath = repositoryPath;
@@ -43,8 +54,18 @@ public class CodeAnalyzer
             foreach (var ext in parser.SupportedExtensions)
                 extensionMap[ext] = parser;
 
+        var frontendRoots = DetectFrontendRoots();
+        if (frontendRoots.Any())
+        {
+            Console.WriteLine($"🖥️  Detected {frontendRoots.Count} frontend sub-project(s) (React/Vue/Angular/...) - excluded from analysis:");
+            foreach (var root in frontendRoots)
+                Console.WriteLine($"   • {Path.GetRelativePath(_repositoryPath, root)}");
+            Console.WriteLine();
+        }
+
         var allFiles = Directory.GetFiles(_repositoryPath, "*.*", SearchOption.AllDirectories)
             .Where(f => !IsInSkippedDirectory(f))
+            .Where(f => !IsUnderAnyRoot(f, frontendRoots))
             .Where(f => extensionMap.ContainsKey(Path.GetExtension(f)))
             .ToList();
 
@@ -161,6 +182,69 @@ public class CodeAnalyzer
     {
         var parts = filePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return parts.Any(part => _skipDirs.Contains(part));
+    }
+
+    // Quét mọi package.json trong repo (trừ những thư mục đã bị skip); thư mục nào có package.json
+    // khai báo dependency của 1 UI framework thuần (React/Vue/Angular/...) được coi là root của 1
+    // sub-project frontend riêng biệt và trả về để loại khỏi vùng phân tích.
+    // Lưu ý: những framework full-stack như Next.js/Nuxt cũng bị coi là frontend theo cách này (đơn
+    // giản hóa có chủ đích) - nếu route API viết trong cùng sub-project đó, phần đó cũng sẽ bị bỏ qua.
+    private List<string> DetectFrontendRoots()
+    {
+        var roots = new List<string>();
+
+        var packageJsonFiles = Directory.GetFiles(_repositoryPath, "package.json", SearchOption.AllDirectories)
+            .Where(f => !IsInSkippedDirectory(f));
+
+        foreach (var pkgFile in packageJsonFiles)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(pkgFile));
+                bool isFrontend = false;
+
+                foreach (var section in new[] { "dependencies", "devDependencies" })
+                {
+                    if (!doc.RootElement.TryGetProperty(section, out var deps) || deps.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    if (deps.EnumerateObject().Any(p => _frontendFrameworkMarkers.Contains(p.Name)))
+                    {
+                        isFrontend = true;
+                        break;
+                    }
+                }
+
+                if (isFrontend)
+                {
+                    var dir = Path.GetDirectoryName(pkgFile);
+                    if (!string.IsNullOrEmpty(dir))
+                        roots.Add(dir);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  ⚠️  Không đọc được {Path.GetFileName(pkgFile)}: {ex.Message}");
+            }
+        }
+
+        return roots;
+    }
+
+    private static bool IsUnderAnyRoot(string filePath, List<string> roots)
+    {
+        if (roots.Count == 0) return false;
+
+        var fullFile = Path.GetFullPath(filePath);
+        foreach (var root in roots)
+        {
+            var fullRoot = Path.GetFullPath(root);
+            if (fullFile.Equals(fullRoot, StringComparison.OrdinalIgnoreCase) ||
+                fullFile.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 }
 

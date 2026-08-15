@@ -79,7 +79,7 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
 [
   {{
     ""question"": ""Câu hỏi tình huống nghiệp vụ thực tế ở đây"",
-    ""suggestedAnswer"": ""Giải thích giải pháp xử lý logic nghiệp vụ ở đây có thể hiểu ra từ source code và context (không chứa từ khóa code) "",
+    ""suggestedAnswer"": ""Giải thích giải pháp xử lý logic nghiệp vụ ở đây (không chứa từ khóa code)"",
     ""difficulty"": ""{difficulty}"",
     ""targetedEntryPoints"": [
       ""TênController.TênAction"",
@@ -144,7 +144,7 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
             };
 
             int maxRetries = 5;
-            int delaySeconds = 3;
+            int delaySeconds = 5;
             GenerateContentResponse? response = null;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)

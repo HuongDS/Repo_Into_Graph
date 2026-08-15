@@ -22,50 +22,34 @@ namespace Repo_Into_Graph_Application.Services.Caculation
             {
                 return 0.0;
             }
-            // GetAllMethod trả về dạng "CalleeClass_CalleeMethod" => chuẩn hoá về chữ thường
             var totalMethodsSet = callerMethods
                                     .Where(m => !string.IsNullOrWhiteSpace(m))
-                                    .Select(m => m.Trim().ToLower())
+                                    .Select(m => m.Trim().Split('.').Last().ToLower()) 
                                     .ToHashSet();
-
-            if (totalMethodsSet.Count == 0)
-            {
-                return 0.0;
-            }
-
-            // Tập method được cả bộ câu hỏi chạm tới (dùng để tính coverage tổng)
-            var overallTargetedSet = new HashSet<string>();
+            var targetedMethodsSet = new HashSet<string>();
 
             if (generatedQuestions != null)
             {
                 foreach (var q in generatedQuestions)
                 {
-                    // Tập method mà RIÊNG câu hỏi này chạm tới
-                    var questionTargetedSet = new HashSet<string>();
+                    if (q.TargetedEntryPoints == null) continue;
 
-                    if (q.TargetedEntryPoints != null)
+                    foreach (var method in q.TargetedEntryPoints)
                     {
-                        foreach (var method in q.TargetedEntryPoints)
+                        if (string.IsNullOrWhiteSpace(method)) continue;
+
+                        var cleanAiMethodName = method.Trim().
+                                                Replace(".", "_").ToLower();
+
+                        if (totalMethodsSet.Contains(cleanAiMethodName))
                         {
-                            if (string.IsNullOrWhiteSpace(method)) continue;
-
-                            // AI trả về dạng "Class.Method" => đổi "." thành "_" cho khớp với totalMethodsSet
-                            var cleanAiMethodName = method.Trim().Replace(".", "_").ToLower();
-
-                            if (totalMethodsSet.Contains(cleanAiMethodName))
-                            {
-                                questionTargetedSet.Add(cleanAiMethodName);
-                                overallTargetedSet.Add(cleanAiMethodName);
-                            }
+                            targetedMethodsSet.Add(cleanAiMethodName);
                         }
                     }
-
-                    // Gán độ bao phủ riêng cho từng câu hỏi
-                    q.Coverage = (questionTargetedSet.Count * 1.0) / totalMethodsSet.Count;
                 }
             }
 
-            double coverage = (overallTargetedSet.Count * 1.0) / totalMethodsSet.Count;
+            double coverage = (targetedMethodsSet.Count*1.0) / totalMethodsSet.Count;
 
             return coverage;
         }

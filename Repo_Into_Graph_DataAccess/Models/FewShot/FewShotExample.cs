@@ -1,5 +1,4 @@
 using System;
-using Repo_Into_Graph_Application.Enums;
 
 namespace Repo_Into_Graph_DataAccess.Models.FewShot
 {
@@ -14,8 +13,7 @@ namespace Repo_Into_Graph_DataAccess.Models.FewShot
         public string SuggestedAnswer { get; set; } = string.Empty;
 
         /// <summary>Mức độ khó: Easy / Medium / Hard</summary>
-        public DifficultyLevel? Difficulty { get; set; } = DifficultyLevel.TrungBinh;
-
+        public string Difficulty { get; set; } = string.Empty;
 
         /// <summary>Nhãn phân loại tự do (ví dụ: luồng, điều kiện, nghiệp vụ)</summary>
         public string? Tag { get; set; }

@@ -1,4 +1,3 @@
-using Repo_Into_Graph_Application.Enums;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -15,7 +14,7 @@ namespace Repo_Into_Graph_Application.Dtos.FewShot
         public Guid Id { get; set; }
         public string Question { get; set; } = string.Empty;
         public string SuggestedAnswer { get; set; } = string.Empty;
-        public DifficultyLevel? Difficulty { get; set; } = DifficultyLevel.TrungBinh;
+        public string Difficulty { get; set; } = string.Empty;
         public string? Tag { get; set; }
         public string? Description { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -36,8 +35,8 @@ namespace Repo_Into_Graph_Application.Dtos.FewShot
         public string SuggestedAnswer { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Difficulty không được để trống.")]
-     
-        public DifficultyLevel Difficulty { get; set; }
+        [MaxLength(20)]
+        public string Difficulty { get; set; } = string.Empty;
 
         [MaxLength(100)]
         public string? Tag { get; set; }
@@ -59,7 +58,7 @@ namespace Repo_Into_Graph_Application.Dtos.FewShot
         public string? SuggestedAnswer { get; set; }
 
         [MaxLength(20)]
-        public DifficultyLevel? Difficulty { get; set; }
+        public string? Difficulty { get; set; }
 
         [MaxLength(100)]
         public string? Tag { get; set; }

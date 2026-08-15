@@ -1,7 +1,6 @@
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_Application.Dtos.FewShot;
-using Repo_Into_Graph_Application.Enums;
 using Repo_Into_Graph_Application.Exceptions;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
@@ -36,12 +35,7 @@ namespace Repo_Into_Graph_Application.Services.FewShot
                 .OrderByDescending(x => x.CreatedAt);
 
             if (!string.IsNullOrWhiteSpace(difficulty))
-            {
-                if (Enum.TryParse<DifficultyLevel>(difficulty, true, out DifficultyLevel parsedDifficulty))
-                {
-                    query = query.Where(x => x.Difficulty == parsedDifficulty);
-                }
-            }
+                query = query.Where(x => x.Difficulty.ToLower() == difficulty.Trim().ToLower());
 
             if (!string.IsNullOrWhiteSpace(tag))
                 query = query.Where(x => x.Tag != null &&
@@ -96,7 +90,7 @@ namespace Repo_Into_Graph_Application.Services.FewShot
             if (request.SuggestedAnswer is not null)
                 entity.SuggestedAnswer = request.SuggestedAnswer.Trim();
             if (request.Difficulty is not null)
-                entity.Difficulty = request.Difficulty;
+                entity.Difficulty = request.Difficulty.Trim();
             if (request.Tag is not null)
                 entity.Tag = request.Tag.Trim();
             if (request.Description is not null)

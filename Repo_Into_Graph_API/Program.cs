@@ -80,9 +80,16 @@ var app = builder.Build();
 // ── Global Exception Handler middleware (phải đứng đầu pipeline) ──────────────
 app.UseExceptionHandler();
 
-// Migrate Database on startup
-using (var scope = app.Services.CreateScope())
+// Migrate Database — CHỈ chạy khi được yêu cầu tường minh (flag --migrate hoặc env RUN_MIGRATIONS=true),
+// không tự động chạy trên mọi `dotnet run`. Muốn áp dụng migration mới: `dotnet run -- --migrate`
+// hoặc set RUN_MIGRATIONS=true (tiện cho docker-compose/CI).
+bool shouldRunMigrations =
+    args.Contains("--migrate", StringComparer.OrdinalIgnoreCase) ||
+    string.Equals(Environment.GetEnvironmentVariable("RUN_MIGRATIONS"), "true", StringComparison.OrdinalIgnoreCase);
+
+if (shouldRunMigrations)
 {
+    using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<AnalysisDbContext>();
     try
     {
@@ -94,6 +101,10 @@ using (var scope = app.Services.CreateScope())
         // Startup migration failure — chỉ log, không crash (giữ nguyên hành vi cũ)
         Console.WriteLine($"❌ Cannot prepare PostgreSQL schema: {ex.Message}");
     }
+}
+else
+{
+    Console.WriteLine("ℹ️  Bỏ qua migration (thêm --migrate hoặc set RUN_MIGRATIONS=true nếu cần áp dụng migration mới).");
 }
 
 // Enable Swagger UI

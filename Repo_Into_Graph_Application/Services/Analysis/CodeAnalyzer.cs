@@ -26,7 +26,11 @@ public class CodeAnalyzer
         "obj", "bin", "node_modules", ".git", ".github", ".vscode", ".idea",
         "__pycache__", ".pytest_cache", ".mypy_cache", "venv", ".venv", "env",
         "dist", "build", ".next", ".nuxt", "coverage", "migrations", "Migrations",
-        "target"
+        "target",
+        // Thư mục static assets chuẩn của ASP.NET Core - chứa CSS/JS/ảnh phục vụ trình duyệt
+        // (kể cả thư viện vendor copy tay như wwwroot/lib, wwwroot/adminlte...), không phải business
+        // logic backend. Áp dụng chung cho mọi vị trí, không riêng repo có sub-project frontend tách biệt.
+        "wwwroot"
     };
 
     // Dependency nào xuất hiện trong package.json thì coi thư mục chứa nó là 1 sub-project frontend

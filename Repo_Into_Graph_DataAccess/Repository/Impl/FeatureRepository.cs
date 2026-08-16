@@ -27,6 +27,7 @@ namespace Repo_Into_Graph_DataAccess.Repository.Impl
         public async Task<List<FeatureModel>> GetByAnalysisRunIdAsync(Guid analysisRunId)
         {
             return await _dbSet
+                .Include(f => f.Steps)
                 .Where(f => f.AnalysisRunId == analysisRunId)
                 .ToListAsync();
         }

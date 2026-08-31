@@ -370,3 +370,6 @@ FodyWeavers.xsd
 # Sensitive config files
 appsettings.json
 appsettings.*.json
+
+# Temporary clone repositories
+Repo_Into_Graph_API/temp_repos/

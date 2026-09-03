@@ -48,6 +48,29 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 throw new BadRequestException("Đường dẫn repository hoặc URL git không được để trống.");
 
             string trimmedRepoPath = repositoryPath.Trim('"', ' ');
+
+            // Repo này đã được phân tích trước đó và đã có sẵn trong database -> dùng lại, không cần
+            // clone/kéo source code về backend và parse lại từ đầu nữa.
+            var cachedRuns = await _unitOfWork.AnalysisRuns
+                .FindAsync(r => r.RepositoryPath.ToLower() == trimmedRepoPath.ToLower());
+            var cachedRun = cachedRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefault();
+
+            if (cachedRun != null)
+            {
+                var cachedEdgesCount = (await _unitOfWork.CallGraphEdges
+                    .FindAsync(e => e.AnalysisRunId == cachedRun.Id)).Count();
+                var cachedMethodsCount = (await _unitOfWork.MethodSources
+                    .FindAsync(m => m.AnalysisRunId == cachedRun.Id)).Count();
+
+                return new AnalysisResponseDto
+                {
+                    Message = "Repository đã được phân tích trước đó — dùng lại dữ liệu có sẵn trong database.",
+                    AnalysisRunId = cachedRun.Id,
+                    EdgesCount = cachedEdgesCount,
+                    MethodsCount = cachedMethodsCount
+                };
+            }
+
             string targetOutputDir = string.IsNullOrWhiteSpace(outputDir) ? "./output" : outputDir.Trim('"', ' ');
             bool isGitUrl = _gitService.IsGitUrl(trimmedRepoPath);
             string targetPath = trimmedRepoPath;
@@ -68,18 +91,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 Directory.CreateDirectory(targetOutputDir);
                 var analyzer = new CodeAnalyzer(targetPath);
                 var result = await analyzer.AnalyzeAsync();
-
-                var existingRuns = await _unitOfWork.AnalysisRuns
-                    .FindAsync(r => r.RepositoryPath.ToLower() == trimmedRepoPath.ToLower());
-
-                if (existingRuns.Any())
-                {
-                    _unitOfWork.AnalysisRuns.DeleteRange(existingRuns);
-                    _unitOfWork.MethodSources.DeleteRange(existingRuns.SelectMany(r => r.MethodSources));
-                    _unitOfWork.Features.DeleteRange(existingRuns.SelectMany(r => r.Features));
-                    _unitOfWork.Businesses.DeleteRange(existingRuns.SelectMany(r => r.Businesses));
-                    _unitOfWork.CallGraphEdges.DeleteRange(existingRuns.SelectMany(r => r.CallGraphEdges));
-                }
 
                 // Tạo AnalysisRun mới
                 var analysisRun = new AnalysisRun

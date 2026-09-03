@@ -117,17 +117,50 @@ namespace Repo_Into_Graph_Application.Services.GitService
 
         public void DeleteClonedRepository(string localPath)
         {
-            if (Directory.Exists(localPath))
+            // Nếu targetPath truyền vào là 1 subfolder bên trong repo (trường hợp URL GitHub trỏ tới
+            // /tree/branch/subfolder), phải xóa từ gốc thư mục temp_cloned_* chứ không chỉ xóa subfolder,
+            // nếu không phần .git/… ở gốc sẽ bị bỏ sót và tồn tại vĩnh viễn trong temp_repos.
+            string rootToDelete = FindTempClonedRoot(localPath) ?? localPath;
+
+            if (!Directory.Exists(rootToDelete)) return;
+
+            try
             {
-                try
-                {
-                    Directory.Delete(localPath, true);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"⚠️ Không thể xóa thư mục tạm: {ex.Message}");
-                }
+                // git clone trên Windows set thuộc tính ReadOnly cho các file trong .git/objects,
+                // khiến Directory.Delete(recursive: true) ném UnauthorizedAccessException và bị nuốt
+                // ở catch bên dưới -> thư mục tạm bị kẹt lại vĩnh viễn trong temp_repos. Phải gỡ ReadOnly
+                // trước khi xóa.
+                ClearReadOnlyAttributes(rootToDelete);
+                Directory.Delete(rootToDelete, true);
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Không thể xóa thư mục tạm: {ex.Message}");
+            }
+        }
+
+        private static string? FindTempClonedRoot(string path)
+        {
+            var dir = new DirectoryInfo(path);
+            while (dir != null)
+            {
+                if (dir.Name.StartsWith("temp_cloned_", StringComparison.OrdinalIgnoreCase))
+                    return dir.FullName;
+                dir = dir.Parent;
+            }
+            return null;
+        }
+
+        private static void ClearReadOnlyAttributes(string rootPath)
+        {
+            var root = new DirectoryInfo(rootPath);
+            root.Attributes = FileAttributes.Normal;
+
+            foreach (var dir in root.GetDirectories("*", SearchOption.AllDirectories))
+                dir.Attributes = FileAttributes.Normal;
+
+            foreach (var file in root.GetFiles("*", SearchOption.AllDirectories))
+                file.Attributes = FileAttributes.Normal;
         }
     }
 }

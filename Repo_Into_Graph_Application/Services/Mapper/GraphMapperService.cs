@@ -46,11 +46,11 @@ public class GraphMapperService
         var callGraphEdgesInRam = await _unitOfWork.CallGraphEdges.GetByAnalysisRunIdAsync(analysisRunId);
 
         var graphLookup = callGraphEdgesInRam.ToLookup(
-            e => $"{e.CallerClass.Trim().ToLower()}.{e.CallerMethod.Trim().ToLower()}"
+            e => BuildKey(e.CallerClass, e.CallerMethod)
         );
 
         var methodIdLookup = methodSourcesInRam.ToLookup(
-            m => $"{m.ClassName.Trim().ToLower()}.{m.MethodName.Trim().ToLower()}",
+            m => BuildKey(m.ClassName, m.MethodName),
             m => m.Id
         );
 
@@ -81,10 +81,18 @@ public class GraphMapperService
                 string methodName = methodParts.Length > 1 ? methodParts[1].Trim() : methodParts[0].Trim();
                 string controllerName = api.controller.Trim();
 
-                string rootKey = $"{controllerName.ToLower()}.{methodName.ToLower()}";
+                // Roslyn-captured method names almost always keep the "Async" suffix
+                // (e.g. CreateBudgetAsync) even when template_business.json only lists
+                // the route-facing name (e.g. CreateBudget), so both sides are normalized
+                // via BuildKey/NormalizeMethodName before comparing.
+                string rootKey = BuildKey(controllerName, methodName);
 
-                // Map Business to Feature
-                var matchedFeature = featuresInRam.FirstOrDefault(f => f.EntryPoint.ToLower().EndsWith(rootKey));
+                // Map Business to Feature. Không chỉ khớp EntryPoint: với CQRS/DDD, class thật sự chứa
+                // business logic (Handler/UseCase) thường bị gộp thành 1 step bên trong flow của
+                // Controller (do BusinessFlowParser loại các entry point "con" để tránh Feature trùng
+                // lặp/chồng lấn), nên "controller" trong template_business.json có thể trỏ tới Handler
+                // chứ không phải Controller. Phải tìm trong cả Steps của Feature, không chỉ EntryPoint.
+                var matchedFeature = featuresInRam.FirstOrDefault(f => FeatureMatchesNode(f, rootKey));
                 if (matchedFeature != null)
                 {
                     featureBusinessMappingsToInsert.Add(new FeatureBusinessMapping
@@ -137,6 +145,32 @@ public class GraphMapperService
         await _unitOfWork.SaveChangesAsync();
     }
 
+    private static bool FeatureMatchesNode(Feature feature, string rootKey)
+    {
+        if (StripAsyncSuffix(feature.EntryPoint.Trim().ToLower()).EndsWith(rootKey)) return true;
+
+        return feature.Steps.Any(s =>
+            BuildKey(s.CallerClass, s.CallerMethod).EndsWith(rootKey) ||
+            BuildKey(s.CalleeClass, s.CalleeMethod).EndsWith(rootKey));
+    }
+
+    // Roslyn captures the real method identifier (e.g. "CreateBudgetAsync"), but
+    // business/template configs are frequently authored against the route-facing
+    // name (e.g. "CreateBudget"). Stripping the "Async" suffix on every key built
+    // from source-derived data keeps matching independent of which form is used.
+    private static string StripAsyncSuffix(string lowerMethodName)
+    {
+        const string suffix = "async";
+        return lowerMethodName.Length > suffix.Length && lowerMethodName.EndsWith(suffix)
+            ? lowerMethodName.Substring(0, lowerMethodName.Length - suffix.Length)
+            : lowerMethodName;
+    }
+
+    private static string BuildKey(string className, string methodName)
+    {
+        return $"{className.Trim().ToLower()}.{StripAsyncSuffix(methodName.Trim().ToLower())}";
+    }
+
     private void FindAllMethodsInSubTree(
         string rootKey,
         ILookup<string, CallGraphEdge> graphLookup,
@@ -155,7 +189,7 @@ public class GraphMapperService
             {
                 foreach (var edge in graphLookup[currentKey])
                 {
-                    string calleeKey = $"{edge.CalleeClass.Trim().ToLower()}.{edge.CalleeMethod.Trim().ToLower()}";
+                    string calleeKey = BuildKey(edge.CalleeClass, edge.CalleeMethod);
                     ProcessNewNode(calleeKey, queue, visitedKeys, methodIdLookup, visitedMethodIds);
                     if (implementationLookup.Contains(calleeKey))
                     {
@@ -189,11 +223,10 @@ public class GraphMapperService
     private ILookup<string, string> BuildImplementationLookup(List<MethodSourceRecord> methods)
     {
         var mappings = new List<(string InterfaceKey, string ConcreteKey)>();
-        var groupedByMethod = methods.GroupBy(m => m.MethodName.Trim().ToLower());
+        var groupedByMethod = methods.GroupBy(m => StripAsyncSuffix(m.MethodName.Trim().ToLower()));
 
         foreach (var group in groupedByMethod)
         {
-            string methodName = group.Key;
             var interfaces = group.Where(m => m.ClassName.Trim().StartsWith("I") && m.ClassName.Trim().Length > 1).ToList();
             var concretes = group.Where(m => !m.ClassName.Trim().StartsWith("I")).ToList();
 
@@ -205,8 +238,8 @@ public class GraphMapperService
                     string concreteName = concrete.ClassName.Trim().ToLower();
                     if (concreteName.Contains(cleanIfaceName) || concreteName.Replace("impl", "").Contains(cleanIfaceName))
                     {
-                        string ifaceKey = $"{iface.ClassName.Trim().ToLower()}.{methodName}";
-                        string concreteKey = $"{concrete.ClassName.Trim().ToLower()}.{methodName}";
+                        string ifaceKey = BuildKey(iface.ClassName, iface.MethodName);
+                        string concreteKey = BuildKey(concrete.ClassName, concrete.MethodName);
                         mappings.Add((ifaceKey, concreteKey));
                     }
                 }

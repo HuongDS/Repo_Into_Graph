@@ -104,7 +104,7 @@ namespace Repo_Into_Graph_API.Controllers
             // 4. Đánh giá từng câu hỏi
             foreach (var qResult in accuracyBatchResult.QuestionResults)
             {
-                var activeNodes = qResult.AccuracyResult.ExtractedPath.Select(p => 
+                var activeNodes = qResult.AccuracyResult.ExtractedPath.Select(p =>
                 {
                     var graphNode = workflowGraph.FirstOrDefault(n => n.Id == p.NodeId);
                     return new GraphNodeDto
@@ -118,7 +118,7 @@ namespace Repo_Into_Graph_API.Controllers
                 var diffRequest = new DifficultyAssessmentRequestDto
                 {
                     ActiveNodes = activeNodes,
-                    TotalEdgesInSubgraph = Math.Max(0, activeNodes.Count - 1) 
+                    TotalEdgesInSubgraph = Math.Max(0, activeNodes.Count - 1)
                 };
 
                 var diffResult = await _assessmentService.Difficulty.AssessAsync(diffRequest);

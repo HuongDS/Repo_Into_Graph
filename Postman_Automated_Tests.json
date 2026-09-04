@@ -6,6 +6,34 @@
 	},
 	"item": [
 		{
+			"name": "🚀 0. RUN BENCHMARK FULL AUTOMATION (Bấm 1 Nút Tự Cập Nhật Excel)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"businessId\": \"{{businessId}}\",\n  \"numberOfQuestions\": 5,\n  \"difficulty\": \"Medium\",\n  \"runId\": \"RUN_01\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/Evaluation/run-benchmark",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"Evaluation",
+						"run-benchmark"
+					]
+				}
+			}
+		},
+		{
 			"name": "Phương pháp Cũ (Raw Code)",
 			"item": [
 				{

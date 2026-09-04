@@ -1,4 +1,5 @@
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_DataAccess.Repository.Interface;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,119 +14,132 @@ using Repo_Into_Graph_Application.Exceptions;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_Application.Services.AI;
+using Repo_Into_Graph_Application.Services.Caculation;
 
 namespace Repo_Into_Graph_Application.Services.QuestionGenerate
 {
     public class QuestionGenerate : IQuestionGenerate
     {
-        private readonly AnalysisDbContext _context;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IAIService _aIService;
 
-        public QuestionGenerate(AnalysisDbContext context, IAIService aIService)
+        public QuestionGenerate(IUnitOfWork unitOfWork,
+            IAIService aIService)
         {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _aIService = aIService;
         }
 
-        public async Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestionsAsync(GenerateQuestionsRequest request)
+        public async Task<GenerateQuestionsResponse> GenerateQuestionsAsync(GenerateQuestionsRequest request)
         {
             if (request == null)
                 throw new BadRequestException("Yêu cầu không được để trống.");
 
-            var feature = await _context.FeatureRecords.FindAsync(request.FeatureId);
-            if (feature == null)
-                throw new NotFoundException("Feature", request.FeatureId);
+            // 1. Load Business
+            var businessModel = await _unitOfWork.Businesses.GetByIdAsync(request.BusinessId);
 
-            var featureMappings = await _context.FeatureMethodMappings
-                .Include(fmm => fmm.MethodSource)
-                .Where(fmm => fmm.FeatureId == request.FeatureId)
-                .ToListAsync();
+            if (businessModel == null)
+                throw new NotFoundException("Business", request.BusinessId);
 
-            var methodSources = featureMappings
-                .Where(fmm => fmm.MethodSource != null)
-                .Select(fmm => fmm.MethodSource!)
+            // 2. Load các Feature (Luồng nghiệp vụ) được map với Business này
+            var featureBusinessMappings = await _unitOfWork.FeatureBusinessMappings.GetFeatureIdsByBusinessIdAsync(request.BusinessId);
+
+            var features = await _unitOfWork.Features.GetFeaturesWithStepsByIdsAsync(featureBusinessMappings);
+
+            // 3. Load Source Code (MethodSource) từ các Feature đó
+            var featureMethodMappings = await _unitOfWork.FeatureMethodMappings.GetMappingsWithMethodSourceByFeatureIdsAsync(featureBusinessMappings);
+
+            var methodSources = featureMethodMappings
+                .Where(m => m.MethodSource != null)
+                .Select(m => m.MethodSource!)
+                .DistinctBy(m => m.Id)
                 .ToList();
 
-            if (!methodSources.Any())
-                throw new UnprocessableException("Feature này không có đoạn code logic nào được ánh xạ trong hệ thống.");
-
             var codeBuilder = new StringBuilder();
-            foreach (var method in methodSources)
+            if (methodSources.Any())
             {
-                codeBuilder.AppendLine($"// Class: {method.ClassName}, Method: {method.MethodName}");
-                codeBuilder.AppendLine(method.SourceCode);
-                codeBuilder.AppendLine();
+                foreach (var method in methodSources)
+                {
+                    codeBuilder.AppendLine($"// Class: {method.ClassName}, Method: {method.MethodName}");
+                    codeBuilder.AppendLine(method.SourceCode);
+                    codeBuilder.AppendLine();
+                }
+            }
+            else
+            {
+                codeBuilder.AppendLine("// Không tìm thấy Source Code nào được map cho Business này.");
             }
 
-            var classNames = methodSources.Select(m => m.ClassName.Trim().ToLower()).Distinct().ToList();
-
-            var callGraphEdges = await _context.CallGraphEdges
-                .Where(e => e.AnalysisRunId == feature.AnalysisRunId &&
-                            (classNames.Contains(e.CallerClass.Trim().ToLower()) ||
-                             classNames.Contains(e.CalleeClass.Trim().ToLower())))
-                .ToListAsync();
-
             var contextBuilder = new StringBuilder();
-            contextBuilder.AppendLine("Call Graph Relationships:");
-            if (callGraphEdges.Any())
-                foreach (var edge in callGraphEdges)
-                    contextBuilder.AppendLine($"- {edge.CallerClass}.{edge.CallerMethod} calls {edge.CalleeClass}.{edge.CalleeMethod}");
+            if (features.Any())
+            {
+                foreach (var feature in features)
+                {
+                    contextBuilder.AppendLine($"### Tên luồng: {feature.Name}");
+
+                    if (!string.IsNullOrWhiteSpace(feature.DataFlowMermaidGraph))
+                    {
+                        contextBuilder.AppendLine("Data Mermaid Diagram:");
+                        contextBuilder.AppendLine(feature.DataFlowMermaidGraph);
+                    }
+                    contextBuilder.AppendLine();
+                }
+            }
             else
-                contextBuilder.AppendLine("No call graph relationships found in database.");
+            {
+                contextBuilder.AppendLine("Không có luồng nghiệp vụ (Feature) nào được map với Business này.");
+            }
+
+            // 4. Load few-shot examples
+            IEnumerable<FewShotExample>? fewShotExamples = null;
+            if (request.FewShotExampleIds != null && request.FewShotExampleIds.Count > 0)
+            {
+                fewShotExamples = await _unitOfWork.FewShotExamples.GetByIdsAsync(request.FewShotExampleIds);
+            }
+            else if (!string.IsNullOrWhiteSpace(request.Difficulty))
+            {
+                fewShotExamples = await _unitOfWork.FewShotExamples.GetByDifficultyAsync(request.Difficulty, 5);
+            }
 
             int numberOfQuestions = request.NumberOfQuestions;
             if (numberOfQuestions <= 0 || numberOfQuestions > 20)
                 numberOfQuestions = 5;
 
-            return await _aIService.GenerateQuestions(numberOfQuestions, request, codeBuilder.ToString(), contextBuilder.ToString());
-        }
+            // 5. Check Mode for A/B Testing
+            string finalCodeBuilder = codeBuilder.ToString();
+            string finalContextBuilder = contextBuilder.ToString();
 
-        // ─── Generate from Business Flow ─────────────────────────────────────────
-
-        public async Task<GenerateQuestionsFromFlowResponse> GenerateQuestionsFromFlowAsync(
-            GenerateQuestionsFromFlowRequest request)
-        {
-            // Load BusinessFlow cùng Steps từ DB
-            var businessFlow = await _context.BusinessFlows
-                .Include(f => f.Steps)
-                .FirstOrDefaultAsync(f => f.Id == request.BusinessFlowId);
-
-            if (businessFlow == null)
-                throw new NotFoundException("Business Flow", request.BusinessFlowId);
-
-            // Load few-shot examples: ưu tiên theo danh sách ID, nếu không có thì lọc theo difficulty
-            IEnumerable<FewShotExample>? fewShotExamples = null;
-
-            if (request.FewShotExampleIds != null && request.FewShotExampleIds.Count > 0)
+            if (request.Mode.Equals("Traditional", StringComparison.OrdinalIgnoreCase))
             {
-                var ids = request.FewShotExampleIds;
-                fewShotExamples = await _context.FewShotExamples
-                    .Where(e => ids.Contains(e.Id))
-                    .ToListAsync();
+                // Chế độ truyền thống: Ẩn toàn bộ Mermaid Graph, AI chỉ được đọc Code thô
+                finalContextBuilder = "Chế độ Truyền thống: Không cung cấp sơ đồ Mermaid Graph. Hãy phân tích trực tiếp từ Source Code.";
             }
-            else if (!string.IsNullOrWhiteSpace(request.Difficulty))
+            else if (request.Mode.Equals("Graph", StringComparison.OrdinalIgnoreCase))
             {
-                fewShotExamples = await _context.FewShotExamples
-                    .Where(e => e.Difficulty.ToLower() == request.Difficulty.ToLower())
-                    .Take(5)
-                    .ToListAsync();
+                // Chế độ Graph: Ẩn toàn bộ Source Code thô, ép AI chỉ được nhìn vào Graph
+                finalCodeBuilder = "Chế độ Graph: Không cung cấp mã nguồn thô. Hãy phân tích logic dựa hoàn toàn vào sơ đồ Mermaid Graph được cung cấp.";
             }
 
-            var questions = await _aIService.GenerateQuestionsFromBusinessFlowAsync(
-                businessFlow      : businessFlow,
-                numberOfQuestions : request.NumberOfQuestions,
-                difficulty        : request.Difficulty,
-                additionalContext : request.AdditionalContext,
-                fewShotExamples   : (IEnumerable<FewShotExample>?)fewShotExamples);
+            // 6. Generate Questions
+            var (questions, inputTokens, outputTokens) = await _aIService.GenerateUnifiedQuestionsAsync(
+                businessName: businessModel.BusinessName,
+                codeBuilder: finalCodeBuilder,
+                contextBuilder: finalContextBuilder,
+                numberOfQuestions: numberOfQuestions,
+                difficulty: request.Difficulty,
+                additionalContext: request.Description,
+                fewShotExamples: fewShotExamples);
 
-            return new GenerateQuestionsFromFlowResponse
+            return new GenerateQuestionsResponse
             {
-                BusinessFlowId   = businessFlow.Id,
-                BusinessFlowName = businessFlow.Name,
-                EntryPoint       = businessFlow.EntryPoint,
-                TotalSteps       = businessFlow.Steps?.Count ?? 0,
-                FewShotUsed      = fewShotExamples?.Count() ?? 0,
-                Questions        = questions
+                BusinessId = businessModel.Id,
+                BusinessName = businessModel.BusinessName,
+                EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
+                TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
+                FewShotUsed = fewShotExamples?.Count() ?? 0,
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens,
+                GeneratedQuestionDtos = questions
             };
         }
     }

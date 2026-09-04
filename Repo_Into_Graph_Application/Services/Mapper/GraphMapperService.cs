@@ -1,6 +1,8 @@
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_DataAccess.Repository.Interface;
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_DataAccess.Models;
+using Repo_Into_Graph_DataAccess.Models.Business;
 using Repo_Into_Graph_DataAccess.Models.Feature;
 using Repo_Into_Graph_DataAccess.Models.Method;
 using System.Text.Json;
@@ -9,76 +11,69 @@ namespace Repo_Into_Graph_Application.Services.Mapper;
 
 public class GraphMapperService
 {
-    private readonly AnalysisDbContext _context;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public GraphMapperService(AnalysisDbContext context)
+    public GraphMapperService(
+        IUnitOfWork unitOfWork)
     {
-        _context = context;
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
-    public async Task ProcessAndMapGraphAsync(Guid analysisRunId, string featuresJsonPath)
+    public async Task ProcessAndMapGraphAsync(Guid analysisRunId, string businessJsonPath)
     {
-        if (!File.Exists(featuresJsonPath))
+        if (!File.Exists(businessJsonPath))
         {
-            throw new FileNotFoundException($"Không tìm th?y file c?u hình t?i: {featuresJsonPath}");
+            throw new FileNotFoundException($"Khong tim thay file cau hinh tai: {businessJsonPath}");
         }
 
-        string featuresJson = await File.ReadAllTextAsync(featuresJsonPath);
-        var featuresData = JsonSerializer.Deserialize<List<FeatureConfig>>(featuresJson);
+        string businessJson = await File.ReadAllTextAsync(businessJsonPath);
+        var businessData = JsonSerializer.Deserialize<List<BusinessConfig>>(businessJson);
 
-        if (featuresData == null || !featuresData.Any()) return;
+        if (businessData == null || !businessData.Any()) return;
 
-        var featureRecords = featuresData.Select(f => new FeatureRecord
+        var businessRecords = businessData.Select(b => new Bussiness
         {
             Id = Guid.NewGuid(),
             AnalysisRunId = analysisRunId,
-            FeatureName = f.feature_name.Trim(),
+            BusinessName = b.business_name.Trim(),
             CreatedAt = DateTime.UtcNow
         }).ToList();
 
-        await _context.Set<FeatureRecord>().AddRangeAsync(featureRecords);
-        await _context.SaveChangesAsync();
+        await _unitOfWork.Businesses.AddRangeAsync(businessRecords);
 
-        var methodSourcesInRam = await _context.Set<MethodSourceRecord>()
-            .Where(m => m.AnalysisRunId == analysisRunId)
-            .ToListAsync();
+        var methodSourcesInRam = await _unitOfWork.MethodSources.GetByAnalysisRunIdAsync(analysisRunId);
 
-        var callGraphEdgesInRam = await _context.Set<CallGraphEdge>()
-            .Where(e => e.AnalysisRunId == analysisRunId)
-            .ToListAsync();
+        var callGraphEdgesInRam = await _unitOfWork.CallGraphEdges.GetByAnalysisRunIdAsync(analysisRunId);
 
-        // 1. T?o Lookup d? th? cu?c g?i thông thu?ng (Dùng Tên G?c, KHÔNG dùng hàm GetNormalizedKey cu d? tránh m?t Prefix)
         var graphLookup = callGraphEdgesInRam.ToLookup(
-            e => $"{e.CallerClass.Trim().ToLower()}.{e.CallerMethod.Trim().ToLower()}"
+            e => BuildKey(e.CallerClass, e.CallerMethod)
         );
 
-        // Map t? Class.Method g?c ra Method ID d? luu xu?ng DB
         var methodIdLookup = methodSourcesInRam.ToLookup(
-            m => $"{m.ClassName.Trim().ToLower()}.{m.MethodName.Trim().ToLower()}",
+            m => BuildKey(m.ClassName, m.MethodName),
             m => m.Id
         );
 
-        // 2. [C?T LÕI] T? d?ng xây d?ng b?n d? Interface -> Các Class th?c thi d?a trên MethodSource
-        // Gi? d?nh: Công c? quét c?a ông luu ClassName c?a Interface là "IAuctionService" và Class th?c thi là "VipAuctionService"
-        // ? dây mình group theo tên Method và tìm các c?p có quan h? Interface - Implementation.
-        // Cách s?ch nh?t: Tìm các class th?c thi d?a vào logic tên (Xóa ch? I d?u) ho?c n?u trong DB MethodSource có tru?ng "IsInterface" thì càng t?t.
         var implementationLookup = BuildImplementationLookup(methodSourcesInRam);
 
-        var featureLookup = featureRecords.ToDictionary(
-            f => f.FeatureName.ToLower(),
-            f => f.Id
+        var businessLookup = businessRecords.ToDictionary(
+            b => b.BusinessName.ToLower(),
+            b => b.Id
         );
 
         var mappingsToInsert = new List<FeatureMethodMapping>();
+        var featureBusinessMappingsToInsert = new List<FeatureBusinessMapping>();
 
-        foreach (var featConfig in featuresData)
+        var featuresInRam = await _unitOfWork.Features.GetByAnalysisRunIdAsync(analysisRunId);
+
+        var mappedFeatureIds = new HashSet<Guid>();
+
+        foreach (var bizConfig in businessData)
         {
-            string cleanFeatName = featConfig.feature_name.Trim().ToLower();
-            if (!featureLookup.TryGetValue(cleanFeatName, out Guid currentFeatureId)) continue;
+            string cleanBizName = bizConfig.business_name.Trim().ToLower();
+            if (!businessLookup.TryGetValue(cleanBizName, out Guid currentBusinessId)) continue;
 
-            var visitedMethodIdsForThisFeature = new HashSet<Guid>();
-
-            foreach (var api in featConfig.apis)
+            foreach (var api in bizConfig.apis)
             {
                 if (string.IsNullOrEmpty(api.controller) || string.IsNullOrEmpty(api.method)) continue;
 
@@ -86,38 +81,94 @@ public class GraphMapperService
                 string methodName = methodParts.Length > 1 ? methodParts[1].Trim() : methodParts[0].Trim();
                 string controllerName = api.controller.Trim();
 
-                // Ði?m b?t d?u chính xác t? Controller g?c (Ví d?: auctioncontroller.getauction)
-                string rootKey = $"{controllerName.ToLower()}.{methodName.ToLower()}";
+                // Roslyn-captured method names almost always keep the "Async" suffix
+                // (e.g. CreateBudgetAsync) even when template_business.json only lists
+                // the route-facing name (e.g. CreateBudget), so both sides are normalized
+                // via BuildKey/NormalizeMethodName before comparing.
+                string rootKey = BuildKey(controllerName, methodName);
 
-                if (methodIdLookup.Contains(rootKey))
+                // Map Business to Feature. KhÃ´ng chá»‰ khá»›p EntryPoint: vá»›i CQRS/DDD, class tháº­t sá»± chá»©a
+                // business logic (Handler/UseCase) thÆ°á»ng bá»‹ gá»™p thÃ nh 1 step bÃªn trong flow cá»§a
+                // Controller (do BusinessFlowParser loáº¡i cÃ¡c entry point "con" Ä‘á»ƒ trÃ¡nh Feature trÃ¹ng
+                // láº·p/chá»“ng láº¥n), nÃªn "controller" trong template_business.json cÃ³ thá»ƒ trá» tá»›i Handler
+                // chá»© khÃ´ng pháº£i Controller. Pháº£i tÃ¬m trong cáº£ Steps cá»§a Feature, khÃ´ng chá»‰ EntryPoint.
+                var matchedFeature = featuresInRam.FirstOrDefault(f => FeatureMatchesNode(f, rootKey));
+                if (matchedFeature != null)
                 {
-                    foreach (var id in methodIdLookup[rootKey])
+                    featureBusinessMappingsToInsert.Add(new FeatureBusinessMapping
                     {
-                        visitedMethodIdsForThisFeature.Add(id);
+                        Id = Guid.NewGuid(),
+                        BusinessId = currentBusinessId,
+                        FeatureId = matchedFeature.Id,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    // If we haven't mapped this feature's methods yet, trace and map them
+                    if (!mappedFeatureIds.Contains(matchedFeature.Id))
+                    {
+                        mappedFeatureIds.Add(matchedFeature.Id);
+                        var visitedMethodIds = new HashSet<Guid>();
+
+                        if (methodIdLookup.Contains(rootKey))
+                        {
+                            foreach (var id in methodIdLookup[rootKey])
+                                visitedMethodIds.Add(id);
+                        }
+
+                        FindAllMethodsInSubTree(rootKey, graphLookup, methodIdLookup, implementationLookup, visitedMethodIds);
+
+                        foreach (var methodSourceId in visitedMethodIds)
+                        {
+                            mappingsToInsert.Add(new FeatureMethodMapping
+                            {
+                                Id = Guid.NewGuid(),
+                                FeatureId = matchedFeature.Id,
+                                MethodSourceId = methodSourceId,
+                                MappedAt = DateTime.UtcNow
+                            });
+                        }
                     }
                 }
-
-                // G?i hàm loang cây có h? tr? da nhánh da hình
-                FindAllMethodsInSubTree(rootKey, graphLookup, methodIdLookup, implementationLookup, visitedMethodIdsForThisFeature);
             }
+        }
 
-            foreach (var methodSourceId in visitedMethodIdsForThisFeature)
-            {
-                mappingsToInsert.Add(new FeatureMethodMapping
-                {
-                    Id = Guid.NewGuid(),
-                    FeatureId = currentFeatureId,
-                    MethodSourceId = methodSourceId,
-                    MappedAt = DateTime.UtcNow
-                });
-            }
+        if (featureBusinessMappingsToInsert.Any())
+        {
+            await _unitOfWork.FeatureBusinessMappings.AddRangeAsync(featureBusinessMappingsToInsert);
         }
 
         if (mappingsToInsert.Any())
         {
-            await _context.Set<FeatureMethodMapping>().AddRangeAsync(mappingsToInsert);
-            await _context.SaveChangesAsync();
+            await _unitOfWork.FeatureMethodMappings.AddRangeAsync(mappingsToInsert);
         }
+
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private static bool FeatureMatchesNode(Feature feature, string rootKey)
+    {
+        if (StripAsyncSuffix(feature.EntryPoint.Trim().ToLower()).EndsWith(rootKey)) return true;
+
+        return feature.Steps.Any(s =>
+            BuildKey(s.CallerClass, s.CallerMethod).EndsWith(rootKey) ||
+            BuildKey(s.CalleeClass, s.CalleeMethod).EndsWith(rootKey));
+    }
+
+    // Roslyn captures the real method identifier (e.g. "CreateBudgetAsync"), but
+    // business/template configs are frequently authored against the route-facing
+    // name (e.g. "CreateBudget"). Stripping the "Async" suffix on every key built
+    // from source-derived data keeps matching independent of which form is used.
+    private static string StripAsyncSuffix(string lowerMethodName)
+    {
+        const string suffix = "async";
+        return lowerMethodName.Length > suffix.Length && lowerMethodName.EndsWith(suffix)
+            ? lowerMethodName.Substring(0, lowerMethodName.Length - suffix.Length)
+            : lowerMethodName;
+    }
+
+    private static string BuildKey(string className, string methodName)
+    {
+        return $"{className.Trim().ToLower()}.{StripAsyncSuffix(methodName.Trim().ToLower())}";
     }
 
     private void FindAllMethodsInSubTree(
@@ -129,31 +180,21 @@ public class GraphMapperService
     {
         var queue = new Queue<string>();
         queue.Enqueue(rootKey);
-
         var visitedKeys = new HashSet<string> { rootKey };
 
         while (queue.Count > 0)
         {
             var currentKey = queue.Dequeue();
-
-            // BU?C 1: Dò các c?nh g?i thông thu?ng t? Node hi?n t?i
             if (graphLookup.Contains(currentKey))
             {
                 foreach (var edge in graphLookup[currentKey])
                 {
-                    string calleeKey = $"{edge.CalleeClass.Trim().ToLower()}.{edge.CalleeMethod.Trim().ToLower()}";
-
-                    // Ð?y nhánh thông thu?ng vào queue
+                    string calleeKey = BuildKey(edge.CalleeClass, edge.CalleeMethod);
                     ProcessNewNode(calleeKey, queue, visitedKeys, methodIdLookup, visitedMethodIds);
-
-                    // BU?C 2: [ÐA HÌNH] N?u th?ng du?c g?i (Callee) là m?t Interface, check xem có các Class th?c thi nào không
                     if (implementationLookup.Contains(calleeKey))
                     {
-                        foreach (var concreteClassKey in implementationLookup[calleeKey])
-                        {
-                            // Ð?y T?T C? các Class th?c thi (VipAuctionService, NormalAuctionService...) vào Queue d? loang song song
-                            ProcessNewNode(concreteClassKey, queue, visitedKeys, methodIdLookup, visitedMethodIds);
-                        }
+                        foreach (var concreteKey in implementationLookup[calleeKey])
+                            ProcessNewNode(concreteKey, queue, visitedKeys, methodIdLookup, visitedMethodIds);
                     }
                 }
             }
@@ -170,51 +211,36 @@ public class GraphMapperService
         if (!visitedKeys.Contains(nodeKey))
         {
             visitedKeys.Add(nodeKey);
-
             if (methodIdLookup.Contains(nodeKey))
             {
                 foreach (var id in methodIdLookup[nodeKey])
-                {
                     visitedMethodIds.Add(id);
-                }
             }
             queue.Enqueue(nodeKey);
         }
     }
 
-    /// <summary>
-    /// Hàm t? d?ng quét và ghép c?p Interface -> Danh sách Class th?c thi
-    /// </summary>
     private ILookup<string, string> BuildImplementationLookup(List<MethodSourceRecord> methods)
     {
         var mappings = new List<(string InterfaceKey, string ConcreteKey)>();
-
-        // Group các hàm có cùng tên method d? tìm ki?m m?i quan h? trùng signature
-        var groupedByMethod = methods.GroupBy(m => m.MethodName.Trim().ToLower());
+        var groupedByMethod = methods.GroupBy(m => StripAsyncSuffix(m.MethodName.Trim().ToLower()));
 
         foreach (var group in groupedByMethod)
         {
-            string methodName = group.Key;
-
-            // Tìm các b?n ghi nghi ng? là Interface (B?t d?u b?ng ch? I)
             var interfaces = group.Where(m => m.ClassName.Trim().StartsWith("I") && m.ClassName.Trim().Length > 1).ToList();
             var concretes = group.Where(m => !m.ClassName.Trim().StartsWith("I")).ToList();
 
-            foreach (var @interface in interfaces)
+            foreach (var iface in interfaces)
             {
-                string cleanInterfaceName = @interface.ClassName.Trim().Substring(1).ToLower(); // Xóa ch? I d?u
-
+                string cleanIfaceName = iface.ClassName.Trim().Substring(1).ToLower();
                 foreach (var concrete in concretes)
                 {
-                    string concreteClassName = concrete.ClassName.Trim().ToLower();
-
-                    // N?u tên class th?c thi ch?a c?m t? c?a interface (ví d?: vipauctionservice ch?a auctionservice)
-                    if (concreteClassName.Contains(cleanInterfaceName) || concreteClassName.Replace("impl", "").Contains(cleanInterfaceName))
+                    string concreteName = concrete.ClassName.Trim().ToLower();
+                    if (concreteName.Contains(cleanIfaceName) || concreteName.Replace("impl", "").Contains(cleanIfaceName))
                     {
-                        string interfaceKey = $"{@interface.ClassName.Trim().ToLower()}.{methodName}";
-                        string concreteKey = $"{concrete.ClassName.Trim().ToLower()}.{methodName}";
-
-                        mappings.Add((interfaceKey, concreteKey));
+                        string ifaceKey = BuildKey(iface.ClassName, iface.MethodName);
+                        string concreteKey = BuildKey(concrete.ClassName, concrete.MethodName);
+                        mappings.Add((ifaceKey, concreteKey));
                     }
                 }
             }
@@ -223,7 +249,3 @@ public class GraphMapperService
         return mappings.ToLookup(x => x.InterfaceKey, x => x.ConcreteKey);
     }
 }
-
-
-
-

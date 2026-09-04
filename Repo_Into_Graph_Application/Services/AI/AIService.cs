@@ -1,16 +1,17 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
+
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Google.GenAI;
 using Google.GenAI.Types;
 using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using FeatureModel = Repo_Into_Graph_DataAccess.Models.Feature.Feature;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
+using Type = Google.GenAI.Types.Type;
+using Repo_Into_Graph_Application.Services.Caculation;
+
+
+
 
 namespace Repo_Into_Graph_Application.Services.AI
 {
@@ -30,155 +31,78 @@ namespace Repo_Into_Graph_Application.Services.AI
             _client = new Client(apiKey: apiKey, clientOptions: clientOptions);
         }
 
-        public async Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestions(
-            int numberOfQuestions,
-            GenerateQuestionsRequest request,
+
+        public async Task<(IEnumerable<GeneratedQuestionDto> Questions, int InputTokens, int OutputTokens)> GenerateUnifiedQuestionsAsync(
+            string businessName,
             string codeBuilder,
-            string contextBuilder)
-        {
-            var systemInstruction = """
-            Bạn là một AI trợ lý thiết kế riêng cho giảng viên đại học để chấm thi vấn đáp (viva/oral exam) các đồ án lập trình của sinh viên.
-            Nhiệm vụ của bạn là phân tích mã nguồn và đồ thị cuộc gọi (call graph) được cung cấp để tạo ra danh sách câu hỏi.
-            Các câu hỏi phải kiểm tra được độ hiểu sâu của sinh viên về luồng nghiệp vụ.
-            """;
-
-            var prompt = new StringBuilder();
-            prompt.AppendLine($"Số câu hỏi : {numberOfQuestions}");
-            prompt.AppendLine($"Mức độ khó: {request.Difficulty}");
-
-            if (!string.IsNullOrWhiteSpace(request.Description))
-            {
-                prompt.AppendLine($"Hướng dẫn bổ sung/vùng tập trung: {request.Description}");
-            }
-
-            prompt.AppendLine();
-            prompt.AppendLine("--- SOURCE CODE ---");
-            prompt.AppendLine(codeBuilder);
-            prompt.AppendLine();
-            prompt.AppendLine("--- CALL GRAPH CONTEXT ---");
-            prompt.AppendLine(contextBuilder);
-            prompt.AppendLine();
-            prompt.AppendLine("Hãy trả về một danh sách các câu hỏi theo cấu trúc object gồm các key: question, suggestedAnswer, difficulty.");
-
-            var config = new GenerateContentConfig
-            {
-                SystemInstruction = new Content
-                {
-                    Parts = [new Part { Text = systemInstruction }]
-                },
-                Temperature = 0.3f,
-                ResponseMimeType = "application/json"
-            };
-
-            int maxRetries = 3;
-            int delaySeconds = 3;
-            GenerateContentResponse? response = null;
-
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
-            {
-                try
-                {
-                    // Gọi API thông qua SDK chính thức
-                    response = await _client.Models.GenerateContentAsync(
-                        model: "gemini-3.1-flash-lite",
-                        contents: prompt.ToString(),
-                        config: config
-                    );
-                    break;
-                }
-                catch (ClientError ex) when (ex.StatusCode == 429 || ex.StatusCode == 503 || ex.StatusCode == 500)
-                {
-                    if (attempt == maxRetries) throw;
-
-                    Console.WriteLine($"⚠️ [AIService] Transient error {ex.StatusCode}. Retrying in {delaySeconds} seconds... (Attempt {attempt} of {maxRetries})");
-                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-                    delaySeconds *= 2;
-                }
-                catch (Exception ex) when (ex.Message.Contains("429") || ex.Message.Contains("Too Many Requests"))
-                {
-                    if (attempt == maxRetries) throw;
-
-                    Console.WriteLine($"⚠️ [AIService] Rate limit error. Retrying in {delaySeconds} seconds... (Attempt {attempt} of {maxRetries})");
-                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-                    delaySeconds *= 2;
-                }
-            }
-
-            if (response == null || string.IsNullOrEmpty(response.Text))
-                throw new Exception("AI API did not return any text response.");
-
-            string aiJsonText = response.Text.Trim();
-
-            try
-            {
-                var questions = JsonSerializer.Deserialize<List<GeneratedQuestionDto>>(aiJsonText, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-                return questions ?? new List<GeneratedQuestionDto>();
-            }
-            catch (JsonException ex)
-            {
-                throw new Exception($"AI trả về cấu trúc JSON không khớp với DTO. Nội dung: {aiJsonText}. Chi tiết lỗi: {ex.Message}", ex);
-            }
-        }
-
-        public async Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestionsFromBusinessFlowAsync(
-            BusinessFlow businessFlow,
+            string contextBuilder,
             int numberOfQuestions,
             string difficulty,
             string? additionalContext = null,
+
             IEnumerable<FewShotExample>? fewShotExamples = null)
         {
-            if (businessFlow == null) throw new ArgumentNullException(nameof(businessFlow));
-
-            string systemInstruction = @"
-            Bạn là một Senior Business Analyst (BA) và Solution Architect chuyên nghiệp. 
-Nhiệm vụ của bạn là phân tích mã nguồn hoặc đồ thị code được cung cấp và TRÍCH XUẤT LUỒNG NGHIỆP VỤ (Business Flow), tuyệt đối không giải thích kỹ thuật code.
-
-HƯỚNG DẪN PHÂN TÍCH:
-1. Mục tiêu nghiệp vụ: Tính năng này giúp người dùng cuối (hoặc hệ thống) giải quyết bài toán gì?
-2. Luồng xử lý chức năng (Functional Flow): Mô tả các bước đi của dữ liệu và hành động theo góc nhìn nghiệp vụ (Ví dụ: Bước 1: Tiếp nhận yêu cầu chấm bài -> Bước 2: Kiểm tra điều kiện hợp lệ -> Bước 3: Đánh giá tiêu chí -> Bước 4: Trả kết quả).
-3. Quy tắc nghiệp vụ (Business Rules): Chỉ ra các điều kiện logic ràng buộc nghiệp vụ có trong code (Ví dụ: Nếu điểm dưới 5 thì xếp loại trượt, phải có token hợp lệ mới được kích hoạt luồng...).
-
-QUY TẮC CẤM (CRITICAL CONSTRAINTS):
-- KHÔNG giải thích cú pháp C#, không nhắc đến tên hàm, tên biến, các khối try-catch, vòng lặp (for/while), hay cách tối ưu code.
-- Sử dụng thuật ngữ nghiệp vụ (Ví dụ: thay vì nói 'hàm trả về chuỗi JSON', hãy nói 'hệ thống phản hồi thông tin kết quả dưới dạng cấu trúc').
-- Trả về kết quả ngắn gọn, scannable (dùng bullet points), tập trung vào giá trị logic của luồng.
-            ";
-
-            // Build the ordered call chain as a readable list
-            var stepLines = new StringBuilder();
-            if (businessFlow.Steps != null && businessFlow.Steps.Count > 0)
+            string difficultyInstruction = difficulty.ToLower() switch
             {
-                foreach (var step in businessFlow.Steps.OrderBy(s => s.StepOrder))
-                {
-                    stepLines.AppendLine($"  [{step.StepOrder}] {step.CallerClass}.{step.CallerMethod} --> {step.CalleeClass}.{step.CalleeMethod}");
-                }
-            }
-            else
-            {
-                stepLines.AppendLine("  (Không có dữ liệu bước gọi)");
-            }
+                "dễ" => "- Mức độ DỄ (Happy Path): Câu hỏi CHỈ tập trung vào luồng xử lý thành công, đi thẳng từ đầu đến cuối mà KHÔNG kích hoạt bất kỳ nhánh rẽ ngoại lệ (if/else) nào, KHÔNG hỏi về lỗi.",
+                "trung bình" => "- Mức độ TRUNG BÌNH (Single Exception): Câu hỏi BẮT BUỘC phải hỏi về tình huống kích hoạt ĐÚNG MỘT (1) nhánh rẽ ngoại lệ (kiểm tra điều kiện, validation lỗi...).",
+                "khó" => "- Mức độ KHÓ (Double Exception): Câu hỏi BẮT BUỘC phải tạo ra tình huống phức tạp kích hoạt ĐỒNG THỜI TỪ HAI (2) nhánh rẽ ngoại lệ trở lên (xung đột dữ liệu, thứ tự ưu tiên, giao dịch chéo).",
+                _ => $"- Mức độ: {difficulty}."
+            };
+
+            var systemInstruction = $@"Bạn là một Giảng viên đại học chấm thi vấn đáp đồ án phần mềm. Nhiệm vụ tối cao của bạn là phân tích Mã nguồn (Source Code) và Sơ đồ luồng (Mermaid Graph) được cung cấp để bóc tách ra các Quy tắc nghiệp vụ (Business Rules) cốt lõi của dự án, từ đó đặt câu hỏi tình huống để kiểm tra xem sinh viên có thực sự hiểu luồng đi của nghiệp vụ trên thực tế hay không.
+
+YÊU CẦU BẮT BUỘC VỀ SỐ LƯỢNG VÀ ĐỘ KHÓ:
+- Bạn PHẢI tạo ra chính xác ĐÚNG {numberOfQuestions} câu hỏi. Không được tạo nhiều hơn hoặc ít hơn.
+- Tất cả các câu hỏi phải được thiết kế tuân thủ nghiêm ngặt quy định độ khó sau:
+{difficultyInstruction}
+
+THIẾT QUÂN LUẬT VỀ NGÔN NGỮ (100% BUSINESS LANGUAGE):
+1. Cả câu hỏi (question) và câu trả lời (suggestedAnswer) TUYỆT ĐỐI KHÔNG CHỨA bất kỳ từ khóa kỹ thuật hay cấu trúc mã nguồn nào.
+   - CẤM DÙNG: Controller, Service, Repository, API, DTO, Entity, Database, DB, SQL, SaveChanges, Update, Delete, Publish, Endpoint, Hub, RabbitMQ, MassTransit, Map/Mapper, Exception, Guid, Id, [Authorize], Identity, User, Filter, Include, Join...
+   - PHẢI DÙNG: Người bán, người mua, bài đấu giá, tài sản, mức giá, gian lận, lỗi hệ thống, mất dữ liệu, quyền hạn, thông báo cho phân hệ khác, đồng bộ thông tin...
+2. Đặt câu hỏi theo dạng tình huống thực tế (Scenario-based): Khảo sát trực tiếp vào quy trình vận hành (Ví dụ: ""Nếu người bán cố tình chỉnh sửa thông tin khi đã có người đặt giá thành công..."", ""Nếu hệ thống ghi nhận thanh toán nhưng việc cập nhật trạng thái bài đấu giá bị gián đoạn..."").
+
+QUY TẮC BẮT BUỘC VỀ TRUY VẾT LUỒNG CODE (TARGETED ENTRY POINTS):
+- Mảng ""targetedEntryPoints"" PHẢI mô tả chính xác và đầy đủ Call Stack (luồng đi từ Controller xuống tầng xử lý và lưu trữ) để giải quyết tình huống nghiệp vụ được hỏi.
+- QUY ĐỊNH CẤU TRÚC MẢNG: Mỗi mảng PHẢI chứa đầy đủ các mắt xích theo thứ tự từ trên xuống dưới (Ít nhất 3 đến 4 phần tử tùy luồng):
+  [ ""TênController.TênAction"", ""TênInterfaceService.TênHàmAsync"", ""TênClassServiceImpl.TênHàmAsync"", ""TênRepository.TênHàmAsync (nếu có)"" ]
+- VÍ DỤ MẪU CHUẨN LUỒNG:
+  [ ""AuctionController.CreateAuction"", ""IAuctionService.CreateAuctionAsync"", ""AuctionServiceImpl.CreateAuctionAsync"", ""IAuctionRepository.AddAsync"" ]
+- TUYỆT ĐỐI KHÔNG ĐƯỢC bỏ sót việc bắt cặp giữa [Interface] và [Class triển khai]. Nếu thiếu bất kỳ tầng nào, kết quả sẽ bị coi là bất hợp lệ.
+- CHỈ THỊ CHỐNG SUY DIỄN (ANTI-HALLUCINATION):
+Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC tự phát minh hoặc suy diễn ra các tính năng, quy trình, rủi ro (như thanh toán, giao dịch chéo...) nếu nó không ĐƯỢC THỂ HIỆN RÕ RÀNG trong Mermaid Graph hoặc Source Code.
+Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (không có if/else phức tạp), bạn BẮT BUỘC phải đặt câu hỏi đơn giản tương ứng, KHÔNG ĐƯỢC cố tình tạo tình huống phức tạp nằm ngoài phạm vi tài liệu được cung cấp. Câu hỏi phải chỉ đích danh được dựa vào bước nào trong sơ đồ hoặc dòng code nào.
+
+ĐỊNH DẠNG ĐẦU RA BẮT BUỘC:
+- Trả về một mảng JSON chứa các đối tượng có cấu trúc chính xác như sau (Tuyệt đối không bọc mảng trong ký tự ```json, chỉ trả về JSON trần):
+[
+  {{
+    ""question"": ""Câu hỏi tình huống nghiệp vụ thực tế ở đây"",
+    ""suggestedAnswer"": ""Giải thích giải pháp xử lý logic nghiệp vụ ở đây (không chứa từ khóa code)"",
+    ""difficulty"": ""{difficulty}"",
+    ""targetedEntryPoints"": [
+      ""TênController.TênAction"",
+      ""TênInterfaceService.TênHàmAsync"",
+      ""TênClassServiceImpl.TênHàmAsync""
+    ]
+  }}
+]";
 
             var prompt = new StringBuilder();
-            prompt.AppendLine($"Số câu hỏi cần sinh: {numberOfQuestions}");
-            prompt.AppendLine($"Mức độ khó: {difficulty}");
-            prompt.AppendLine();
-            prompt.AppendLine("--- THÔNG TIN BUSINESS FLOW ---");
-            prompt.AppendLine($"Tên luồng: {businessFlow.Name}");
-            prompt.AppendLine($"Entry Point (API entry): {businessFlow.EntryPoint}");
-            prompt.AppendLine();
-            prompt.AppendLine("--- CHUỖI BƯỚC GỌI (call chain theo thứ tự) ---");
-            prompt.Append(stepLines);
+
+
+            prompt.AppendLine("--- THÔNG TIN CHUNG ---");
+            prompt.AppendLine($"Tên Business: {businessName}");
             prompt.AppendLine();
 
-            if (!string.IsNullOrWhiteSpace(businessFlow.DataFlowMermaidGraph))
-            {
-                prompt.AppendLine("--- DATA FLOW MERMAID DIAGRAM (Biểu đồ luồng) ---");
-                prompt.AppendLine(businessFlow.DataFlowMermaidGraph);
-                prompt.AppendLine();
-            }
+            prompt.AppendLine("--- THÔNG TIN DATA FLOW GRAPH ---");
+            prompt.AppendLine(contextBuilder);
+            prompt.AppendLine();
+
+            prompt.AppendLine("--- SOURCE CODE CHI TIẾT (CODEBASE) ---");
+            prompt.AppendLine(codeBuilder);
+            prompt.AppendLine();
 
             if (!string.IsNullOrWhiteSpace(additionalContext))
             {
@@ -206,8 +130,8 @@ QUY TẮC CẤM (CRITICAL CONSTRAINTS):
                     prompt.AppendLine();
                 }
             }
+            prompt.AppendLine($"Hãy trả về chính xác ĐÚNG {numberOfQuestions} câu hỏi mức độ {difficulty} dưới dạng một mảng JSON (JSON Array) chứa các đối tượng gồm các key: question, suggestedAnswer, difficulty, targetedEntryPoints.");
 
-            prompt.AppendLine("Hãy trả về một danh sách các câu hỏi theo cấu trúc object gồm các key: question, suggestedAnswer, difficulty.");
 
             var config = new GenerateContentConfig
             {
@@ -215,12 +139,12 @@ QUY TẮC CẤM (CRITICAL CONSTRAINTS):
                 {
                     Parts = [new Part { Text = systemInstruction }]
                 },
-                Temperature = 0.4f,
+                Temperature = 0.3f,
                 ResponseMimeType = "application/json"
             };
 
-            int maxRetries = 3;
-            int delaySeconds = 3;
+            int maxRetries = 5;
+            int delaySeconds = 5;
             GenerateContentResponse? response = null;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)
@@ -237,37 +161,60 @@ QUY TẮC CẤM (CRITICAL CONSTRAINTS):
                 catch (ClientError ex) when (ex.StatusCode == 429 || ex.StatusCode == 503 || ex.StatusCode == 500)
                 {
                     if (attempt == maxRetries) throw;
-                    Console.WriteLine($"⚠️ [AIService] Transient error {ex.StatusCode} (BusinessFlow). Retrying in {delaySeconds}s... (Attempt {attempt}/{maxRetries})");
+                    Console.WriteLine($"⚠️ [AIService] Transient error {ex.StatusCode} (Unified). Retrying in {delaySeconds}s... (Attempt {attempt}/{maxRetries})");
                     await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
                     delaySeconds *= 2;
                 }
                 catch (Exception ex) when (ex.Message.Contains("429") || ex.Message.Contains("Too Many Requests"))
                 {
                     if (attempt == maxRetries) throw;
-                    Console.WriteLine($"⚠️ [AIService] Rate limit (BusinessFlow). Retrying in {delaySeconds}s... (Attempt {attempt}/{maxRetries})");
+                    Console.WriteLine($"⚠️ [AIService] Rate limit (Unified). Retrying in {delaySeconds}s... (Attempt {attempt}/{maxRetries})");
                     await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
                     delaySeconds *= 2;
                 }
             }
 
             if (response == null || string.IsNullOrEmpty(response.Text))
-                throw new Exception("AI API did not return any text response for business flow.");
+                throw new Exception("AI API did not return any text response for unified generation.");
 
             string aiJsonText = response.Text.Trim();
+
+            // Strip Markdown code fences if present (```json ... ```)
+            if (aiJsonText.StartsWith("```"))
+            {
+                int firstNewline = aiJsonText.IndexOf('\n');
+                if (firstNewline != -1)
+                {
+                    aiJsonText = aiJsonText.Substring(firstNewline + 1);
+                }
+                int lastFence = aiJsonText.LastIndexOf("```");
+                if (lastFence != -1)
+                {
+                    aiJsonText = aiJsonText.Substring(0, lastFence);
+                }
+                aiJsonText = aiJsonText.Trim();
+            }
 
             try
             {
                 var questions = JsonSerializer.Deserialize<List<GeneratedQuestionDto>>(aiJsonText, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
-                });
-                return questions ?? new List<GeneratedQuestionDto>();
+                }) ?? new List<GeneratedQuestionDto>();
+
+                int inputTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
+                int outputTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
+
+                return (questions, inputTokens, outputTokens);
+
             }
             catch (JsonException ex)
             {
                 throw new Exception($"AI trả về cấu trúc JSON không khớp với DTO. Nội dung: {aiJsonText}. Chi tiết lỗi: {ex.Message}", ex);
             }
         }
+
+
     }
 }
 

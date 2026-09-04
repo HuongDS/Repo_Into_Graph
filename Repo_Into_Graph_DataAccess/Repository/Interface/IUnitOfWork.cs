@@ -8,15 +8,11 @@ namespace Repo_Into_Graph_DataAccess.Repository.Interface
         IAnalysisRunRepository AnalysisRuns { get; }
         ICallGraphEdgeRepository CallGraphEdges { get; }
         IMethodSourceRepository MethodSources { get; }
-        IFeatureRepository Features { get; }
+        IBusinessRepository Businesses { get; }
         IFeatureMethodMappingRepository FeatureMethodMappings { get; }
+        IFeatureRepository Features { get; }
+        IFeatureBusinessMappingRepository FeatureBusinessMappings { get; }
         IFewShotExampleRepository FewShotExamples { get; }
-        IBusinessFlowRepository BusinessFlows { get; }
-
         Task<int> SaveChangesAsync();
     }
 }
-
-
-
-

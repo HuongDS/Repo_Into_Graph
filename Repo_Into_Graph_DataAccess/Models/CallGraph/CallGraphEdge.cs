@@ -13,6 +13,7 @@ public class CallGraphEdge
     public DateTime CreatedAt { get; set; }
     public AnalysisRun? AnalysisRun { get; set; }
     public string? Language { get; set; }
+    public string? ConditionContext { get; set; }
 
 }
 

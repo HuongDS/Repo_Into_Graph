@@ -6,7 +6,7 @@ using Repo_Into_Graph_DataAccess.Repository.Impl;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
 using Repo_Into_Graph_Application.Services.AI;
 using Repo_Into_Graph_Application.Services.Analysis;
-using Repo_Into_Graph_Application.Services.BusinessFlows;
+using Repo_Into_Graph_Application.Services.Features;
 using Repo_Into_Graph_Application.Services.CodeQueryable;
 using Repo_Into_Graph_Application.Services.DataFlowParser;
 using Repo_Into_Graph_Application.Services.FewShot;
@@ -15,6 +15,9 @@ using Repo_Into_Graph_Application.Services.Mapper;
 using Repo_Into_Graph_Application.Services.QuestionGenerate;
 using Repo_Into_Graph_API.Exceptions;
 using Repo_Into_Graph_DataAccess.Database;
+using Repo_Into_Graph_Application.Services.Caculation;
+using Repo_Into_Graph_Application.Services.WorkflowAssessment;
+using Repo_Into_Graph_API.Extensions;
 
 if (File.Exists(".env"))
 {
@@ -45,28 +48,14 @@ builder.Services.AddHttpClient("BaseModel", client =>
 // Register DB Context
 builder.Services.AddDbContext<AnalysisDbContext>();
 
-// Register repositories & services under Dependency Injection
-builder.Services.AddScoped<IAnalysisRunRepository, AnalysisRunRepository>();
-builder.Services.AddScoped<ICallGraphEdgeRepository, CallGraphEdgeRepository>();
-builder.Services.AddScoped<IMethodSourceRepository, MethodSourceRepository>();
-builder.Services.AddScoped<IFeatureRepository, FeatureRepository>();
-builder.Services.AddScoped<IFeatureMethodMappingRepository, FeatureMethodMappingRepository>();
-builder.Services.AddScoped<IFewShotExampleRepository, FewShotExampleRepository>();
-builder.Services.AddScoped<IBusinessFlowRepository, BusinessFlowRepository>();
-builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+// Register all project dependencies (Repositories & Services)
+builder.Services.AddProjectDependencies();
 
-builder.Services.AddScoped<ICodeQueryable, CodeQueryable>();
-builder.Services.AddScoped<GraphMapperService>();
-builder.Services.AddScoped<IGitService, GitService>();
-builder.Services.AddScoped<IAnalysisService, AnalysisService>();
-builder.Services.AddScoped<IAnalysisRunService, AnalysisRunService>();
-builder.Services.AddScoped<IBusinessFlowService, BusinessFlowService>();
-builder.Services.AddScoped<IFewShotService, FewShotService>();
-builder.Services.AddScoped<BusinessFlowParser>();
-builder.Services.AddScoped<IQuestionGenerate, QuestionGenerate>();
-builder.Services.AddScoped<IAIService, AIService>();
-builder.Services.AddScoped<DataFlowParseService>();
-builder.Services.AddScoped<BusinessCallDataFlowGenerator>();
+// Add Redis Distributed Cache
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("RedisConnection");
+});
 
 // Add support for controllers
 builder.Services.AddControllers();
@@ -91,9 +80,16 @@ var app = builder.Build();
 // ── Global Exception Handler middleware (phải đứng đầu pipeline) ──────────────
 app.UseExceptionHandler();
 
-// Migrate Database on startup
-using (var scope = app.Services.CreateScope())
+// Migrate Database — CHỈ chạy khi được yêu cầu tường minh (flag --migrate hoặc env RUN_MIGRATIONS=true),
+// không tự động chạy trên mọi `dotnet run`. Muốn áp dụng migration mới: `dotnet run -- --migrate`
+// hoặc set RUN_MIGRATIONS=true (tiện cho docker-compose/CI).
+bool shouldRunMigrations =
+    args.Contains("--migrate", StringComparer.OrdinalIgnoreCase) ||
+    string.Equals(Environment.GetEnvironmentVariable("RUN_MIGRATIONS"), "true", StringComparison.OrdinalIgnoreCase);
+
+if (shouldRunMigrations)
 {
+    using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<AnalysisDbContext>();
     try
     {
@@ -105,6 +101,10 @@ using (var scope = app.Services.CreateScope())
         // Startup migration failure — chỉ log, không crash (giữ nguyên hành vi cũ)
         Console.WriteLine($"❌ Cannot prepare PostgreSQL schema: {ex.Message}");
     }
+}
+else
+{
+    Console.WriteLine("ℹ️  Bỏ qua migration (thêm --migrate hoặc set RUN_MIGRATIONS=true nếu cần áp dụng migration mới).");
 }
 
 // Enable Swagger UI

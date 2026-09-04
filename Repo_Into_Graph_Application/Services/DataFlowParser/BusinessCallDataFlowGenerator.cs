@@ -1,8 +1,6 @@
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
-
+using Repo_Into_Graph_DataAccess.Models.Feature;
+using Repo_Into_Graph_DataAccess.Models.Analysis;
 using Repo_Into_Graph_DataAccess.Models.Method;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
@@ -17,22 +15,21 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
             _parserService = parserService;
         }
 
-        public string GenerateCallDataFlow(BusinessFlow businessFlow, List<MethodSourceRecord> allMethodSources, List<DataFlowEdge> allIntraEdges)
+        public string GenerateCallDataFlow(Feature feature, List<MethodSourceRecord> allMethodSources, List<DataFlowEdge> allIntraEdges)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("graph TD"); 
+            sb.AppendLine("graph TD");
 
             var renderedLines = new HashSet<string>();
             var declaredNodes = new HashSet<string>();
 
-      
-            var orderedSteps = businessFlow.Steps.OrderBy(s => s.StepOrder).ToList();
+            var orderedSteps = feature.Steps.OrderBy(s => s.StepOrder).ToList();
             int orderCounter = 1;
 
             foreach (var step in orderedSteps)
             {
-                string callerNodeId = Clean($"{step.CallerClass}_{step.CallerMethod}");
-                string calleeNodeId = Clean($"{step.CalleeClass}_{step.CalleeMethod}");
+                string callerNodeId = CleanNodeId($"{step.CallerClass}_{step.CallerMethod}");
+                string calleeNodeId = CleanNodeId($"{step.CalleeClass}_{step.CalleeMethod}");
 
                 if (!declaredNodes.Contains(callerNodeId))
                 {
@@ -46,17 +43,14 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                 }
             }
 
-       
             foreach (var step in orderedSteps)
             {
-                string callerNodeId = Clean($"{step.CallerClass}_{step.CallerMethod}");
-                string calleeNodeId = Clean($"{step.CalleeClass}_{step.CalleeMethod}");
+                string callerNodeId = CleanNodeId($"{step.CallerClass}_{step.CallerMethod}");
+                string calleeNodeId = CleanNodeId($"{step.CalleeClass}_{step.CalleeMethod}");
 
-               
                 string targetCalleeClass = step.CalleeClass;
 
-               
-                var nextBindingStep = businessFlow.Steps
+                var nextBindingStep = feature.Steps
                     .FirstOrDefault(s => s.StepOrder > step.StepOrder && s.CallerClass == step.CalleeClass && s.CallerMethod == step.CalleeMethod);
 
                 if (nextBindingStep != null)
@@ -67,30 +61,49 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                 var calleeSource = allMethodSources
                     .FirstOrDefault(s => s.ClassName == targetCalleeClass && s.MethodName == step.CalleeMethod);
 
-                string inputLabel = "G?i h�m";
+                string inputLabel = "Gọi hàm";
                 if (calleeSource != null)
                 {
                     var calleeParams = _parserService.GetMethodParameters(calleeSource.SourceCode);
                     if (calleeParams != null && calleeParams.Any())
                     {
-                        var cleanParams = calleeParams.Select(p => p.Replace("(", "").Replace(")", "").Replace("\"", "").Trim());
-                        inputLabel = $"Truy?n: {string.Join(", ", cleanParams)}";
+                        var cleanParams = calleeParams.Select(p => CleanLabel(p));
+                        inputLabel = $"Truyền: {string.Join(", ", cleanParams)}";
                     }
                 }
                 else
                 {
-                    if (step.CalleeMethod.Contains("Add")) inputLabel = "�?y th?c th?";
-                    else if (step.CalleeMethod.Contains("Save")) inputLabel = "L?nh luu d? li?u";
+                    if (step.CalleeMethod.Contains("Add")) inputLabel = "Đẩy thực thể";
+                    else if (step.CalleeMethod.Contains("Save")) inputLabel = "Lệnh lưu dữ liệu";
                 }
 
-                string callLine = $"    {callerNodeId} -->| {orderCounter++}. {inputLabel} | {calleeNodeId}";
+                string callLine = "";
+                if (!string.IsNullOrEmpty(step.ConditionContext))
+                {
+                    string cleanCondition = CleanLabel(step.ConditionContext);
+                    string decisionNodeId = CleanNodeId($"{step.CallerClass}_{step.CallerMethod}_cond_{cleanCondition}");
+                    if (decisionNodeId.Length > 50) decisionNodeId = decisionNodeId.Substring(0, 50); // limit length
+                    
+                    if (!declaredNodes.Contains(decisionNodeId))
+                    {
+                        sb.AppendLine($"    {decisionNodeId}{{\"{cleanCondition}\"}}");
+                        sb.AppendLine($"    {callerNodeId} -.->| K.tra Đ.kiện | {decisionNodeId}");
+                        declaredNodes.Add(decisionNodeId);
+                    }
+                    
+                    callLine = $"    {decisionNodeId} -->| {orderCounter++}. {inputLabel} | {calleeNodeId}";
+                }
+                else
+                {
+                    callLine = $"    {callerNodeId} -->| {orderCounter++}. {inputLabel} | {calleeNodeId}";
+                }
+
                 if (!renderedLines.Contains(callLine))
                 {
                     sb.AppendLine(callLine);
                     renderedLines.Add(callLine);
                 }
 
-              
                 var returnEdge = allIntraEdges.FirstOrDefault(e =>
                     e.ClassName == targetCalleeClass &&
                     e.MethodName == step.CalleeMethod &&
@@ -103,13 +116,13 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
 
                     if (returnToken.Contains(">") || returnToken.Contains("<") || returnToken.Contains("=="))
                     {
-                        outputLabel = "Tr? v?: true/false";
+                        outputLabel = "Trở về: true_false";
                     }
                     else
                     {
-                        string cleanToken = returnToken.Replace("(", "").Replace(")", "").Replace("\"", "").Replace(";", "").Trim();
-                        if (cleanToken.Length > 30) cleanToken = "k?t qu?";
-                        outputLabel = $"Tr? ra: {cleanToken}";
+                        string cleanToken = CleanLabel(returnToken);
+                        if (cleanToken.Length > 30) cleanToken = "kết quả";
+                        outputLabel = $"Trả ra: {cleanToken}";
                     }
 
                     string returnLine = $"    {calleeNodeId} -.->| {orderCounter++}. {outputLabel} | {callerNodeId}";
@@ -121,12 +134,21 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                 }
             }
 
-            return sb.ToString();
+            string rawGraph = sb.ToString();
+            string cleanGraph = rawGraph
+               .Replace("\u00A0", " ")
+               .Replace("\r\n", "\n")
+               .Replace("\r", "\n");
+
+            return cleanGraph.Trim();
         }
 
-        private string Clean(string text)
+        private string CleanNodeId(string text)
         {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+
             return text
+                .Replace("\u00A0", " ")
                 .Replace(".", "_")
                 .Replace("(", "")
                 .Replace(")", "")
@@ -135,11 +157,25 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                 .Replace(">", "_")
                 .Replace("[", "_")
                 .Replace("]", "_")
-                .Replace("\"", "");
+                .Replace("?", "")
+                .Replace("\"", "")
+                .Trim();
+        }
+
+        private string CleanLabel(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+
+            return text
+                .Replace("\u00A0", " ")
+                .Replace("(", "[") 
+                .Replace(")", "]")
+                .Replace("<", "&lt;") 
+                .Replace(">", "&gt;")
+                .Replace("?", "")   
+                .Replace("\"", "")
+                .Replace(";", "")
+                .Trim();
         }
     }
 }
-
-
-
-

@@ -1,0 +1,400 @@
+{
+	"info": {
+		"name": "Repo Into Graph - A/B Testing Automation",
+		"description": "Bộ test so sánh 2 phương pháp sinh câu hỏi (Code thô vs Đồ thị CFG).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "🚀 0. RUN BENCHMARK FULL AUTOMATION (Bấm 1 Nút Tự Cập Nhật Excel)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"businessId\": \"{{businessId}}\",\n  \"numberOfQuestions\": 5,\n  \"difficulty\": \"Medium\",\n  \"runId\": \"RUN_01\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/Evaluation/run-benchmark",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"Evaluation",
+						"run-benchmark"
+					]
+				}
+			}
+		},
+		{
+			"name": "Phương pháp Cũ (Raw Code)",
+			"item": [
+				{
+					"name": "1. Generate Questions (Traditional)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if(jsonData && jsonData.businessId) {",
+									"    pm.collectionVariables.set(\"generateResponse\", JSON.stringify(jsonData));",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"businessId\": \"{{businessId}}\",\n  \"numberOfQuestions\": 5,\n  \"difficulty\": \"Medium\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/QuestionGenerator/generate-traditional",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"QuestionGenerator",
+								"generate-traditional"
+							]
+						}
+					}
+				},
+				{
+					"name": "2. Assess Coverage",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{{generateResponse}}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-from-response",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"WorkflowAssessment",
+								"assess-from-response"
+							]
+						}
+					}
+				},
+				{
+					"name": "3. Assess Accuracy",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{{generateResponse}}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-accuracy",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"WorkflowAssessment",
+								"assess-accuracy"
+							]
+						}
+					}
+				},
+				{
+					"name": "4. Assess Difficulty",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{{generateResponse}}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-difficulty",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"WorkflowAssessment",
+								"assess-difficulty"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Phương pháp Mới (Graph CFG)",
+			"item": [
+				{
+					"name": "1. Generate Questions (Graph)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if(jsonData && jsonData.businessId) {",
+									"    pm.collectionVariables.set(\"generateResponse\", JSON.stringify(jsonData));",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"businessId\": \"{{businessId}}\",\n  \"numberOfQuestions\": 5,\n  \"difficulty\": \"Medium\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/QuestionGenerator/generate-graph",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"QuestionGenerator",
+								"generate-graph"
+							]
+						}
+					}
+				},
+				{
+					"name": "2. Assess Coverage",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{{generateResponse}}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-from-response",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"WorkflowAssessment",
+								"assess-from-response"
+							]
+						}
+					}
+				},
+				{
+					"name": "3. Assess Accuracy",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{{generateResponse}}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-accuracy",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"WorkflowAssessment",
+								"assess-accuracy"
+							]
+						}
+					}
+				},
+				{
+					"name": "4. Assess Difficulty",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{{generateResponse}}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/WorkflowAssessment/assess-difficulty",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"WorkflowAssessment",
+								"assess-difficulty"
+							]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:55060",
+			"type": "string"
+		},
+		{
+			"key": "businessId",
+			"value": "YOUR_BUSINESS_ID_HERE",
+			"type": "string"
+		},
+		{
+			"key": "generateResponse",
+			"value": "{}",
+			"type": "string"
+		}
+	]
+}

@@ -2,15 +2,13 @@ using Repo_Into_Graph_DataAccess.Database;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_DataAccess.Models.Analysis;
 using Repo_Into_Graph_Application.Dtos.Analysis;
-using Repo_Into_Graph_Application.Dtos.Feature;
 using Repo_Into_Graph_Application.Exceptions;
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using Repo_Into_Graph_DataAccess.Models.Feature;
 using Repo_Into_Graph_DataAccess.Models.Method;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
 using Repo_Into_Graph_Application.Services.DataFlowParser;
 using Repo_Into_Graph_Application.Services.GitService;
 using Repo_Into_Graph_Application.Services.Mapper;
-using Repo_Into_Graph_Application.Services.DataFlowParser;
 using Repo_Into_Graph_Application.Services;
 using System;
 using System.IO;
@@ -24,7 +22,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
         private readonly IUnitOfWork _unitOfWork;
         private readonly GraphMapperService _graphMapper;
         private readonly IGitService _gitService;
-        private readonly AnalysisDbContext _context;
         private readonly BusinessFlowParser _businessFlowParser;
         private readonly DataFlowParseService _dataFlowParser;
         private readonly BusinessCallDataFlowGenerator _businessCallDataFlowGenerator;
@@ -33,7 +30,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
             IUnitOfWork unitOfWork,
             GraphMapperService graphMapper,
             IGitService gitService,
-            AnalysisDbContext context,
             BusinessFlowParser businessFlowParser,
             BusinessCallDataFlowGenerator businessCallDataFlowGenerator,
             DataFlowParseService dataFlowParser)
@@ -41,7 +37,6 @@ namespace Repo_Into_Graph_Application.Services.Analysis
             _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _graphMapper = graphMapper ?? throw new ArgumentNullException(nameof(graphMapper));
             _gitService = gitService ?? throw new ArgumentNullException(nameof(gitService));
-            _context = context ?? throw new ArgumentNullException(nameof(context));
             _businessFlowParser = businessFlowParser ?? throw new ArgumentNullException(nameof(businessFlowParser));
             _dataFlowParser = dataFlowParser ?? throw new ArgumentNullException(nameof(dataFlowParser));
             _businessCallDataFlowGenerator = businessCallDataFlowGenerator ?? throw new ArgumentNullException(nameof(businessCallDataFlowGenerator));
@@ -53,8 +48,30 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 throw new BadRequestException("Đường dẫn repository hoặc URL git không được để trống.");
 
             string trimmedRepoPath = repositoryPath.Trim('"', ' ');
-            string targetOutputDir = string.IsNullOrWhiteSpace(outputDir) ? "./output" : outputDir.Trim('"', ' ');
 
+            // Repo này đã được phân tích trước đó và đã có sẵn trong database -> dùng lại, không cần
+            // clone/kéo source code về backend và parse lại từ đầu nữa.
+            var cachedRuns = await _unitOfWork.AnalysisRuns
+                .FindAsync(r => r.RepositoryPath.ToLower() == trimmedRepoPath.ToLower());
+            var cachedRun = cachedRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefault();
+
+            if (cachedRun != null)
+            {
+                var cachedEdgesCount = (await _unitOfWork.CallGraphEdges
+                    .FindAsync(e => e.AnalysisRunId == cachedRun.Id)).Count();
+                var cachedMethodsCount = (await _unitOfWork.MethodSources
+                    .FindAsync(m => m.AnalysisRunId == cachedRun.Id)).Count();
+
+                return new AnalysisResponseDto
+                {
+                    Message = "Repository đã được phân tích trước đó — dùng lại dữ liệu có sẵn trong database.",
+                    AnalysisRunId = cachedRun.Id,
+                    EdgesCount = cachedEdgesCount,
+                    MethodsCount = cachedMethodsCount
+                };
+            }
+
+            string targetOutputDir = string.IsNullOrWhiteSpace(outputDir) ? "./output" : outputDir.Trim('"', ' ');
             bool isGitUrl = _gitService.IsGitUrl(trimmedRepoPath);
             string targetPath = trimmedRepoPath;
             bool isTempDirectory = false;
@@ -69,22 +86,11 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                 throw new NotFoundException($"Thư mục local không tồn tại: {trimmedRepoPath}");
             }
 
-
             try
             {
                 Directory.CreateDirectory(targetOutputDir);
                 var analyzer = new CodeAnalyzer(targetPath);
                 var result = await analyzer.AnalyzeAsync();
-
-                // Xóa các lượt phân tích cũ cho repository này
-                var existingRuns = await _unitOfWork.AnalysisRuns
-                    .FindAsync(r => r.RepositoryPath.ToLower() == trimmedRepoPath.ToLower());
-
-                if (existingRuns.Any())
-                {
-                    _unitOfWork.AnalysisRuns.DeleteRange(existingRuns);
-                    await _unitOfWork.SaveChangesAsync();
-                }
 
                 // Tạo AnalysisRun mới
                 var analysisRun = new AnalysisRun
@@ -99,6 +105,7 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                         CallerMethod = edge.CallerMethod,
                         CalleeClass = edge.CalleeClass,
                         CalleeMethod = edge.CalleeMethod,
+                        ConditionContext = edge.ConditionContext,
                         CreatedAt = DateTime.UtcNow
                     }).ToList(),
                     MethodSources = result.MethodSources.Select(source => new MethodSourceRecord
@@ -107,49 +114,44 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                         ClassName = source.ClassName,
                         MethodName = source.MethodName,
                         SourceCode = source.SourceCode,
+                        Type = source.Type,
                         CreatedAt = DateTime.UtcNow
-                    }).ToList()
+                    }).ToList(),
+                    GlobalNodeCount = result.MethodSources.Count
                 };
 
                 await _unitOfWork.AnalysisRuns.AddAsync(analysisRun);
-                await _unitOfWork.SaveChangesAsync();
                 var allIntraEdges = new List<DataFlowEdge>();
                 foreach (var source in analysisRun.MethodSources)
                 {
                     var methodDataFlows = _dataFlowParser.ParseIntraMethodDataFlow(analysisRun.Id, source.ClassName, source.MethodName, source.SourceCode);
                     allIntraEdges.AddRange(methodDataFlows);
                 }
-                //if(allIntraEdges.Any())
-                //{
-                //    await _context.DataFlowEdges.AddRangeAsync(allIntraEdges);
-                //    await _context.SaveChangesAsync();
-                //}
-                // Phân tích và lưu Business Flows
-                var businessFlows = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
-                if (businessFlows.Any())
-                {
 
+                var features = _businessFlowParser.ParseBusinessFlows(analysisRun.Id, analysisRun.CallGraphEdges);
+                if (features.Any())
+                {
                     var methodSourcesList = analysisRun.MethodSources.ToList();
-                    foreach (var flow in businessFlows)
+                    foreach (var flow in features)
                     {
                         flow.DataFlowMermaidGraph = _businessCallDataFlowGenerator.GenerateCallDataFlow(flow, methodSourcesList, allIntraEdges);
                     }
-                    await _context.BusinessFlows.AddRangeAsync(businessFlows);
-                    await _context.SaveChangesAsync();
+                    await _unitOfWork.Features.AddRangeAsync(features);
                 }
 
-                // Thực hiện ánh xạ đồ thị
-                // Ưu tiên đọc template_feature.json từ bên trong repository được phân tích,
-                // nếu không có thì fallback về file local của server
-                string featuresJsonPath = Path.Combine(targetPath, "template_feature.json");
-                if (!File.Exists(featuresJsonPath))
+                await _unitOfWork.SaveChangesAsync();
+
+                string businessJsonPath = Path.Combine(targetPath, "template_business.json");
+
+                if (!File.Exists(businessJsonPath))
                 {
-                    featuresJsonPath = "./template_feature.json";
+                    throw new NotFoundException($"File template_business.json không tồn tại trong thư mục: {targetPath}");
                 }
 
-                if (File.Exists(featuresJsonPath))
+                if (File.Exists(businessJsonPath))
                 {
-                    await _graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, featuresJsonPath);
+                    await _graphMapper.ProcessAndMapGraphAsync(analysisRun.Id, businessJsonPath);
+
                 }
 
                 // Xuất file output

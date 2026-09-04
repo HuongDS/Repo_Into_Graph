@@ -1,9 +1,5 @@
 using Repo_Into_Graph_DataAccess.Models.Method;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Repo_Into_Graph_DataAccess.Models.Feature
 {
@@ -13,11 +9,7 @@ namespace Repo_Into_Graph_DataAccess.Models.Feature
         public Guid FeatureId { get; set; }
         public Guid MethodSourceId { get; set; }
         public DateTime MappedAt { get; set; }
-        public FeatureRecord? Feature { get; set; }
+        public Feature? Feature { get; set; }
         public MethodSourceRecord? MethodSource { get; set; }
     }
 }
-
-
-
-

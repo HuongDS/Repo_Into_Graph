@@ -1,7 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using Repo_Into_Graph_DataAccess.Models.Analysis;
 
 namespace Repo_Into_Graph_Application.Services.DataFlowParser
 {

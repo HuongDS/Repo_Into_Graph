@@ -1,25 +1,29 @@
 using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using FeatureModel = Repo_Into_Graph_DataAccess.Models.Feature.Feature;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace Repo_Into_Graph_Application.Services.AI
 {
     public interface IAIService
     {
-        Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestions(int numberOfQuestions, GenerateQuestionsRequest request, string codeBuilder, string contextBuilder);
-
         /// <summary>
-        /// Sinh câu hỏi vấn đáp dựa trên một Business Flow cụ thể, bao gồm entry point, chuỗi bước gọi, và Mermaid diagram.
-        /// Có thể truyền thêm danh sách few-shot examples của giảng viên để AI noi theo.
+        /// Sinh câu hỏi vấn đáp dựa trên một Business (gồm Source Code và Business Flow Context).
+        /// Cung cấp một cái nhìn toàn diện (Unified) cho mô hình AI để ra câu hỏi chất lượng nhất.
         /// </summary>
-        Task<IEnumerable<GeneratedQuestionDto>> GenerateQuestionsFromBusinessFlowAsync(
-            BusinessFlow businessFlow,
+        Task<(IEnumerable<GeneratedQuestionDto> Questions, int InputTokens, int OutputTokens)> GenerateUnifiedQuestionsAsync(
+            string businessName,
+            string codeBuilder,
+            string contextBuilder,
             int numberOfQuestions,
             string difficulty,
             string? additionalContext = null,
+            
             IEnumerable<FewShotExample>? fewShotExamples = null);
+
+      
+
+
+
     }
 }
 

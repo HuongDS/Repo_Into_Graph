@@ -1,12 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Repo_Into_Graph_DataAccess.Models;
 using Repo_Into_Graph_DataAccess.Models.Analysis;
-
-using Repo_Into_Graph_DataAccess.Models.BusinessFlows;
+using Repo_Into_Graph_DataAccess.Models.Business;
 using Repo_Into_Graph_DataAccess.Models.Feature;
 using Repo_Into_Graph_DataAccess.Models.FewShot;
 using Repo_Into_Graph_DataAccess.Models.Method;
 using Microsoft.Extensions.Configuration;
+using BusinessModel = Repo_Into_Graph_DataAccess.Models.Business.Bussiness;
+using FeatureModel = Repo_Into_Graph_DataAccess.Models.Feature.Feature;
 
 namespace Repo_Into_Graph_DataAccess.Database;
 
@@ -23,13 +24,17 @@ public class AnalysisDbContext : DbContext
     public DbSet<AnalysisRun> AnalysisRuns { get; set; }
     public DbSet<CallGraphEdge> CallGraphEdges { get; set; }
     public DbSet<MethodSourceRecord> MethodSources { get; set; }
-    // public DbSet<DataFlowEdge> DataFlowEdges { get; set; }
 
-    public DbSet<FeatureRecord> FeatureRecords { get; set; }
+    // Business (nhom chuc nang tu template)
+    public DbSet<BusinessModel> Businesses { get; set; }
     public DbSet<FeatureMethodMapping> FeatureMethodMappings { get; set; }
 
-    public DbSet<BusinessFlow> BusinessFlows { get; set; }
-    public DbSet<BusinessFlowStep> BusinessFlowSteps { get; set; }
+    // Feature (luong xu ly duoc phan tich tu call graph)
+    public DbSet<FeatureModel> Features { get; set; }
+    public DbSet<FeatureStep> FeatureSteps { get; set; }
+
+    // Bảng nhiều-nhiều Feature ↔ Business
+    public DbSet<FeatureBusinessMapping> FeatureBusinessMappings { get; set; }
 
     public DbSet<FewShotExample> FewShotExamples { get; set; }
 
@@ -60,7 +65,11 @@ public class AnalysisDbContext : DbContext
                 .WithOne(x => x.AnalysisRun!)
                 .HasForeignKey(x => x.AnalysisRunId)
                 .OnDelete(DeleteBehavior.Cascade);
-            entity.HasMany(x => x.BusinessFlows)
+            entity.HasMany(x => x.Features)
+                .WithOne(x => x.AnalysisRun!)
+                .HasForeignKey(x => x.AnalysisRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(x => x.Businesses)
                 .WithOne(x => x.AnalysisRun!)
                 .HasForeignKey(x => x.AnalysisRunId)
                 .OnDelete(DeleteBehavior.Cascade);
@@ -85,8 +94,19 @@ public class AnalysisDbContext : DbContext
             entity.Property(x => x.ClassName).IsRequired();
             entity.Property(x => x.MethodName).IsRequired();
             entity.Property(x => x.SourceCode).IsRequired();
+            entity.Property(x => x.Type).HasConversion<string>().HasDefaultValue(Repo_Into_Graph_DataAccess.Consts.NodeType.Activity);
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             entity.HasIndex(x => x.AnalysisRunId);
+        });
+
+        // Business (nhom chuc nang)
+        modelBuilder.Entity<BusinessModel>(entity =>
+        {
+            entity.ToTable("businesses");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.BusinessName).IsRequired();
+            entity.Property(e => e.CreatedAt);
+            entity.HasIndex(e => e.AnalysisRunId);
         });
 
         modelBuilder.Entity<FeatureMethodMapping>(entity =>
@@ -105,43 +125,52 @@ public class AnalysisDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<FeatureRecord>(entity =>
+        // Feature (luong phan tich)
+        modelBuilder.Entity<FeatureModel>(entity =>
         {
-            entity.ToTable("feature_records");
-            entity.HasKey(e => e.Id);
-
-            entity.HasOne(d => d.AnalysisRun)
-                .WithMany(p => p.Features)
-                .HasForeignKey(d => d.AnalysisRunId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<BusinessFlow>(entity =>
-        {
-            entity.ToTable("business_flows");
+            entity.ToTable("features");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Name).IsRequired();
             entity.Property(x => x.EntryPoint).IsRequired();
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             entity.HasMany(x => x.Steps)
-                .WithOne(x => x.BusinessFlow!)
-                .HasForeignKey(x => x.BusinessFlowId)
+                .WithOne(x => x.Feature!)
+                .HasForeignKey(x => x.FeatureId)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(x => x.AnalysisRunId);
         });
 
-        modelBuilder.Entity<BusinessFlowStep>(entity =>
+        modelBuilder.Entity<FeatureStep>(entity =>
         {
-            entity.ToTable("business_flow_steps");
+            entity.ToTable("feature_steps");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.CallerClass).IsRequired();
             entity.Property(x => x.CallerMethod).IsRequired();
             entity.Property(x => x.CalleeClass).IsRequired();
             entity.Property(x => x.CalleeMethod).IsRequired();
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
-            entity.HasIndex(x => x.BusinessFlowId);
+            entity.HasIndex(x => x.FeatureId);
         });
 
+        // ─── FeatureBusinessMapping (nhiều-nhiều) ────────────────────────────────
+        modelBuilder.Entity<FeatureBusinessMapping>(entity =>
+        {
+            entity.ToTable("feature_business_mappings");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+
+            entity.HasOne(d => d.Feature)
+                .WithMany(p => p.FeatureBusinessMappings)
+                .HasForeignKey(d => d.FeatureId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(d => d.Business)
+                .WithMany(p => p.FeatureBusinessMappings)
+                .HasForeignKey(d => d.BusinessId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ─── FewShot ─────────────────────────────────────────────────────────────
         modelBuilder.Entity<FewShotExample>(entity =>
         {
             entity.ToTable("few_shot_examples");
@@ -175,11 +204,7 @@ public class AnalysisDbContext : DbContext
             string baseConnectionString = configuration.GetConnectionString("PostgreSQL");
             string connectionString = $"{baseConnectionString.TrimEnd(';')};Username={dbUser};Password={dbPass};";
 
-
             optionsBuilder.UseNpgsql(connectionString);
         }
     }
 }
-
-
-

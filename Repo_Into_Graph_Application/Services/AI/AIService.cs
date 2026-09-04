@@ -130,7 +130,7 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
                     prompt.AppendLine();
                 }
             }
-            prompt.AppendLine($"Hãy trả về chính xác ĐÚNG {numberOfQuestions} câu hỏi mức độ {difficulty} theo cấu trúc object gồm các key: question, suggestedAnswer, difficulty.");
+            prompt.AppendLine($"Hãy trả về chính xác ĐÚNG {numberOfQuestions} câu hỏi mức độ {difficulty} dưới dạng một mảng JSON (JSON Array) chứa các đối tượng gồm các key: question, suggestedAnswer, difficulty, targetedEntryPoints.");
 
 
             var config = new GenerateContentConfig
@@ -178,6 +178,22 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
                 throw new Exception("AI API did not return any text response for unified generation.");
 
             string aiJsonText = response.Text.Trim();
+
+            // Strip Markdown code fences if present (```json ... ```)
+            if (aiJsonText.StartsWith("```"))
+            {
+                int firstNewline = aiJsonText.IndexOf('\n');
+                if (firstNewline != -1)
+                {
+                    aiJsonText = aiJsonText.Substring(firstNewline + 1);
+                }
+                int lastFence = aiJsonText.LastIndexOf("```");
+                if (lastFence != -1)
+                {
+                    aiJsonText = aiJsonText.Substring(0, lastFence);
+                }
+                aiJsonText = aiJsonText.Trim();
+            }
 
             try
             {

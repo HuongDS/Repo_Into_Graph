@@ -23,6 +23,8 @@ class AnalyzeResponse(BaseModel):
     isValid: bool
     sloc: int
     vg: int
+    rootNodeType: str
+    hasError: bool
 
 @app.post("/api/analyze-context", response_model=AnalyzeResponse)
 async def analyze_context(req: AnalyzeRequest):
@@ -46,12 +48,14 @@ async def analyze_context(req: AnalyzeRequest):
     }
     ext = ext_map.get(lang, "cs")
     
-    is_valid, vg, sloc = analyze_ast(code, ext)
+    is_valid, vg, sloc, root_node_type = analyze_ast(code, ext)
     
     return AnalyzeResponse(
         isValid=is_valid,
         sloc=sloc,
-        vg=vg
+        vg=vg,
+        rootNodeType=root_node_type,
+        hasError=not is_valid
     )
 
 if __name__ == "__main__":

@@ -67,24 +67,83 @@ dotnet ef database update --project Repo_Into_Graph_DataAccess --startup-project
 
 ---
 
+## Hướng dẫn Chạy Python Microservice (Service phụ toàn dự án)
+
+Dự án sử dụng một **Python FastAPI Microservice** làm service phân tích mã nguồn (AST, SLOC, V(G)) dùng chung cho các tầng trong kiến trúc. Service này **phải được khởi động trước khi chạy .NET API**.
+
+### Yêu cầu
+- Python 3.10+
+- Các thư viện: `fastapi`, `uvicorn`, `tree-sitter`, `tree-sitter-java`, `tree-sitter-c-sharp`, `tree-sitter-python`
+
+```bash
+cd ContextRouter_Microservice
+pip install -r requirements.txt
+```
+
+### Khởi động Server
+```bash
+# Windows — chạy bằng file bat có sẵn:
+ContextRouter_Microservice\run_server.bat
+
+# Hoặc chạy thủ công:
+python main.py
+```
+Server sẽ khởi động tại `http://localhost:8000`. Endpoint phân tích: `POST /api/analyze-context`.
+
+---
+
 ## Hướng dẫn Chạy Bộ công cụ Kiểm thử (Benchmark Tools)
 
-Dự án có đi kèm một bộ công cụ kiểm thử tự động (được đặt trong thư mục `benchmark_tools/`). Bộ công cụ này cung cấp giao diện trực quan (GUI) để gọi các API đánh giá độ bao phủ (Coverage), độ chính xác (Accuracy), độ phức tạp (Difficulty) và ghi kết quả tự động ra file Excel.
+Toàn bộ công cụ kiểm thử nằm trong thư mục `benchmark_tools/`, được chia theo từng tầng:
 
-### 1. Yêu cầu cài đặt
-- Cài đặt **Python 3.9+** (https://www.python.org/downloads/)
-- Cài đặt các thư viện Python cần thiết bằng pip:
+```
+benchmark_tools/
+├── Tang_1_Router/          ← Kiểm định Tầng 1 (Adaptive Context Router)
+├── Tang_2_Hybrid_Context/  ← Kiểm định Tầng 2 (Hybrid Context Generator)
+└── Tang_3_QA/              ← Kiểm định Tầng 3 (Question Generation & Assessment)
+```
 
+### Yêu cầu cài đặt chung
 ```bash
 pip install customtkinter requests openpyxl
 ```
 
-### 2. Cách chạy phần mềm Benchmark (GUI)
-1. Hãy chắc chắn rằng **Backend API (.NET) đang được chạy** (Vì công cụ Benchmark sẽ gọi đến `https://localhost:55060`).
-2. Mở terminal tại thư mục gốc của dự án và chạy:
+### Tầng 1 – Adaptive Context Router Benchmark
+> Cần: **Python Microservice đang chạy** + **.NET API đang chạy**
 
 ```bash
-python benchmark_tools/run_gui_benchmark.py
+# Nhấp đúp vào file:
+benchmark_tools\Tang_1_Router\run_tang_1.bat
+
+# Hoặc chạy thủ công:
+cd benchmark_tools\Tang_1_Router
+python run_router_benchmark.py
 ```
-3. Giao diện (Dashboard) sẽ hiện ra. Bạn chỉ cần nạp file Excel danh sách nghiệp vụ, chọn phương pháp đánh giá (Traditional / CFG / Cả hai) và bấm "CHẠY BENCHMARK". 
-4. Hệ thống sẽ tự động tổng hợp số liệu và tạo ra file `CFG_vs_Traditional_Benchmark_Template.xlsx` cùng các log JSON chi tiết nằm trong thư mục `benchmark_logs/`. Mọi dữ liệu thử nghiệm đều được lưu vết để dễ dàng Audit (Kiểm chứng).
+Nạp file `Checklist_Kiem_Dinh_Tang_1_Router.xlsx` vào giao diện và nhấn **CHẠY BENCHMARK**.
+
+### Tầng 2 – Hybrid Context Generator Benchmark
+> Cần: **.NET API đang chạy**
+
+```bash
+# Nhấp đúp vào file:
+benchmark_tools\Tang_2_Hybrid_Context\run_tang_2.bat
+
+# Hoặc chạy thủ công:
+cd benchmark_tools\Tang_2_Hybrid_Context
+python run_hybrid_benchmark.py
+```
+Nạp file `Checklist_Test_Tang_2_Handover.xlsx` vào giao diện và nhấn **CHẠY BENCHMARK**.  
+Nhấp đúp vào bất kỳ hàng kết quả nào để xem payload đã gửi & response nhận về chi tiết.
+
+### Tầng 3 – QA Assessment Benchmark
+> Cần: **.NET API đang chạy**
+
+```bash
+# Nhấp đúp vào file:
+benchmark_tools\Tang_3_QA\run_tang_3.bat
+
+# Hoặc chạy thủ công:
+cd benchmark_tools\Tang_3_QA
+python run_gui_benchmark.py
+```
+

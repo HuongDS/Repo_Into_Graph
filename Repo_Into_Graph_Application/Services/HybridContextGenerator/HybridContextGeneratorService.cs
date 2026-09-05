@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Repo_Into_Graph_Application.Dtos.HybridContextGenerator;
 using Repo_Into_Graph_Application.Services.HybridContextGenerator.Internal;
@@ -29,18 +31,28 @@ namespace Repo_Into_Graph_Application.Services.HybridContextGenerator
         private const int MaxSourceLength = 200_000;
 
         private readonly ILogger<HybridContextGeneratorService> _logger;
+        private readonly StructureServiceClient _structureClient;
+        private readonly bool _useTreeSitter;
 
-        public HybridContextGeneratorService(ILogger<HybridContextGeneratorService> logger)
+        public HybridContextGeneratorService(
+            HttpClient httpClient,
+            IConfiguration configuration,
+            ILogger<HybridContextGeneratorService> logger)
         {
             _logger = logger;
+
+            string pythonUrl = configuration["PythonMicroserviceUrl"] ?? "http://localhost:8000";
+            _useTreeSitter = !string.Equals(configuration["HybridContextUseTreeSitter"], "false",
+                                            StringComparison.OrdinalIgnoreCase);
+            _structureClient = new StructureServiceClient(httpClient, pythonUrl);
         }
 
-        public Task<HybridContextOutputDto> GenerateAsync(HybridContextInputDto input)
+        public async Task<HybridContextOutputDto> GenerateAsync(HybridContextInputDto input)
         {
-            return Task.FromResult(Generate(input));
+            return await GenerateInternalAsync(input);
         }
 
-        private HybridContextOutputDto Generate(HybridContextInputDto input)
+        private async Task<HybridContextOutputDto> GenerateInternalAsync(HybridContextInputDto input)
         {
             var stopwatch = Stopwatch.StartNew();
 
@@ -107,29 +119,64 @@ namespace Repo_Into_Graph_Application.Services.HybridContextGenerator
                 }
 
                 // -- 1. Phan tich cau truc ma nguon --------------------------
+                // Uu tien tree-sitter (qua Python Microservice, cung bo parser voi Tang 1).
+                // Service khong san sang -> tu dong quay ve parser noi bo, khong bao gio chet.
                 var scanner = new SourceScanner(rawCode);
-                var parser = new CodeStructureParser(scanner);
-                var methods = parser.ExtractMethods();
+                List<MethodDecl> methods;
 
-                if (methods.Count == 0)
+                var remote = _useTreeSitter
+                    ? await _structureClient.TryParseAsync(rawCode, output.Language)
+                    : null;
+
+                if (remote != null && remote.Methods.Count > 0)
                 {
-                    // Ma nguon chi la mot doan lenh (khong co khai bao ham) -> tao ham gia lap
-                    methods.Add(new MethodDecl
+                    methods = remote.Methods;
+                    output.Parser = remote.Parser;
+
+                    foreach (var warning in remote.Warnings)
                     {
-                        Name = string.IsNullOrWhiteSpace(input.ModuleId) ? "code" : input.ModuleId,
-                        Signature = "(code block)",
-                        BodyStart = 0,
-                        BodyEnd = rawCode.Length,
-                        StartLine = 1,
-                        IsSynthetic = true
-                    });
-                    output.Warnings.Add("Khong tim thay khai bao ham - CFG duoc dung tren toan bo doan ma nguon.");
-                    degraded = true;
-                }
+                        output.Warnings.Add(warning);
+                    }
 
-                foreach (var method in methods)
+                    if (remote.HasError)
+                    {
+                        output.Warnings.Add("tree-sitter bao cay cu phap co node loi - CFG la best-effort.");
+                        degraded = true;
+                    }
+                }
+                else
                 {
-                    method.Body = parser.ParseStatements(method.BodyStart, method.BodyEnd);
+                    output.Parser = "builtin";
+                    if (_useTreeSitter)
+                    {
+                        output.Warnings.Add(
+                            "Khong goi duoc /api/parse-structure (Python Microservice) - " +
+                            "da dung bo parser noi bo cua .NET.");
+                    }
+
+                    var parser = new CodeStructureParser(scanner);
+                    methods = parser.ExtractMethods();
+
+                    if (methods.Count == 0)
+                    {
+                        // Ma nguon chi la mot doan lenh (khong co khai bao ham) -> tao ham gia lap
+                        methods.Add(new MethodDecl
+                        {
+                            Name = string.IsNullOrWhiteSpace(input.ModuleId) ? "code" : input.ModuleId,
+                            Signature = "(code block)",
+                            BodyStart = 0,
+                            BodyEnd = rawCode.Length,
+                            StartLine = 1,
+                            IsSynthetic = true
+                        });
+                        output.Warnings.Add("Khong tim thay khai bao ham - CFG duoc dung tren toan bo doan ma nguon.");
+                        degraded = true;
+                    }
+
+                    foreach (var method in methods)
+                    {
+                        method.Body = parser.ParseStatements(method.BodyStart, method.BodyEnd);
+                    }
                 }
 
                 // -- 2. Dung CFG skeleton ------------------------------------
@@ -211,9 +258,9 @@ namespace Repo_Into_Graph_Application.Services.HybridContextGenerator
                 output.ProcessingTimeMs = stopwatch.ElapsedMilliseconds;
 
                 _logger?.LogInformation(
-                    "[Tang 2] Module '{ModuleId}' | {Language} | Status: {Status} | " +
+                    "[Tang 2] Module '{ModuleId}' | {Language} | Parser: {Parser} | Status: {Status} | " +
                     "Nodes: {Nodes} | Edges: {Edges} | Snippets: {Snippets} | {Elapsed} ms",
-                    output.ModuleId, output.Language, output.Status,
+                    output.ModuleId, output.Language, output.Parser, output.Status,
                     output.CfgNodes.Count, output.CfgEdges.Count,
                     output.CriticalSnippets.Count, output.ProcessingTimeMs);
 

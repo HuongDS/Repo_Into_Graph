@@ -42,6 +42,13 @@ namespace Repo_Into_Graph_Application.Dtos.HybridContextGenerator
         [JsonPropertyName("language")]
         public string Language { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Bo phan tich da dung: "tree-sitter" (qua Python Microservice) hoac
+        /// "builtin" (parser noi bo cua .NET khi service khong san sang).
+        /// </summary>
+        [JsonPropertyName("parser")]
+        public string Parser { get; set; } = "builtin";
+
         /// <summary>Thong diep mo ta ket qua xu ly.</summary>
         [JsonPropertyName("message")]
         public string Message { get; set; } = string.Empty;

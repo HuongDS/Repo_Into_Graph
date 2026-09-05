@@ -510,7 +510,8 @@ class HybridBenchmarkApp(ctk.CTk):
 
                 # --- Du lieu: cot CFG that giong cot "Ky Vong CFG", ghi chu giong cot "Muc Tieu" ---
                 safe_write(tc["row"], 8, status)
-                safe_write(tc["row"], 9, str(response_data.get("cfgSkeleton", ""))[:2000])
+                safe_write(tc["row"], 9,
+                           str(response_data.get("cfgSkeleton", "")).replace("\r\n", "\n")[:2000])
                 safe_write(tc["row"], 10, ghi_chu)
                 style_like(tc["row"], 9, tc["row"], 6)
                 style_like(tc["row"], 10, tc["row"], 2)

@@ -73,13 +73,14 @@ class HybridBenchmarkApp(ctk.CTk):
                             border_width=1, border_color="#E2E8F0")
         dash.pack(side="right", padx=10)
 
+        dark_colors = {"#10B981": "#059669", "#EF4444": "#DC2626"}
         for label, color, attr in [("PASS", "#10B981", "pass_label"),
                                     ("FAIL", "#EF4444", "fail_label")]:
             box = ctk.CTkFrame(dash, fg_color="transparent")
             box.pack(side="left", padx=22, pady=12)
             ctk.CTkLabel(box, text=label, font=self.f_bold, text_color=color).pack()
             lbl = ctk.CTkLabel(box, text="0", font=self.f_dashboard,
-                               text_color=color.replace("B981", "6D5A").replace("4444", "C2626"))
+                               text_color=dark_colors[color])
             lbl.pack()
             setattr(self, attr, lbl)
 

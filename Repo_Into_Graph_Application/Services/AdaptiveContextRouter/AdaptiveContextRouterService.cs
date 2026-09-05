@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Repo_Into_Graph_Application.Dtos.AdaptiveContextRouter;
+using Repo_Into_Graph_Application.Dtos.HybridContextGenerator;
+using Repo_Into_Graph_Application.Services.HybridContextGenerator;
 using System;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -11,11 +13,16 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
     {
         private readonly HttpClient _httpClient;
         private readonly string _pythonServiceUrl;
+        private readonly IHybridContextGeneratorService _hybridContextGeneratorService;
 
-        public AdaptiveContextRouterService(HttpClient httpClient, IConfiguration configuration)
+        public AdaptiveContextRouterService(
+            HttpClient httpClient,
+            IConfiguration configuration,
+            IHybridContextGeneratorService hybridContextGeneratorService)
         {
             _httpClient = httpClient;
             _pythonServiceUrl = configuration["PythonMicroserviceUrl"] ?? "http://localhost:8000";
+            _hybridContextGeneratorService = hybridContextGeneratorService;
         }
 
         public async Task<RouterDecisionDto> EvaluateCodeContextAsync(RouterRequestDto request)
@@ -25,13 +32,13 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                 return new RouterDecisionDto
                 {
                     IsValidSyntax = false,
-                    Message = "Mã nguồn đầu vào không được để trống."
+                    Message = "Ma nguon dau vao khong duoc de trong."
                 };
             }
 
             try
             {
-                // 2 & 3. Gọi qua FastAPI Python để Parse AST, đếm SLOC, đếm V(G)
+                // --- TANG 1: Goi Python Microservice de phan tich AST, SLOC, V(G) ---
                 var apiUrl = $"{_pythonServiceUrl}/api/analyze-context";
                 var pythonResponse = await _httpClient.PostAsJsonAsync(apiUrl, new
                 {
@@ -44,7 +51,7 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                     return new RouterDecisionDto
                     {
                         IsValidSyntax = false,
-                        Message = $"Lỗi giao tiếp với Python Engine: {pythonResponse.ReasonPhrase}"
+                        Message = $"Loi giao tiep voi Python Engine: {pythonResponse.ReasonPhrase}"
                     };
                 }
 
@@ -54,7 +61,7 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                     return new RouterDecisionDto
                     {
                         IsValidSyntax = false,
-                        Message = "Dữ liệu trả về từ Python Engine bị null hoặc sai định dạng."
+                        Message = "Du lieu tra ve tu Python Engine bi null hoac sai dinh dang."
                     };
                 }
 
@@ -65,11 +72,11 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                         IsValidSyntax = false,
                         Sloc = analysisResult.Sloc,
                         Vg = analysisResult.Vg,
-                        Message = "Mã nguồn có chứa lỗi cú pháp biên dịch (Syntax Error)."
+                        Message = "Ma nguon co chua loi cu phap bien dich (Syntax Error)."
                     };
                 }
 
-                // 4. Phân luồng (Decision Routing)
+                // --- DECISION ROUTING (Tang 1 Output) ---
                 var decision = new RouterDecisionDto
                 {
                     IsValidSyntax = true,
@@ -80,12 +87,34 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                 if (decision.Sloc < 25 || decision.Vg <= 2)
                 {
                     decision.SelectedRoute = RoutingType.RawCode;
-                    decision.Message = "Hàm đơn giản, định tuyến sử dụng Mã Nguồn Gốc (Raw Code).";
+                    decision.Message = "Ham don gian, dinh tuyen su dung Ma Nguon Goc (Raw Code).";
                 }
                 else
                 {
                     decision.SelectedRoute = RoutingType.HybridGraph;
-                    decision.Message = "Hàm phức tạp, định tuyến sang Tầng 2: Ngữ cảnh Lai (Hybrid Graph).";
+                    decision.Message = "Ham phuc tap, dinh tuyen sang Tang 2: Ngu canh Lai (Hybrid Graph).";
+
+                    // --- HANDOFF: Dong goi va chuyen tiep sang Tang 2 ---
+                    var hybridInput = new HybridContextInputDto
+                    {
+                        ModuleId = request.ModuleId,
+                        Language = request.Language.ToLower(),
+                        RoutingDecision = "ROUTE_HYBRID",
+                        Metrics = new HybridContextMetricsDto
+                        {
+                            Sloc = analysisResult.Sloc,
+                            CyclomaticComplexity = analysisResult.Vg
+                        },
+                        RawSourceCode = request.SourceCode,
+                        AstPayload = new AstPayloadDto
+                        {
+                            ParserType = "tree-sitter",
+                            RootNodeType = analysisResult.RootNodeType,
+                            HasError = analysisResult.HasError
+                        }
+                    };
+
+                    decision.HybridContextResult = await _hybridContextGeneratorService.GenerateAsync(hybridInput);
                 }
 
                 return decision;
@@ -95,7 +124,7 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                 return new RouterDecisionDto
                 {
                     IsValidSyntax = false,
-                    Message = $"Có lỗi ngoại lệ xảy ra trong quá trình đánh giá: {ex.Message}"
+                    Message = $"Co loi ngoai le xay ra trong qua trinh danh gia: {ex.Message}"
                 };
             }
         }

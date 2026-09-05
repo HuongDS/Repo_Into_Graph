@@ -17,8 +17,8 @@ for ext, lang in LANGUAGES.items():
 
 def analyze_ast(code: str, language_ext: str):
     """
-    Phân tích AST để đếm V(G) và check syntax error.
-    Trả về (is_valid, vg)
+    Phân tích AST để đếm V(G), LSLOC và lấy AST metadata.
+    Trả về (is_valid, vg, lsloc, root_node_type)
     """
     ext = language_ext.lower()
     if ext not in PARSERS:
@@ -99,4 +99,5 @@ def analyze_ast(code: str, language_ext: str):
             
     traverse(tree.root_node)
     
-    return is_valid, vg, lsloc
+    root_node_type = tree.root_node.type if tree.root_node else "unknown"
+    return is_valid, vg, lsloc, root_node_type

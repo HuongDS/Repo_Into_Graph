@@ -2,12 +2,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Repo_Into_Graph_Application.Services.AI;
 using Repo_Into_Graph_Application.Services.Analysis;
 using Repo_Into_Graph_Application.Services.Caculation;
+using Repo_Into_Graph_Application.Services.Features;
+using Repo_Into_Graph_Application.Services.AdaptiveContextRouter;
 using Repo_Into_Graph_Application.Services.CodeQueryable;
 using Repo_Into_Graph_Application.Services.DataFlowParser;
 using Repo_Into_Graph_Application.Services.Features;
 using Repo_Into_Graph_Application.Services.FewShot;
 using Repo_Into_Graph_Application.Services.GitService;
 using Repo_Into_Graph_Application.Services.Mapper;
+using Repo_Into_Graph_Application.Services.AdaptiveContextRouter;
 using Repo_Into_Graph_Application.Services.QuestionGenerate;
 using Repo_Into_Graph_Application.Services.WorkflowAssessment;
 using Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvaluate;
@@ -56,7 +59,11 @@ namespace Repo_Into_Graph_API.Extensions
             services.AddScoped<IDifficultyAssessmentService, DifficultyAssessmentService>();
             services.AddScoped<ISemanticMappingHelper, SemanticMappingHelper>();
 
-            // AI Services
+            // Adaptive Context Router (Tầng 1)
+            services.AddHttpClient<IAdaptiveContextRouterService, AdaptiveContextRouterService>();
+            services.AddScoped<IAdaptiveContextRouterService, AdaptiveContextRouterService>();
+
+            // AI & Embedding
             services.AddScoped<Repo_Into_Graph_Application.Services.AI.IEmbeddingService, Repo_Into_Graph_Application.Services.AI.EmbeddingService>();
 
             // AutoMapper

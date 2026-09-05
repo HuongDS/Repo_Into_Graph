@@ -575,3 +575,7 @@ benchmark_logs/
 # Benchmark local data
 CFG_vs_Traditional_Benchmark_Template.xlsx
 DanhSachNghiepVu.xlsx
+
+# Auto-generated benchmark result files
+*_Results.xlsx
+checklist.json

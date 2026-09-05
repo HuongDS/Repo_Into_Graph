@@ -63,7 +63,7 @@ namespace Repo_Into_Graph_API.Extensions
             services.AddHttpClient<IAdaptiveContextRouterService, AdaptiveContextRouterService>();
             services.AddScoped<IAdaptiveContextRouterService, AdaptiveContextRouterService>();
 
-            // Hybrid Context Generator (Tang 2 - Stub)
+            // Hybrid Context Generator (Tang 2 - CFG skeleton + Enriched Metadata + Critical Snippets)
             services.AddScoped<IHybridContextGeneratorService, HybridContextGeneratorService>();
 
             // AI & Embedding

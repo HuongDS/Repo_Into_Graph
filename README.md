@@ -4,7 +4,7 @@
 
 Đây là hệ thống Backend API của dự án **Repo Into Graph**. Codebase được thiết kế theo cấu trúc 3 lớp (3-layer architecture) để đảm bảo khả năng mở rộng, dễ bảo trì và phân tách trách nhiệm rõ ràng.
 
-## 🏗 Kiến trúc Hệ thống (Architecture)
+## Kiến trúc Hệ thống (Architecture)
 
 Dự án bao gồm 3 phân hệ chính:
 
@@ -27,7 +27,7 @@ Dự án bao gồm 3 phân hệ chính:
 
 ---
 
-## 🚀 Hướng dẫn Chạy Backend API
+## Hướng dẫn Chạy Backend API
 
 ### Yêu cầu hệ thống (Prerequisites)
 - .NET 8.0 SDK
@@ -67,7 +67,7 @@ dotnet ef database update --project Repo_Into_Graph_DataAccess --startup-project
 
 ---
 
-## 🛠 Hướng dẫn Chạy Python Microservice (Service phụ toàn dự án)
+## Hướng dẫn Chạy Python Microservice (Service phụ toàn dự án)
 
 Dự án sử dụng một **Python FastAPI Microservice** làm service phân tích mã nguồn (AST, SLOC, V(G)) dùng chung cho các tầng trong kiến trúc. Service này **phải được khởi động trước khi chạy .NET API**.
 
@@ -92,7 +92,7 @@ Server sẽ khởi động tại `http://localhost:8000`. Endpoint phân tích: 
 
 ---
 
-## 🛠 Hướng dẫn Chạy Bộ công cụ Kiểm thử (Benchmark Tools)
+## Hướng dẫn Chạy Bộ công cụ Kiểm thử (Benchmark Tools)
 
 Toàn bộ công cụ kiểm thử nằm trong thư mục `benchmark_tools/`, được chia theo từng tầng:
 

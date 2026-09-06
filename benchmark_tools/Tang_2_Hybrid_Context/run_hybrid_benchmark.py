@@ -30,6 +30,85 @@ def parse_tier1_input(s: str) -> dict:
     return result
 
 
+# =====================================================================
+# SO SANH CAU TRUC CFG (thay cho so khop chuoi nguyen van)
+# ---------------------------------------------------------------------
+# Cot "Ky Vong Khung CFG" trong checklist duoc viet tay, nhan node la mo ta
+# nghiep vu ("Check Quota", "Send Async Email: Async, Independent") nen khong
+# bo sinh CFG tinh nao tao ra dung tung ky tu. Vi vay ta cham theo CAU TRUC:
+#   1. So node quyet dinh (decision) phai >= ky vong
+#   2. Moi dieu kien ky vong phai co node quyet dinh tuong ung
+#   3. Moi node throw ky vong phai xuat hien
+#   4. Nhan canh Yes/No phai co du
+#   5. Do phu tu khoa tong the >= 60%
+# =====================================================================
+STOP_WORDS = {"start", "end", "graph", "td", "yes", "no", "the", "a", "an"}
+
+
+def _cfg_tokens(text):
+    return [t.lower() for t in re.findall(r"[A-Za-z_]\w*", text or "")]
+
+
+def _cfg_parse(mermaid):
+    """Tach so do Mermaid thanh: nhan decision, nhan throw, nhan node, nhan canh."""
+    text = mermaid or ""
+    decisions = [m.group(1).strip(' "') for m in re.finditer(r"\{([^{}]+)\}", text)]
+    nodes = [m.group(1).strip(' "') for m in re.finditer(r"\[([^\[\]]+)\]", text)]
+    throws = [n for n in nodes if n.lower().startswith("throw")]
+    edges = [m.group(1).strip() for m in re.finditer(r"--\s*([^->]+?)\s*-->", text)]
+    return {"decisions": decisions, "nodes": nodes, "throws": throws, "edges": edges}
+
+
+def _cfg_match_label(expected_label, actual_labels):
+    """Nhan khop neu >=60% tu khoa cua ky vong xuat hien trong mot nhan thuc te."""
+    exp = [t for t in _cfg_tokens(expected_label) if t not in STOP_WORDS]
+    if not exp:
+        return True
+    for actual in actual_labels:
+        act_text = " ".join(_cfg_tokens(actual))
+        hit = sum(1 for t in exp if t in act_text)
+        if hit / len(exp) >= 0.6:
+            return True
+    return False
+
+
+def compare_cfg_structure(expected, actual):
+    """Tra ve (dat_yeu_cau, mo_ta_loi)."""
+    if not (expected or "").strip():
+        return True, ""
+    if not (actual or "").strip():
+        return False, "cfgSkeleton rong. "
+
+    exp, act = _cfg_parse(expected), _cfg_parse(actual)
+    problems = []
+
+    if len(act["decisions"]) < len(exp["decisions"]):
+        problems.append("thieu node quyet dinh (%d/%d)" % (len(act["decisions"]), len(exp["decisions"])))
+
+    for d in exp["decisions"]:
+        if not _cfg_match_label(d, act["decisions"]):
+            problems.append("thieu dieu kien '%s'" % d[:32])
+
+    for t in exp["throws"]:
+        if not _cfg_match_label(t, act["throws"] + act["nodes"]):
+            problems.append("thieu node throw '%s'" % t[:32])
+
+    for lbl in ("Yes", "No"):
+        need = sum(1 for e in exp["edges"] if e.lower() == lbl.lower())
+        got = sum(1 for e in act["edges"] if e.lower() == lbl.lower())
+        if got < need:
+            problems.append("thieu canh '%s' (%d/%d)" % (lbl, got, need))
+
+    exp_all = [t for t in _cfg_tokens(expected) if t not in STOP_WORDS]
+    act_text = " ".join(_cfg_tokens(actual))
+    coverage = (sum(1 for t in set(exp_all) if t in act_text) / len(set(exp_all))) if exp_all else 1.0
+    if coverage < 0.6:
+        problems.append("do phu tu khoa chi %.0f%%" % (coverage * 100))
+
+    if problems:
+        return False, "CFG lech cau truc: " + "; ".join(problems) + ". "
+    return True, ""
+
 class HybridBenchmarkApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -353,12 +432,13 @@ class HybridBenchmarkApp(ctk.CTk):
                         else:
                             is_pass = True
 
-                        # Assert 2: CFG skeleton kỳ vọng — khi Tang 2 implement
-                        # sẽ so sánh nội dung trường cfgSkeleton. Hiện stub → skip
+                        # Assert 2: CFG skeleton - cham theo CAU TRUC (xem compare_cfg_structure)
                         if tc["kv_cfg"].strip() and "cfgSkeleton" in response_data:
-                            if tc["kv_cfg"].strip() not in str(response_data["cfgSkeleton"]):
+                            cfg_ok, cfg_note = compare_cfg_structure(
+                                tc["kv_cfg"], str(response_data["cfgSkeleton"]))
+                            if not cfg_ok:
                                 is_pass = False
-                                ghi_chu += "CFG skeleton không khớp kỳ vọng. "
+                                ghi_chu += cfg_note
 
                         # Assert 3: Critical snippets — tương tự
                         if tc["kv_snippet"].strip() and "criticalSnippets" in response_data:
@@ -410,7 +490,41 @@ class HybridBenchmarkApp(ctk.CTk):
                     if not isinstance(cell, MergedCell):
                         cell.value = v
 
+                from copy import copy as _copy
+                from openpyxl.styles import Font, PatternFill
+
+                def style_like(dst_row, dst_col, src_row, src_col):
+                    """Sao dinh dang tu mot o san co trong bang sang o moi."""
+                    dst = ws.cell(row=dst_row, column=dst_col)
+                    if isinstance(dst, MergedCell):
+                        return
+                    dst._style = _copy(ws.cell(row=src_row, column=src_col)._style)
+
+                # --- Tieu de 2 cot bo sung: dinh dang giong hang tieu de san co ---
+                safe_write(4, 9, "CFG Thực Tế (Tầng 2 sinh ra)")
+                safe_write(4, 10, "Ghi Chú")
+                style_like(4, 9, 4, 6)
+                style_like(4, 10, 4, 7)
+                ws.column_dimensions["I"].width = 40
+                ws.column_dimensions["J"].width = 32
+
+                # --- Du lieu: cot CFG that giong cot "Ky Vong CFG", ghi chu giong cot "Muc Tieu" ---
                 safe_write(tc["row"], 8, status)
+                safe_write(tc["row"], 9,
+                           str(response_data.get("cfgSkeleton", "")).replace("\r\n", "\n")[:2000])
+                safe_write(tc["row"], 10, ghi_chu)
+                style_like(tc["row"], 9, tc["row"], 6)
+                style_like(tc["row"], 10, tc["row"], 2)
+
+                # --- To mau o Trang Thai cho de nhin ---
+                status_cell = ws.cell(row=tc["row"], column=8)
+                if not isinstance(status_cell, MergedCell):
+                    if status == "PASS":
+                        status_cell.font = Font(name="Arial", size=10, bold=True, color="FF065F46")
+                        status_cell.fill = PatternFill("solid", fgColor="FFD1FAE5")
+                    else:
+                        status_cell.font = Font(name="Arial", size=10, bold=True, color="FF991B1B")
+                        status_cell.fill = PatternFill("solid", fgColor="FFFEE2E2")
 
                 # Cập nhật bảng kết quả
                 cfg_short = (tc["kv_cfg"][:60] + "…") if len(tc["kv_cfg"]) > 60 else tc["kv_cfg"]

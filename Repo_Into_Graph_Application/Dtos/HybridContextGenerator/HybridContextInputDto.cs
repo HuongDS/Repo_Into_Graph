@@ -50,15 +50,4 @@
         public string RootNodeType { get; set; } = string.Empty;
         public bool HasError { get; set; }
     }
-
-    /// <summary>
-    /// Output placeholder tu Tang 2 Stub.
-    /// Se duoc mo rong khi implement Tang 2 day du.
-    /// </summary>
-    public class HybridContextOutputDto
-    {
-        public string ModuleId { get; set; } = string.Empty;
-        public string Status { get; set; } = "PENDING";
-        public string Message { get; set; } = string.Empty;
-    }
 }

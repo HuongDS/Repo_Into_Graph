@@ -58,6 +58,47 @@ async def analyze_context(req: AnalyzeRequest):
         hasError=not is_valid
     )
 
+# =====================================================================
+# TANG 2 - HYBRID CONTEXT GENERATOR
+# Endpoint phan tich cau truc ma nguon bang tree-sitter, tra ve cay cau lenh
+# chuan hoa cho Tang 2 dung de dung CFG.
+# Phan Tang 1 phia tren KHONG bi sua doi.
+# =====================================================================
+from cfg_structure import parse_structure
+
+MAX_STRUCTURE_CODE_LENGTH = 200_000
+
+
+class StructureRequest(BaseModel):
+    code: str
+    language: str
+
+
+@app.post("/api/parse-structure")
+async def parse_structure_endpoint(req: StructureRequest):
+    """Tra ve cay cau lenh (methods -> statements) do tree-sitter phan tich."""
+    code = req.code or ""
+    if len(code) > MAX_STRUCTURE_CODE_LENGTH:
+        code = code[:MAX_STRUCTURE_CODE_LENGTH]
+
+    if not code.strip():
+        return {"ok": False, "parser": "tree-sitter", "error": "code rong",
+                "methods": [], "warnings": [], "hasError": False,
+                "language": req.language}
+
+    try:
+        return parse_structure(code, req.language)
+    except Exception as ex:      # tra loi ve de .NET tu quyet dinh fallback
+        return {"ok": False, "parser": "tree-sitter", "error": str(ex),
+                "methods": [], "warnings": [], "hasError": True,
+                "language": req.language}
+
+
+@app.get("/api/parse-structure/health")
+async def parse_structure_health():
+    return {"ok": True, "service": "tang2-structure", "parser": "tree-sitter"}
+
+
 if __name__ == "__main__":
     import uvicorn
     # Chạy trên port 8000

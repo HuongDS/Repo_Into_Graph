@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Repo_Into_Graph_Application.Services.AI;
 using Repo_Into_Graph_Application.Services.Analysis;
 using Repo_Into_Graph_Application.Services.Caculation;
@@ -63,7 +63,8 @@ namespace Repo_Into_Graph_API.Extensions
             services.AddHttpClient<IAdaptiveContextRouterService, AdaptiveContextRouterService>();
             services.AddScoped<IAdaptiveContextRouterService, AdaptiveContextRouterService>();
 
-            // Hybrid Context Generator (Tang 2 - Stub)
+            // Hybrid Context Generator (Tang 2 - CFG skeleton + Enriched Metadata + Critical Snippets)
+            services.AddHttpClient<IHybridContextGeneratorService, HybridContextGeneratorService>();
             services.AddScoped<IHybridContextGeneratorService, HybridContextGeneratorService>();
 
             // AI & Embedding

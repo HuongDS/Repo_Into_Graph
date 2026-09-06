@@ -1,7 +1,7 @@
 # TẦNG 2 — HYBRID CONTEXT GENERATOR — Tài liệu triển khai
 
-> **Nhánh:** `Main` · **Ngôn ngữ:** C# (.NET 8) + Python · **Tổng:** ~4.100 dòng, 13 file mới + 4 file sửa
-> **Phạm vi:** logic Tầng 1 không bị sửa — `main.py` chỉ được chèn thêm endpoint `/api/parse-structure` ở cuối file
+> **Nhánh:** `master` · **Ngôn ngữ:** Python (lõi xử lý) + C# (.NET 8, điều phối) · **Tổng:** ~2.100 dòng
+> **Phạm vi:** logic Tầng 1 không bị sửa — `main.py` chỉ được chèn thêm endpoint `/api/generate-hybrid-context` ở cuối file
 > **Author:** Slazenger
 ---
 
@@ -15,9 +15,11 @@ Nhận một đoạn mã nguồn đã được Tầng 1 định tuyến sang `RO
 | **Critical Snippets** | Điều kiện rẽ nhánh chính xác là gì? | Các dòng code quyết định, giữ nguyên văn |
 | **Enriched Metadata** | Hàm này phụ thuộc ai, ném lỗi gì, có async không? | Thông tin ngữ cảnh xung quanh |
 
-Ba phần được ghép thành `hybrid_prompt` — nạp thẳng vào prompt của Tầng 3 để LLM sinh câu hỏi kiểm thử.
+Ba phần được ghép thành `hybrid_prompt` — nạp thẳng vào prompt của Tầng 3.
 
-**Phân tích cú pháp dùng chung tree-sitter với Tầng 1.** Tầng 2 gọi endpoint `/api/parse-structure` trong `main.py` để lấy cây câu lệnh do tree-sitter dựng. Nếu service không sẵn sàng, Tầng 2 **tự động quay về bộ parser nội bộ viết bằng C#** — không bao giờ chết. Trường `parser` trong response cho biết lần chạy đó dùng bộ nào.
+**Toàn bộ lõi xử lý nằm trong Python, cùng tiến trình với Tầng 1.** Mã nguồn được tree-sitter phân tích một lần rồi Tầng 2 duyệt thẳng trên cây trong RAM — không có bước tuần tự hoá trung gian, không có vòng HTTP qua lại. Mỗi lần sinh mất **0–1 ms**.
+
+**.NET chỉ đóng vai trò điều phối:** kiểm tra đầu vào, gọi một lần `/api/generate-hybrid-context`, trả nguyên kết quả về cho Orchestrator. Không có bộ phân tích thứ hai viết bằng C#.
 
 ---
 
@@ -25,101 +27,67 @@ Ba phần được ghép thành `hybrid_prompt` — nạp thẳng vào prompt c�
 
 ```mermaid
 graph TD
-  IN[HybridContextInputDto<br/>từ Tầng 1] --> V{Kiểm tra đầu vào}
-  V -- RawSourceCode rỗng --> FAIL[status = FAILED]
-  V -- Hợp lệ --> S1[1 · SourceScanner<br/>che comment và chuỗi]
-  S1 --> P{tree-sitter sẵn sàng?}
-  P -- Có --> T[2a · /api/parse-structure<br/>tree-sitter dựng cây câu lệnh]
-  P -- Không --> B2[2b · CodeStructureParser<br/>parser nội bộ dự phòng]
-  T --> S2[cây câu lệnh chuẩn hoá]
-  B2 --> S2
-  S2 --> S3[3 · SelectFocusMethods<br/>chọn hàm mục tiêu theo ModuleId]
-  S3 --> S4[4 · CfgBuilder<br/>dựng node và cạnh CFG]
-  S4 --> S5[5 · MermaidRenderer<br/>xuất graph TD]
-  S4 --> S6[6 · CriticalSnippetExtractor<br/>trích code quan trọng]
-  S1 --> S7[7 · EnrichedMetadataExtractor<br/>async, annotation, dependency]
-  S5 --> S8[8 · HybridPromptComposer]
-  S6 --> S8
-  S7 --> S8
-  S8 --> S9[9 · Tính metrics và token saving]
-  S9 --> OUT[HybridContextOutputDto]
+  IN[HybridContextInputDto<br/>từ Orchestrator] --> NET[.NET · HybridContextGeneratorService<br/>kiểm tra đầu vào]
+  NET --> HTTP[POST /api/generate-hybrid-context<br/>một lần duy nhất]
+  HTTP --> PY[Python · generate_hybrid_context]
+  PY --> S1[1 · tree-sitter phân tích<br/>cfg_structure.parse_structure]
+  S1 --> S2[2 · SelectFocusMethods<br/>chọn hàm mục tiêu theo ModuleId]
+  S2 --> S3[3 · CfgBuilder<br/>dựng node và cạnh CFG]
+  S3 --> S4[4 · render_mermaid<br/>xuất graph TD]
+  S3 --> S5[5 · extract_snippets<br/>trích code quan trọng]
+  S1 --> S6[6 · extract_metadata<br/>async, annotation, dependency]
+  S4 --> S7[7 · compose_prompt]
+  S5 --> S7
+  S6 --> S7
+  S7 --> S8[8 · Tính metrics và token saving]
+  S8 --> OUT[HybridContextOutputDto]
 ```
 
-Mọi bước nằm trong một khối `try/catch` duy nhất: có lỗi thì trả `status = FAILED` kèm thông điệp, **không bao giờ ném exception ngược về Orchestrator**.
+Mọi bước nằm trong một khối `try/except`: có lỗi thì trả `status = FAILED` kèm thông điệp, không bao giờ ném exception ra ngoài.
 
 ---
 
 ## 3. Bản đồ file
 
 ```
-ContextRouter_Microservice/
-├── main.py                              [SỬA] CHỈ THÊM endpoint /api/parse-structure
-│                                        ở cuối file; phần Tầng 1 không đổi một dòng
-├── ast_analyzer.py                      KHÔNG SỬA (Tầng 1)
-├── requirements.txt                     KHÔNG SỬA — tree-sitter đã có sẵn
-├── cfg_structure.py                531  [MỚI] tree-sitter -> cây câu lệnh chuẩn hoá
-└── run_server_tang2.bat              5  [MỚI] uvicorn main:app --reload
+ContextRouter_Microservice/            [Python - lõi xử lý cả Tầng 1 và Tầng 2]
+├── main.py                            [SỬA] CHỈ THÊM endpoint /api/generate-hybrid-context
+│                                      ở cuối file; phần Tầng 1 không đổi một dòng
+├── ast_analyzer.py                    KHÔNG SỬA (Tầng 1: SLOC, V(G))
+├── requirements.txt                   KHÔNG SỬA — tree-sitter đã có sẵn
+├── cfg_structure.py              565  [MỚI] tree-sitter -> cây câu lệnh chuẩn hoá
+│                                      + mask_source() che comment/chuỗi theo node type
+├── hybrid_context.py            1068  [MỚI] toàn bộ Tầng 2: nhãn node, CFG, Mermaid,
+│                                      snippet, metadata, prompt, metrics
+└── run_server.bat                     KHÔNG SỬA
 
-Repo_Into_Graph_Application/
+Repo_Into_Graph_Application/           [.NET - điều phối]
 ├── Dtos/HybridContextGenerator/
-│   ├── HybridContextInputDto.cs          53   [SỬA] gỡ class output cũ ra file riêng
-│   └── HybridContextOutputDto.cs        247   [MỚI] contract output + 8 DTO con
+│   ├── HybridContextInputDto.cs   53  [SỬA] gỡ class output cũ ra file riêng
+│   └── HybridContextOutputDto.cs 255  [MỚI] contract output + 8 DTO con
 └── Services/HybridContextGenerator/
     ├── IHybridContextGeneratorService.cs  18   giữ nguyên
-    ├── HybridContextGeneratorService.cs  288   [VIẾT LẠI] điều phối 9 bước
-    └── Internal/
-        ├── SourceScanner.cs             275   [MỚI] che comment/chuỗi, khớp ngoặc
-        ├── CodeModel.cs                 102   [MỚI] Stmt, MethodDecl, CatchClauseInfo…
-        ├── CodeStructureParser.cs       762   [MỚI] parser Java/C#
-        ├── CfgBuilder.cs                513   [MỚI] dựng CFG
-        ├── NodeLabelHumanizer.cs        284   [MỚI] đặt nhãn node
-        ├── MermaidRenderer.cs           156   [MỚI] xuất Mermaid
-        ├── CriticalSnippetExtractor.cs  228   [MỚI] trích snippet
-        ├── EnrichedMetadataExtractor.cs 278   [MỚI] metadata
-        ├── HybridPromptComposer.cs      144   [MỚI] lắp ráp prompt
-        └── StructureServiceClient.cs    250   [MỚI] gọi /api/parse-structure, tự fallback
+    └── HybridContextGeneratorService.cs  150  [VIẾT LẠI] client mỏng, một lần gọi
 ```
 
-File thứ 13 được sửa: `Repo_Into_Graph_API/Extensions/DependencyInjectionExtensions.cs` — **chỉ đổi một dòng comment** "Tang 2 - Stub", đăng ký DI giữ nguyên.
+`Repo_Into_Graph_API/Extensions/DependencyInjectionExtensions.cs` được thêm một dòng `AddHttpClient` cho Tầng 2.
 
 ---
 
 ## 4. Chi tiết từng bước
 
-### 4.1 `SourceScanner` — che comment và chuỗi
+### 4.1 `cfg_structure.py` — tree-sitter → cây câu lệnh
 
-Vấn đề: quét cấu trúc bằng cách đếm `;` `{` `}` sẽ sai ngay khi gặp `String msg = "user; {id}";` hoặc `// if (x) throw`.
+tree-sitter trả về cây cú pháp đầy đủ (mọi dấu ngoặc, mọi token). Bước này rút gọn nó thành cây câu lệnh chỉ gồm những gì CFG cần: `If`, `While`, `For`, `ForEach`, `DoWhile`, `Switch`, `Try`, `Scoped`, `Return`, `Throw`, `Break`, `Continue`, `Block`, `Simple`, `Declaration` — kèm vị trí, số dòng, và **nguyên văn** đoạn code của từng câu lệnh.
 
-Cách xử lý: tạo bản `Masked` — **cùng độ dài** với bản gốc, mọi ký tự trong comment và chuỗi được thay bằng dấu cách:
+Dùng chung một bộ luật cho cả Java và C#: đọc theo *field* của tree-sitter (`condition`, `consequence`, `alternative`, `body`) nên khác biệt tên node giữa hai ngôn ngữ được xử lý bằng bảng ánh xạ, không phải bằng hai nhánh code riêng.
 
-```
-Gốc:    String msg = "user; {id}";   // if (u == null) throw
-Masked: String msg =              ;
-```
+Hai chi tiết đáng nhớ:
 
-Vì độ dài không đổi nên mọi chỉ số ánh xạ 1-1: quét cấu trúc trên `Masked`, cắt text hiển thị từ `Source`. Xử lý được comment `//`, `/* */`, chuỗi thường, chuỗi verbatim C# `@"..."`, text block `"""..."""`, và escape `\"`.
+- **Đoạn code chỉ có một hàm rời** (không nằm trong class) không phải đơn vị biên dịch hợp lệ của Java/C#, tree-sitter sẽ báo lỗi. Xử lý bằng cách bọc tạm vào `class __CfgWrapper { … }` rồi trừ lại offset; tiền tố không chứa ký tự xuống dòng nên số dòng giữ nguyên.
+- **`mask_source()`** tạo bản sao của mã nguồn với comment và chuỗi bị thay bằng dấu cách, dùng cho bước quét metadata. Việc xác định đâu là comment/chuỗi lấy thẳng từ **node type của tree-sitter**, không dùng bộ quét chuỗi tự viết — nên không dính các bẫy kinh điển (chuỗi chứa `;` `{` `}`, comment chứa code).
 
-Ngoài ra cung cấp: `FindMatching()` (khớp ngoặc), `LineOf()` (tra số dòng bằng binary search), `Collapse()` (gộp khoảng trắng).
-
-### 4.2 Dựng cây câu lệnh — tree-sitter (chính) và `CodeStructureParser` (dự phòng)
-
-**Đường chính:** `StructureServiceClient` POST mã nguồn sang `/api/parse-structure`; `cfg_structure.py` dùng tree-sitter dựng cây rồi trả về JSON đúng mô hình `MethodDecl` / `Stmt`, nên `CfgBuilder` và các bước sau **không phải sửa gì**. Timeout 8 giây; mọi lỗi (không kết nối được, JSON sai, không ra hàm nào) đều rơi xuống đường dự phòng.
-
-Một chi tiết: đoạn code chỉ có mỗi một hàm (không nằm trong class) không phải đơn vị biên dịch hợp lệ của Java/C#, tree-sitter sẽ báo lỗi. `cfg_structure.py` xử lý bằng cách bọc tạm vào `class __CfgWrapper { … }` rồi trừ lại offset — tiền tố không chứa ký tự xuống dòng nên số dòng giữ nguyên.
-
-**Đường dự phòng — `CodeStructureParser`:**
-
-**Tìm hàm:** quét mọi dấu `(`, khớp tới `)`, rồi kiểm tra ngay sau đó có `{` không (bỏ qua `throws A, B` của Java và `where T : class` của C#). Tên hàm là định danh liền trước `(`. Loại bỏ nhầm lẫn: từ khóa điều khiển (`if`, `while`, `catch`…), lời gọi phương thức (tiền tố kết thúc bằng `.`), lambda (`=>`, `->`), khởi tạo vô danh (`new X() { … }`). Tìm được hàm thì **nhảy qua toàn bộ thân hàm** để không bắt nhầm lambda bên trong.
-
-**Cây câu lệnh:** đệ quy xuống, nhận diện `if/else`, `for`, `foreach`, `while`, `do-while`, `switch/case/default`, `try/catch/finally`, `using/lock/synchronized`, `return/throw/break/continue`, block `{}`, và câu lệnh thường (đọc tới `;` ở độ sâu ngoặc 0).
-
-**Nguyên tắc an toàn — đây là code chạy trong API, treo là chết:**
-- Mọi vòng lặp có bộ đếm `_guard` (tối đa 300.000 bước).
-- Mỗi vòng bắt buộc con trỏ tiến ít nhất 1 ký tự (`if (pos <= before) pos = before + 1`).
-- Giới hạn độ sâu lồng nhau: 40 cấp.
-- Code hỏng cú pháp → parser suy biến chứ không treo (xem TC_H_10).
-
-### 4.3 `CfgBuilder` — dựng đồ thị
+### 4.2 `CfgBuilder` — dựng đồ thị
 
 Duyệt cây câu lệnh, mỗi cấu trúc sinh ra node và cạnh theo bảng:
 
@@ -137,13 +105,13 @@ Duyệt cây câu lệnh, mỗi cấu trúc sinh ra node và cạnh theo bảng:
 | `break` | không sinh node | cạnh thẳng ra điểm thoát vòng lặp, **giữ nhãn nhánh** (`Yes`/`No`) |
 | `continue` | không sinh node | cạnh quay về điểm lặp, giữ nhãn nhánh |
 
-Kỹ thuật cài đặt: dùng khái niệm **stub** — danh sách `(node nguồn, nhãn cạnh)` đang chờ nối. Mỗi hàm `Build*` nhận stub vào, trả stub ra; nhánh `return`/`throw` trả về danh sách rỗng (luồng kết thúc). Ba ngăn xếp `_breakScopes` / `_loopScopes` / `_tryScopes` xử lý nhảy không cục bộ.
+Kỹ thuật cài đặt: dùng khái niệm **stub** — danh sách `(node nguồn, nhãn cạnh)` đang chờ nối. Mỗi hàm `_build` nhận stub vào, trả stub ra; nhánh `return`/`throw` trả về danh sách rỗng (luồng kết thúc). Ba ngăn xếp `_breaks` / `_loops` / `_tries` xử lý nhảy không cục bộ.
 
 Node được đánh id kiểu Excel: `A, B, … Z, AA, AB…`. Giới hạn 600 node, vượt thì cắt và ghi warning.
 
-`StmtNodeMap` (vị trí câu lệnh → id node) là cầu nối để Critical Snippet biết mình thuộc node nào — nhờ đó prompt viết được `**Node B:** if (req == null) …`.
+`stmt_node_map` (vị trí câu lệnh → id node) là cầu nối để Critical Snippet biết mình thuộc node nào — nhờ đó prompt viết được `**Node B:** if (req == null) …`.
 
-### 4.4 `NodeLabelHumanizer` — quy ước đặt nhãn
+### 4.3 Nhãn node
 
 Nhãn phải đọc như tiếng người chứ không phải dán nguyên code (dán nguyên thì CFG chẳng nén được gì). Code gốc vẫn được giữ trong `cfgNodes[].code` để truy vết.
 
@@ -162,14 +130,14 @@ Nhãn phải đọc như tiếng người chứ không phải dán nguyên code 
 | `while (i < 3)` | `Loop while i < 3?` | |
 | `switch (type)` | `Switch on type?` | |
 
-### 4.5 `MermaidRenderer`
+### 4.4 `render_mermaid`
 
 - **Một hàm** → viết gọn inline: `A[Start] --> B{req == null?}`, node khai báo ngay lần xuất hiện đầu.
 - **Nhiều hàm** → mỗi hàm một `subgraph`, khai báo node trước rồi tới cạnh.
-- Chỉ bọc dấu nháy khi nhãn chứa ký tự có thể vỡ cú pháp Mermaid (`( ) [ ] { } " | # ; & < >`). `=` `!` `:` `,` `+` `*` `/` `%` viết trần → `{req == null?}` đúng như quy ước trong checklist.
+- Chỉ bọc dấu nháy khi nhãn chứa ký tự có thể vỡ cú pháp Mermaid (`( ) [ ] { } " | # ; & < >`). `=` `!` `:` `,` `+` `*` `/` `%` viết trần → `{req == null?}`.
 - Dấu `"` trong chuỗi đổi thành `'`; nhãn cạnh lọc còn chữ-số-dấu cách.
 
-### 4.6 `CriticalSnippetExtractor` — trích code quan trọng
+### 4.5 `extract_snippets` — trích code quan trọng
 
 Duyệt cây câu lệnh, chấm trọng số:
 
@@ -187,13 +155,11 @@ Duyệt cây câu lệnh, chấm trọng số:
 
 Quy tắc lấy text: câu lệnh nằm gọn một dòng thì lấy nguyên văn (`if (req == null) throw new BadRequest();`), trải nhiều dòng thì chỉ lấy dòng đầu (`if (order == null) {`) cho đỡ tốn token.
 
-Sau đó lọc: bỏ snippet là **chuỗi con** của snippet khác (dòng `throw` đã nằm trong dòng `if` thì không lặp lại), tối đa 40 snippet.
+Sau đó lọc: bỏ snippet là **chuỗi con** của snippet khác, tối đa 40 snippet. `criticalSnippets` trong response chứa **tất cả**; riêng `hybrid_prompt` chỉ lấy trọng số ≥ 7.
 
-`criticalSnippets` trong response chứa **tất cả**; riêng `hybrid_prompt` chỉ lấy trọng số ≥ 7 để tiết kiệm token.
+### 4.6 `extract_metadata`
 
-### 4.7 `EnrichedMetadataExtractor`
-
-Quét trên bản `Masked` (nên không bị chuỗi/comment đánh lừa):
+Quét trên bản `mask_source()` nên không bị chuỗi/comment đánh lừa:
 
 - **Async markers** — 7 nhóm: `async`, `await`, `*Async(`, `Task`/`ValueTask`/`ConfigureAwait`, `CompletableFuture`/`ExecutorService`/`new Thread`, `@Async`/`@Scheduled`, `Mono`/`Flux`/`.subscribe(`. Ghi kèm số dòng.
 - **Annotation tags** — Java `@Xxx`, C# `[Xxx]` ở đầu dòng.
@@ -201,9 +167,9 @@ Quét trên bản `Masked` (nên không bị chuỗi/comment đánh lừa):
 - **Exception** — ném ra (`throw new X`, `throws X`) và bắt được (`catch (X e)`).
 - **Tags ngữ nghĩa** — `async`, `has-loop`, `complex-loop`, `throws-exception`, `has-try-catch`, `deep-nesting`, `cache`, `database`, `external-api`, `notification`, `io`, `transactional`, `endpoint`, `independent`…
 
-### 4.8 `HybridPromptComposer`
+### 4.7 `compose_prompt`
 
-```
+````
 ### 1. SYSTEM WORKFLOW GRAPH (CFG SKELETON)
 ```mermaid
 graph TD
@@ -220,7 +186,7 @@ graph TD
 - **Throws:** BadRequest, Conflict
 - **Control flow:** branch=2, loop=0, switch=0, try/catch=0, throw=2, return=0, maxNesting=1
 - **Tags:** has-branch, throws-exception
-```
+````
 
 Mục 3 chỉ xuất hiện khi có dữ liệu.
 
@@ -246,7 +212,7 @@ Mục 3 chỉ xuất hiện khi có dữ liệu.
   // ── dữ liệu chi tiết cho Tầng 3 và tool test ──
   "moduleId": "MOD_001",
   "language": "java",
-  "parser": "tree-sitter",                // tree-sitter | builtin (parser noi bo du phong)
+  "parser": "tree-sitter",
   "message": "Da sinh ngu canh lai cho module …",
   "cfgSkeleton": "graph TD\n  A[Start] --> B{req == null?}…",
   "criticalSnippets": ["if (req == null) throw new BadRequest();", …],
@@ -257,22 +223,26 @@ Mục 3 chỉ xuất hiện khi có dữ liệu.
   "cfgNodes": [{ "id", "label", "kind", "line", "code", "method" }],
   "cfgEdges": [{ "from", "to", "label" }],
   "warnings": [],
-  "processing_time_ms": 12,
-  "generated_at_utc": "2026-09-05T…"
+  "processing_time_ms": 1,
+  "generated_at_utc": "2026-09-06T…"
 }
 ```
 
-4 trường đầu là **contract chính** (snake_case, gắn `[JsonPropertyName]`). Phần còn lại là dữ liệu chi tiết — `cfgNodes`/`cfgEdges` cho phép Tầng 3 xử lý bằng code thay vì phải parse chuỗi Mermaid.
+4 trường đầu là **contract chính** (snake_case). Phần còn lại là dữ liệu chi tiết — `cfgNodes`/`cfgEdges` cho phép Tầng 3 xử lý bằng code thay vì phải parse chuỗi Mermaid.
 
-**`status`:** `PARTIAL` khi chất lượng phân tích bị giảm (AST lỗi, không tìm thấy hàm, CFG bị cắt, ngôn ngữ lạ). Cảnh báo mang tính thông tin (ví dụ `RoutingDecision` không phải ROUTE_HYBRID) chỉ vào `warnings`, không hạ `status`.
+**`status`:** `PARTIAL` khi chất lượng phân tích bị giảm (tree-sitter báo node lỗi, CFG bị cắt, ngôn ngữ lạ). Cảnh báo mang tính thông tin (ví dụ `RoutingDecision` không phải ROUTE_HYBRID) chỉ vào `warnings`. `FAILED` khi không gọi được service hoặc không phân tích được cấu trúc.
 
 ---
 
 ## 6. Các quyết định thiết kế
 
-**Dùng chung tree-sitter với Tầng 1.** Endpoint `/api/parse-structure` được thêm vào `main.py` theo quyết định của nhóm (điều khoản cấm trong `AGENT_GUIDE.md` được gỡ bỏ vì đây là chỗ hợp lý để đặt endpoint). Nguyên tắc khi thêm: **chỉ chèn khối mới ở cuối file**, không sửa một dòng nào của Tầng 1. Kết quả: một server, một cổng 8000, `/api/analyze-context` giữ nguyên đường dẫn lẫn hành vi — đã kiểm lại bằng `TestClient`, kể cả trường hợp trả HTTP 400 cho ngôn ngữ không hỗ trợ. `requirements.txt` không phải sửa vì tree-sitter đã nằm sẵn trong đó.
+**Toàn bộ Tầng 2 nằm trong Python, cùng tiến trình với Tầng 1.** Ba lý do, xếp theo mức quan trọng:
 
-**Giữ parser nội bộ làm dự phòng.** Đây không phải code thừa: nó bảo đảm Tầng 2 vẫn chạy khi service Python tắt, và quan trọng hơn — có **hai bộ phân tích độc lập trên cùng một đầu vào** là một phép đối chứng miễn phí cho bài báo. Đã kiểm trên 13 mẫu (2 case gốc + 10 case bổ sung + 1 hàm 58 dòng): 12 mẫu hai parser cho CFG **giống hệt từng dòng**, 1 mẫu (code lỗi cú pháp) khớp về cấu trúc.
+1. **Nhất quán số liệu.** Một đề tài nghiên cứu đo độ chính xác của LLM thì chất lượng prompt đưa vào phải giống nhau giữa mọi lần chạy. Chỉ cần tồn tại hai đường sinh CFG khác nhau là số đo bị nhiễu bởi một biến không kiểm soát.
+2. **Một bộ phân tích duy nhất.** tree-sitter có grammar dựng sẵn cho mọi ngôn ngữ với cùng một API duyệt cây. Viết lại bằng C# thì hoặc dùng Roslyn (chỉ hiểu C#, không đọc được Java), hoặc tự viết bộ quét chuỗi — mà bộ quét chuỗi lặp lại đúng những cái bẫy Tầng 1 đã xử lý xong (chuỗi chứa từ khoá, comment chứa code, điều kiện lồng nhau).
+3. **Không có vòng lặp mạng thừa.** Tầng 1 parse xong là cây nằm sẵn trong RAM; Tầng 2 duyệt thẳng trên đó, lấy `start_byte`/`end_byte`, cắt code, sinh Mermaid — hết 0–1 ms.
+
+**Không có phương án dự phòng.** Khi Python Microservice không sẵn sàng, Tầng 2 trả `status = FAILED` kèm thông điệp chỉ rõ service chưa chạy ở đâu — thay vì lặng lẽ sinh ra một CFG chất lượng khác. Hỏng thì phải hỏng ồn ào; số liệu nghiên cứu không được phép nhiễu vì một nhánh dự phòng chạy ngầm.
 
 **Chọn hàm mục tiêu theo `ModuleId`.** Nếu `ModuleId` có dạng `Class.method` khớp tên một hàm trong mã nguồn (ví dụ `AppointmentService.book`), chỉ dựng CFG cho hàm đó; các hàm khác vẫn nằm trong metadata. Đây là chỗ duy nhất tiết kiệm token thật sự — xem mục dưới.
 
@@ -284,52 +254,51 @@ Mục 3 chỉ xuất hiện khi có dữ liệu.
 | 1 hàm lớn (58 SLOC, V(G)=14) | −59% |
 | Cả class 75 dòng, `ModuleId = "AppointmentService.cancel"` | **+39,5%** |
 
-CFG của một hàm luôn dài xấp xỉ chính hàm đó, nên **tiết kiệm chỉ dương khi Orchestrator gửi cả class/file mà chỉ cần kiểm thử một hàm**. Với class thật 200–400 dòng, con số vào khoảng 55–70%. Công thức và cả `original_tokens`/`hybrid_tokens` đều nằm trong response để kiểm chứng lại — không có chỗ nào làm đẹp số liệu.
+CFG của một hàm luôn dài xấp xỉ chính hàm đó, nên **tiết kiệm chỉ dương khi Orchestrator gửi cả class/file mà chỉ cần kiểm thử một hàm**. Với class thật 200–400 dòng, con số vào khoảng 55–70%. Công thức và cả `original_tokens`/`hybrid_tokens` đều nằm trong response để kiểm chứng lại.
 
 ---
 
 ## 7. Giới hạn đã biết
-
-Áp dụng cho cả hai đường phân tích:
 
 | Giới hạn | Chi tiết |
 |---|---|
 | Nhãn nghiệp vụ | Không sinh được nhãn kiểu `Check Quota` từ `count >= MAX` — cần LLM hoặc từ điển ánh xạ |
 | Fall-through trong switch | `case 1:` rỗng rơi xuống `case 2:` chưa được mô hình hóa |
 | Node id | Đánh tuần tự `A, B, C…`; không tái tạo được kiểu đặt tay `C2` trong checklist |
+| Toán tử ngắn mạch | `a && b` gom thành một node quyết định (classic McCabe), nên V(G) từ CFG nhỏ hơn V(G) của Tầng 1 (extended) |
 | Lồng > 40 cấp | Câu lệnh sâu hơn 40 cấp bị bỏ qua (chống tràn stack) |
 | CFG > 600 node | Bị cắt, kèm warning và `status = PARTIAL` |
-
-Chỉ còn là giới hạn của **parser nội bộ dự phòng** (tree-sitter xử lý đúng các trường hợp này):
-
-| Giới hạn | Chi tiết |
-|---|---|
-| Property C# | Class chỉ có property (không có `(`) sẽ không được nhận là hàm |
-| Cú pháp mới | `switch` biểu thức `=>`, record, pattern matching nhận diện yếu |
-| Code hỏng cú pháp | Suy biến thay vì phục hồi có kiểm soát như tree-sitter |
+| Phụ thuộc service | Python Microservice phải chạy; không có phương án dự phòng (đây là lựa chọn có chủ ý) |
 
 ---
 
 ## 8. Kiểm thử
 
-### 8.1 Cách đã kiểm chứng
+### 8.1 Đối chứng khi chuyển lõi sang Python
 
-Máy phát triển không cài được .NET SDK ở môi trường phụ, nên thuật toán được **port sang Python và chạy đối chứng** trên 15 tình huống: Java phức tạp (loop + switch + try/catch lồng nhau), C# async, lambda và generic, chuỗi/comment gây nhiễu, code hỏng cú pháp, lồng 60 cấp, và một hàm 900 node. Không tình huống nào treo. Sau đó mới build C# thật.
+Bản .NET trước đó đã chạy qua bộ 12 test case và PASS 12/12. Khi chuyển toàn bộ lõi sang Python, **kết quả được so lại từng ký tự với chính file kết quả benchmark của bản cũ**:
 
-Hai lỗi biên dịch phát sinh khi build lần đầu, đã sửa: thiếu thuộc tính `CatchClauseInfo.Start`, và biến `name` trùng scope trong `ExtractMethods` (CS0136).
+| Hạng mục | Kết quả |
+|---|---|
+| `cfgSkeleton` giống hệt bản .NET | 12/12 |
+| Critical snippets khớp cột kỳ vọng | 12/12 |
+| Thời gian xử lý | 26–49 ms → **0–1 ms** |
+| Endpoint Tầng 1 `/api/analyze-context` | không đổi (kiểm bằng `TestClient`, kể cả HTTP 400 cho ngôn ngữ không hỗ trợ) |
 
-**Đối chứng hai bộ phân tích.** Sau khi nối tree-sitter, 13 mẫu (2 case gốc + 10 case bổ sung + 1 hàm 58 dòng) được chạy qua **cả hai** đường rồi so CFG:
+### 8.2 Đối chứng V(G) — thẩm định bộ dựng CFG
+
+Tầng 1 tính V(G) bằng cách đếm node rẽ nhánh trên cây cú pháp; Tầng 2 tính lại bằng `E − N + 2P` trên đồ thị. Hai đường độc lập:
 
 | Kết quả | Số mẫu |
 |---|---|
-| CFG giống hệt từng dòng | 12/13 |
-| Khớp cấu trúc, khác nhãn (TC_H_10 — code lỗi cú pháp) | 1/13 |
+| Khớp tuyệt đối | 10/12 |
+| Lệch có nguyên nhân xác định | 2/12 |
 
-Đây là số liệu dùng được cho mục *thẩm định công cụ* của báo cáo. Phép đối chứng này lặp lại được bất cứ lúc nào bằng cách đặt `HybridContextUseTreeSitter` = `false`/`true` rồi chạy lại cùng bộ test.
+Hai chỗ lệch: file nhiều hàm (công thức `điểm rẽ + 1` chỉ đúng cho một thành phần liên thông) và hàm có `&&` / `||` (Tầng 1 dùng *extended* cyclomatic complexity, Tầng 2 dùng *classic* McCabe).
 
-Ngoài ra sau khi thêm endpoint vào `main.py`, Tầng 1 đã được kiểm lại bằng `TestClient`: `/api/analyze-context` vẫn trả đúng kết quả cũ cho cả Java và C# (`isValid`, `sloc`, `vg`, `rootNodeType`, `hasError`) và vẫn trả HTTP 400 cho ngôn ngữ không hỗ trợ. Dù vậy vẫn nên chạy lại `benchmark_tools\Tang_1_Router\run_tang_1.bat` để xác nhận đủ 19/19 test case của Tầng 1.
+**Phạm vi phát hiện của phép đối chứng này:** bắt được sai lệch về **số điểm rẽ nhánh** (thiếu/thừa `if`, `loop`, `case`, `catch`) — đã kiểm bằng cách cố tình bỏ một nhánh, V(G) tụt từ 3 xuống 2 và chuông kêu. Nhưng **không** bắt được việc thiếu câu lệnh tuần tự bên trong một nhánh (V(G) không đổi). Lỗi loại sau được kiểm bằng bộ test case đối chiếu CFG thực tế.
 
-### 8.2 Thay đổi trong `run_hybrid_benchmark.py`
+### 8.3 Thay đổi trong `run_hybrid_benchmark.py`
 
 Assert CFG cũ so khớp **chuỗi con nguyên văn** với cột Mermaid viết tay trong Excel — không bộ sinh CFG tĩnh nào đạt được, vì cột đó chứa nhãn nghiệp vụ (`Send Async Email: Async, Independent`) và id đặt tay (`C2`). Đã thay bằng `compare_cfg_structure()` chấm theo **cấu trúc**:
 
@@ -341,11 +310,9 @@ Assert CFG cũ so khớp **chuỗi con nguyên văn** với cột Mermaid viết
 
 Đã kiểm chứng bộ chấm không dễ dãi: nó bắt được cả 6 dạng CFG sai (rỗng, mất nhánh, thiếu 1 nhánh, có nhánh nhưng không throw, CFG của hàm khác).
 
-File kết quả có thêm **cột I "CFG Thực Tế"** và **cột J "Ghi Chú"** (định dạng sao chép từ chính bảng), ô Trạng Thái tô xanh/đỏ.
+File kết quả có thêm **cột I "CFG Thực Tế"**, **cột J "Ghi Chú"**, **cột K "V(G) Tầng 1 / V(G) từ CFG"** và **cột L "Parser"**; ô Trạng Thái tô xanh/đỏ.
 
-Khi đọc kết quả, kiểm luôn trường `parser` trong response: `tree-sitter` nghĩa là đã gọi được Python Microservice, `builtin` nghĩa là service chưa bật và Tầng 2 đang chạy bằng parser dự phòng.
-
-### 8.3 Bộ test case
+### 8.4 Bộ test case
 
 | Mã | Kiểm cái gì |
 |---|---|
@@ -363,21 +330,21 @@ Khi đọc kết quả, kiểm luôn trường `parser` trong response: `tree-si
 | TC_H_12 | Hàm tuyến tính, `V(G)=1` |
 
 > TC_H_12 cố ý để trống ô Critical Snippets: hàm không có nhánh nào cần giữ nguyên văn, mà tool bắt buộc mọi dòng trong ô đó phải xuất hiện trong `criticalSnippets`.
-> TC_H_11 nên đối chiếu thêm cột "CFG Thực Tế": bộ chấm chỉ kiểm tra "có đủ", không kiểm tra "không dư", nên nếu parser đếm nhầm comment thành nhánh thì assert vẫn PASS.
+> TC_H_11 nên đối chiếu thêm cột "CFG Thực Tế": bộ chấm chỉ kiểm tra "có đủ", không kiểm tra "không dư".
 
 ---
 
 ## 9. Cách chạy
 
 ```bash
-# 1. Chạy Python Microservice (đã có sẵn endpoint /api/parse-structure trong main.py)
+# 1. Python Microservice - BẮT BUỘC chạy trước (chứa cả Tầng 1 lẫn Tầng 2)
 cd ContextRouter_Microservice
 run_server.bat                                  # hoặc:
-python -m uvicorn main:app --reload --port 8000 # hoặc: run_server_tang2.bat
+python -m uvicorn main:app --reload --port 8000
 
-# Kiểm tra:  http://localhost:8000/api/parse-structure/health
+# Kiểm tra:  http://localhost:8000/api/generate-hybrid-context/health
 
-# 2. Build lại sau mỗi lần sửa code C# (không dùng Hot Reload — có file mới)
+# 2. Build lại .NET sau mỗi lần sửa code C#
 dotnet build Repo_Into_Graph.sln
 dotnet run --project Repo_Into_Graph_API          # https://localhost:55060
 
@@ -386,15 +353,14 @@ cd benchmark_tools\Tang_2_Hybrid_Context
 run_tang_2.bat
 ```
 
-Nếu quên bật Python Microservice, Tầng 2 vẫn chạy bình thường bằng parser nội bộ — chỉ khác là `"parser": "builtin"` và có thêm một dòng trong `warnings`. Muốn tắt hẳn tree-sitter thì đặt `"HybridContextUseTreeSitter": "false"` trong `appsettings.development.json`.
+Nếu Python Microservice chưa bật, Tầng 2 trả `status = FAILED` kèm thông điệp chỉ rõ địa chỉ service — đây là hành vi có chủ ý, không phải lỗi.
 
-Gọi thử bằng curl:
+Gọi thử trực tiếp Tầng 2 (bỏ qua .NET):
 
 ```bash
-curl -k -X POST https://localhost:55060/api/test/test-hybrid-context \
+curl -X POST http://localhost:8000/api/generate-hybrid-context \
   -H "Content-Type: application/json" \
   -d '{"moduleId":"MOD_001","language":"java","routingDecision":"ROUTE_HYBRID",
-       "metrics":{"sloc":6,"cyclomaticComplexity":3},
        "rawSourceCode":"public void book(Request req) { if (req == null) throw new BadRequest(); save(req); }",
-       "astPayload":{"parserType":"tree-sitter","rootNodeType":"","hasError":false}}'
+       "metrics":{"sloc":6,"cyclomaticComplexity":3}}'
 ```

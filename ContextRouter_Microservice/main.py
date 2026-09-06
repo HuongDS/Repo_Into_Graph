@@ -60,43 +60,65 @@ async def analyze_context(req: AnalyzeRequest):
 
 # =====================================================================
 # TANG 2 - HYBRID CONTEXT GENERATOR
-# Endpoint phan tich cau truc ma nguon bang tree-sitter, tra ve cay cau lenh
-# chuan hoa cho Tang 2 dung de dung CFG.
-# Phan Tang 1 phia tren KHONG bi sua doi.
+# Toan bo Tang 2 chay tai day, cung tien trinh voi Tang 1: dung chung
+# tree-sitter da nap san trong RAM, khong co vong HTTP trung gian nao.
+# .NET chi goi mot lan endpoint nay va tra thang ket qua ve Orchestrator.
 # =====================================================================
-from cfg_structure import parse_structure
+from typing import Optional
 
-MAX_STRUCTURE_CODE_LENGTH = 200_000
-
-
-class StructureRequest(BaseModel):
-    code: str
-    language: str
+from hybrid_context import generate_hybrid_context
 
 
-@app.post("/api/parse-structure")
-async def parse_structure_endpoint(req: StructureRequest):
-    """Tra ve cay cau lenh (methods -> statements) do tree-sitter phan tich."""
-    code = req.code or ""
-    if len(code) > MAX_STRUCTURE_CODE_LENGTH:
-        code = code[:MAX_STRUCTURE_CODE_LENGTH]
+class HybridContextMetrics(BaseModel):
+    sloc: int = 0
+    cyclomaticComplexity: int = 0
 
-    if not code.strip():
-        return {"ok": False, "parser": "tree-sitter", "error": "code rong",
-                "methods": [], "warnings": [], "hasError": False,
-                "language": req.language}
 
+class HybridContextRequest(BaseModel):
+    moduleId: str = ""
+    language: str = ""
+    routingDecision: str = "ROUTE_HYBRID"
+    rawSourceCode: str = ""
+    metrics: Optional[HybridContextMetrics] = None
+
+
+@app.post("/api/generate-hybrid-context")
+async def generate_hybrid_context_endpoint(req: HybridContextRequest):
+    """Sinh Ngu canh Lai: CFG skeleton + Critical Snippets + Enriched Metadata."""
     try:
-        return parse_structure(code, req.language)
-    except Exception as ex:      # tra loi ve de .NET tu quyet dinh fallback
-        return {"ok": False, "parser": "tree-sitter", "error": str(ex),
-                "methods": [], "warnings": [], "hasError": True,
-                "language": req.language}
+        return generate_hybrid_context(
+            code=req.rawSourceCode,
+            language=req.language,
+            module_id=req.moduleId,
+            routing_decision=req.routingDecision,
+            sloc=(req.metrics.sloc if req.metrics and req.metrics.sloc else None),
+            cyclomatic_complexity=(req.metrics.cyclomaticComplexity
+                                   if req.metrics and req.metrics.cyclomaticComplexity else None),
+        )
+    except Exception as ex:      # tra ve FAILED chu khong de exception thoat ra ngoai
+        return {
+            "status": "FAILED",
+            "route_decision": req.routingDecision,
+            "hybrid_prompt": "",
+            "metrics": {},
+            "moduleId": req.moduleId,
+            "language": req.language,
+            "parser": "tree-sitter",
+            "message": "Loi khi sinh ngu canh lai: " + str(ex),
+            "cfgSkeleton": "",
+            "criticalSnippets": [],
+            "criticalSnippetDetails": [],
+            "enrichedMetadata": {},
+            "cfgNodes": [],
+            "cfgEdges": [],
+            "warnings": [],
+            "processing_time_ms": 0,
+        }
 
 
-@app.get("/api/parse-structure/health")
-async def parse_structure_health():
-    return {"ok": True, "service": "tang2-structure", "parser": "tree-sitter"}
+@app.get("/api/generate-hybrid-context/health")
+async def hybrid_context_health():
+    return {"ok": True, "service": "tang2-hybrid-context", "parser": "tree-sitter"}
 
 
 if __name__ == "__main__":

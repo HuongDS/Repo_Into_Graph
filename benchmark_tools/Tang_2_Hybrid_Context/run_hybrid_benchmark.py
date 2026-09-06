@@ -503,10 +503,14 @@ class HybridBenchmarkApp(ctk.CTk):
                 # --- Tieu de 2 cot bo sung: dinh dang giong hang tieu de san co ---
                 safe_write(4, 9, "CFG Thực Tế (Tầng 2 sinh ra)")
                 safe_write(4, 10, "Ghi Chú")
-                style_like(4, 9, 4, 6)
-                style_like(4, 10, 4, 7)
+                safe_write(4, 11, "V(G) Tầng 1 / V(G) từ CFG")
+                safe_write(4, 12, "Parser")
+                for _c in (9, 10, 11, 12):
+                    style_like(4, _c, 4, 6)
                 ws.column_dimensions["I"].width = 40
                 ws.column_dimensions["J"].width = 32
+                ws.column_dimensions["K"].width = 22
+                ws.column_dimensions["L"].width = 14
 
                 # --- Du lieu: cot CFG that giong cot "Ky Vong CFG", ghi chu giong cot "Muc Tieu" ---
                 safe_write(tc["row"], 8, status)
@@ -515,6 +519,17 @@ class HybridBenchmarkApp(ctk.CTk):
                 safe_write(tc["row"], 10, ghi_chu)
                 style_like(tc["row"], 9, tc["row"], 6)
                 style_like(tc["row"], 10, tc["row"], 2)
+
+                # V(G) Tang 1 vs V(G) tinh lai tu CFG - phep tu kiem chung bo dung do thi
+                _m = response_data.get("metrics", {}) if isinstance(response_data, dict) else {}
+                _vg1 = _m.get("cyclomatic_complexity")
+                _vg2 = _m.get("cyclomatic_complexity_cfg")
+                if _vg1 is not None and _vg2 is not None:
+                    _mark = "khớp" if _vg1 == _vg2 else "lệch %+d" % (_vg2 - _vg1)
+                    safe_write(tc["row"], 11, "%s / %s  (%s)" % (_vg1, _vg2, _mark))
+                safe_write(tc["row"], 12, str(response_data.get("parser", "")))
+                style_like(tc["row"], 11, tc["row"], 5)
+                style_like(tc["row"], 12, tc["row"], 3)
 
                 # --- To mau o Trang Thai cho de nhin ---
                 status_cell = ws.cell(row=tc["row"], column=8)

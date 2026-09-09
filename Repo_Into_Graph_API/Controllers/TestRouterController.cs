@@ -52,5 +52,6 @@ namespace Repo_Into_Graph_API.Controllers
             var result = await _hybridContextService.GenerateAsync(input);
             return Ok(result);
         }
+
     }
 }

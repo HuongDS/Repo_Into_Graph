@@ -99,6 +99,7 @@ async def parse_structure_health():
     return {"ok": True, "service": "tang2-structure", "parser": "tree-sitter"}
 
 
+
 if __name__ == "__main__":
     import uvicorn
     # Chạy trên port 8000

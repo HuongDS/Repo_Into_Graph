@@ -4,8 +4,10 @@ using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
 using Repo_Into_Graph_Application.Exceptions;
 using System;
 using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Repo_Into_Graph_Application.Services.WorkflowAssessment;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
+using Repo_Into_Graph_Application.Services.LLMOrchestrator;
 
 namespace Repo_Into_Graph_API.Controllers
 {
@@ -15,13 +17,16 @@ namespace Repo_Into_Graph_API.Controllers
     {
         private readonly IQuestionGenerate _questionGenerate;
         private readonly IWorkflowAssessmentService _workflowAssessmentService;
+        private readonly IE2EOrchestratorService _e2eOrchestratorService;
 
         public QuestionGeneratorController(
             IQuestionGenerate questionGenerate,
-            IWorkflowAssessmentService workflowAssessmentService)
+            IWorkflowAssessmentService workflowAssessmentService,
+            IE2EOrchestratorService e2eOrchestratorService)
         {
             _questionGenerate = questionGenerate ?? throw new ArgumentNullException(nameof(questionGenerate));
             _workflowAssessmentService = workflowAssessmentService ?? throw new ArgumentNullException(nameof(workflowAssessmentService));
+            _e2eOrchestratorService = e2eOrchestratorService ?? throw new ArgumentNullException(nameof(e2eOrchestratorService));
         }
 
         [HttpPost("generate-traditional")]
@@ -66,6 +71,16 @@ namespace Repo_Into_Graph_API.Controllers
                 throw new BadRequestException("Trường 'question' không được để trống.");
 
             var result = await _workflowAssessmentService.Coverage.AssessAsync(request);
+            return Ok(result);
+        }
+
+        [HttpPost("generate-e2e")]
+        public async Task<IActionResult> GenerateE2EQuestions([FromBody] GenerateQuestionsRequest request)
+        {
+            if (request.NumberOfQuestions <= 0)
+                throw new BadRequestException("numberOfQuestions phải lớn hơn 0.");
+
+            var result = await _e2eOrchestratorService.GenerateE2EQuestionsAsync(request);
             return Ok(result);
         }
     }

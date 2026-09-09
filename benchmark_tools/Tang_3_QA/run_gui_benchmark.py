@@ -70,14 +70,16 @@ class BenchmarkApp(ctk.CTk):
         
         # - Phương pháp
         ctk.CTkLabel(frame_config, text="🔬 Phương Pháp Test:", font=ctk.CTkFont(weight="bold")).grid(row=2, column=0, padx=20, pady=10, sticky="w")
-        self.radio_var = ctk.StringVar(value="Both")
-        r_both = ctk.CTkRadioButton(frame_config, text="A/B Test (Cả Hai)", variable=self.radio_var, value="Both")
+        self.radio_var = ctk.StringVar(value="All")
+        r_all = ctk.CTkRadioButton(frame_config, text="Run All (Cả 3)", variable=self.radio_var, value="All")
         r_trad = ctk.CTkRadioButton(frame_config, text="Truyền Thống", variable=self.radio_var, value="Traditional")
         r_cfg = ctk.CTkRadioButton(frame_config, text="CFG (Graph)", variable=self.radio_var, value="CFG")
+        r_e2e = ctk.CTkRadioButton(frame_config, text="E2E (3 Tầng)", variable=self.radio_var, value="E2E")
         
-        r_both.grid(row=2, column=1, padx=10, pady=10, sticky="w")
-        r_trad.grid(row=2, column=2, padx=10, pady=10, sticky="w")
-        r_cfg.grid(row=2, column=3, padx=10, pady=10, sticky="w")
+        r_all.grid(row=2, column=1, padx=5, pady=10, sticky="w")
+        r_trad.grid(row=2, column=2, padx=5, pady=10, sticky="w")
+        r_cfg.grid(row=2, column=3, padx=5, pady=10, sticky="w")
+        r_e2e.grid(row=2, column=4, padx=5, pady=10, sticky="w")
         
         # - Số câu hỏi & Độ khó
         ctk.CTkLabel(frame_config, text="🔢 Số Lượng Câu Hỏi:", font=ctk.CTkFont(weight="bold")).grid(row=3, column=0, padx=20, pady=10, sticky="w")
@@ -255,7 +257,12 @@ class BenchmarkApp(ctk.CTk):
         self.set_status(f"Trạng thái: Khởi động Pipeline {mode}...")
         self.set_progress(0.1)
         
-        generate_endpoint = f"{api_url}/api/QuestionGenerator/generate-traditional" if mode == "Traditional" else f"{api_url}/api/QuestionGenerator/generate-graph"
+        if mode == "Traditional":
+            generate_endpoint = f"{api_url}/api/QuestionGenerator/generate-traditional"
+        elif mode == "E2E":
+            generate_endpoint = f"{api_url}/api/QuestionGenerator/generate-e2e"
+        else:
+            generate_endpoint = f"{api_url}/api/QuestionGenerator/generate-graph"
         
         self.set_status(f"Trạng thái: Đang sinh {num_questions} câu hỏi ({mode})...")
         self.log(f"1. Calling QuestionGenerator ({mode})...")
@@ -264,7 +271,7 @@ class BenchmarkApp(ctk.CTk):
             "businessId": business_id,
             "numberOfQuestions": num_questions,
             "difficulty": difficulty,
-            "mode": "Graph" if mode == "Graph-based (CFG)" else "Traditional"
+            "mode": "Traditional" if mode == "Traditional" else ("E2E" if mode == "E2E" else "Graph")
         }
         
         gen_res = requests.post(generate_endpoint, json=gen_payload, verify=False).json()
@@ -367,11 +374,12 @@ class BenchmarkApp(ctk.CTk):
             "difficulty": difficulty,
             "requestedQuestions": num_questions,
             "traditional": None,
-            "cfg": None
+            "cfg": None,
+            "e2e": None
         }
         
         try:
-            if method in ["Both", "Traditional"]:
+            if method in ["All", "Traditional"]:
                 t_time, t_gen, t_cov, t_acc, t_diff = self.run_pipeline(api_url, business_id, num_questions, difficulty, "Traditional")
                 t_data = self.assemble_results(t_time, t_gen, t_cov, t_acc, t_diff)
                 
@@ -391,7 +399,7 @@ class BenchmarkApp(ctk.CTk):
                     "difficulty": t_diff
                 }
 
-            if method in ["Both", "CFG"]:
+            if method in ["All", "CFG"]:
                 c_time, c_gen, c_cov, c_acc, c_diff = self.run_pipeline(api_url, business_id, num_questions, difficulty, "Graph-based (CFG)")
                 c_data = self.assemble_results(c_time, c_gen, c_cov, c_acc, c_diff)
                 
@@ -409,6 +417,26 @@ class BenchmarkApp(ctk.CTk):
                     "coverage": c_cov,
                     "accuracy": c_acc,
                     "difficulty": c_diff
+                }
+
+            if method in ["All", "E2E"]:
+                e_time, e_gen, e_cov, e_acc, e_diff = self.run_pipeline(api_url, business_id, num_questions, difficulty, "E2E")
+                e_data = self.assemble_results(e_time, e_gen, e_cov, e_acc, e_diff)
+                
+                results["e2eTime"] = e_data["time"]
+                results["e2eInputTokens"] = e_data["inputTokens"]
+                results["e2eOutputTokens"] = e_data["outputTokens"]
+                results["e2eCoverage"] = e_data["coverage"]
+                results["e2eActiveNodes"] = e_data["activeNodes"]
+                results["e2eAccuracy"] = e_data["accuracy"]
+                results["e2eComplexity"] = e_data["complexity"]
+                results["e2eDetails"] = e_data["details"]
+                
+                raw_logs["e2e"] = {
+                    "generate": e_gen,
+                    "coverage": e_cov,
+                    "accuracy": e_acc,
+                    "difficulty": e_diff
                 }
                 
             # DUMP RAW LOGS TO JSON
@@ -452,20 +480,6 @@ class BenchmarkApp(ctk.CTk):
             if not os.path.exists(excel_path):
                 self.log(f"[THÔNG BÁO] Không tìm thấy file excel {excel_path}. Đang tự động tạo file mới...")
                 wb = openpyxl.Workbook()
-                # Initialize the 'Báo cáo' sheet
-                ws_report = wb.active
-                ws_report.title = "Báo cáo"
-                ws_report.append(['BÁO CÁO KẾT QUẢ THỬ NGHIỆM SO SÁNH: TRADITIONAL (CODE THÔ) VS GRAPH-BASED (CFG)'])
-                ws_report.append([])
-                ws_report.append(['Hạng mục Đánh giá (Metrics)', 'Đơn vị', 'Phương pháp Code Thô (Traditional)', 'Phương pháp Đồ thị (CFG)', 'Chênh lệch (Delta)', '% Tối ưu / Tăng trưởng', 'Ghi chú & Nhận xét'])
-                ws_report.append(['Độ bao phủ trung bình (Average Total Coverage)', '%', '', '', '=D4-C4', '=IF(C4=0,0,(D4-C4)/C4)', 'Chỉ số từ API assess-from-response'])
-                ws_report.append(['Độ bao phủ theo Workflow (Coverage Workflow/Global)', '%', '', '', '=D5-C5', '=IF(C5=0,0,(D5-C5)/C5)', 'Tỷ lệ nút workflow được chạm đến'])
-                ws_report.append(['Độ chính xác trung bình (Average Accuracy Rate)', '%', '', '', '=D6-C6', '=IF(C6=0,0,(D6-C6)/C6)', 'Chỉ số từ API assess-accuracy'])
-                ws_report.append(['Thời gian sinh câu hỏi trung bình (Avg Gen Time)', 'ms', '', '', '=D7-C7', '=IF(C7=0,0,(D7-C7)/C7)', 'Thời gian Postman nhận Response'])
-                ws_report.append(['Tổng Token đầu vào (Total Input Tokens)', 'tokens', '', '', '=D8-C8', '=IF(C8=0,0,(D8-C8)/C8)', 'Token truyền vào Gemini AI'])
-                ws_report.append(['Tổng Token đầu ra (Total Output Tokens)', 'tokens', '', '', '=D9-C9', '=IF(C9=0,0,(D9-C9)/C9)', 'Token Gemini AI phản hồi'])
-                ws_report.append(['Số câu hỏi hợp lệ / Đúng logic', 'câu', '', '', '=D10-C10', '=IF(C10=0,0,(D10-C10)/C10)', 'Số câu không vi phạm logic code'])
-                ws_report.append(['Độ phức tạp Cyclomatic Avg (Số cạnh active)', 'cạnh', '', '', '=D11-C11', '=IF(C11=0,0,(D11-C11)/C11)', 'Chỉ số từ API assess-difficulty'])
             else:
                 wb = openpyxl.load_workbook(excel_path)
             
@@ -474,6 +488,25 @@ class BenchmarkApp(ctk.CTk):
                 wb["Báo cáo So sánh (Dashboard)"].title = "Báo cáo"
             if "Thử nghiệm" in wb.sheetnames:
                 wb["Thử nghiệm"].title = "Run"
+
+            # --- ALWAYS REBUILD BÁO CÁO SHEET ---
+            if "Báo cáo" not in wb.sheetnames:
+                ws_report = wb.create_sheet("Báo cáo", 0)
+            else:
+                ws_report = wb["Báo cáo"]
+                ws_report.delete_rows(1, ws_report.max_row) # Clear it completely
+                
+            ws_report.append(['BÁO CÁO KẾT QUẢ THỬ NGHIỆM SO SÁNH 3 PHƯƠNG PHÁP: TRADITIONAL VS CFG VS E2E'])
+            ws_report.append([])
+            ws_report.append(['Hạng mục Đánh giá (Metrics)', 'Đơn vị', 'Code Thô (Traditional)', 'Đồ thị (CFG)', 'E2E (3 Tầng)', 'E2E vs Trad (Delta)', 'E2E vs CFG (Delta)', 'Ghi chú & Nhận xét'])
+            ws_report.append(['Độ bao phủ trung bình (Average Total Coverage)', '%', '', '', '', '=E4-C4', '=E4-D4', 'Chỉ số từ API assess-from-response'])
+            ws_report.append(['Độ bao phủ theo Workflow (Coverage Workflow/Global)', '%', '', '', '', '=E5-C5', '=E5-D5', 'Tỷ lệ nút workflow được chạm đến'])
+            ws_report.append(['Độ chính xác trung bình (Average Accuracy Rate)', '%', '', '', '', '=E6-C6', '=E6-D6', 'Chỉ số từ API assess-accuracy'])
+            ws_report.append(['Thời gian sinh câu hỏi trung bình (Avg Gen Time)', 'ms', '', '', '', '=E7-C7', '=E7-D7', 'Thời gian Postman nhận Response'])
+            ws_report.append(['Tổng Token đầu vào (Total Input Tokens)', 'tokens', '', '', '', '=E8-C8', '=E8-D8', 'Token truyền vào Gemini AI'])
+            ws_report.append(['Tổng Token đầu ra (Total Output Tokens)', 'tokens', '', '', '', '=E9-C9', '=E9-D9', 'Token Gemini AI phản hồi'])
+            ws_report.append(['Số câu hỏi hợp lệ / Đúng logic', 'câu', '', '', '', '=E10-C10', '=E10-D10', 'Số câu không vi phạm logic code'])
+            ws_report.append(['Độ phức tạp Cyclomatic Avg (Số cạnh active)', 'cạnh', '', '', '', '=E11-C11', '=E11-D11', 'Chỉ số từ API assess-difficulty'])
                 
             # --- UPDATE BÁO CÁO FORMULAS ---
             if "Báo cáo" in wb.sheetnames:
@@ -497,6 +530,16 @@ class BenchmarkApp(ctk.CTk):
                 ws_report["D9"] = '=SUMIFS(Run!G:G, Run!D:D, "Graph-based (CFG)")'
                 ws_report["D10"] = '=COUNTIFS(Run!D:D, "Graph-based (CFG)", Run!J:J, "Đúng")'
                 ws_report["D11"] = '=AVERAGEIFS(Run!L:L, Run!D:D, "Graph-based (CFG)")'
+                
+                # E2E (Column E)
+                ws_report["E4"] = '=AVERAGEIFS(Run!H:H, Run!D:D, "E2E (Kết hợp 3 Tầng)")'
+                ws_report["E5"] = '=AVERAGEIFS(Run!H:H, Run!D:D, "E2E (Kết hợp 3 Tầng)")'
+                ws_report["E6"] = '=AVERAGEIFS(Run!K:K, Run!D:D, "E2E (Kết hợp 3 Tầng)")'
+                ws_report["E7"] = '=AVERAGEIFS(Run!E:E, Run!D:D, "E2E (Kết hợp 3 Tầng)")'
+                ws_report["E8"] = '=SUMIFS(Run!F:F, Run!D:D, "E2E (Kết hợp 3 Tầng)")'
+                ws_report["E9"] = '=SUMIFS(Run!G:G, Run!D:D, "E2E (Kết hợp 3 Tầng)")'
+                ws_report["E10"] = '=COUNTIFS(Run!D:D, "E2E (Kết hợp 3 Tầng)", Run!J:J, "Đúng")'
+                ws_report["E11"] = '=AVERAGEIFS(Run!L:L, Run!D:D, "E2E (Kết hợp 3 Tầng)")'
 
             # --- SUMMARY / RUN SHEET ---
             if "Run" not in wb.sheetnames:
@@ -532,25 +575,30 @@ class BenchmarkApp(ctk.CTk):
                 stt = 1
                 for q in details_list:
                     ws_run.cell(row=run_row, column=1, value=stt)
-                    ws_run.cell(row=run_row, column=2, value=f"{results['runId']}_{'TRAD' if 'Trad' in mode else 'CFG'}")
+                    mode_label = "TRAD" if "Trad" in mode else ("E2E" if "E2E" in mode else "CFG")
+                    ws_run.cell(row=run_row, column=2, value=f"{results['runId']}_{mode_label}")
                     ws_run.cell(row=run_row, column=3, value=results['businessName'])
                     ws_run.cell(row=run_row, column=4, value=mode)
-                    ws_run.cell(row=run_row, column=5, value=results_dict.get(f"{'trad' if 'Trad' in mode else 'cfg'}Time", 0))
-                    ws_run.cell(row=run_row, column=6, value=results_dict.get(f"{'trad' if 'Trad' in mode else 'cfg'}InputTokens", 0))
-                    ws_run.cell(row=run_row, column=7, value=results_dict.get(f"{'trad' if 'Trad' in mode else 'cfg'}OutputTokens", 0))
+                    
+                    prefix = "trad" if "Trad" in mode else ("e2e" if "E2E" in mode else "cfg")
+                    ws_run.cell(row=run_row, column=5, value=results_dict.get(f"{prefix}Time", 0))
+                    ws_run.cell(row=run_row, column=6, value=results_dict.get(f"{prefix}InputTokens", 0))
+                    ws_run.cell(row=run_row, column=7, value=results_dict.get(f"{prefix}OutputTokens", 0))
                     ws_run.cell(row=run_row, column=8, value=q.get("coverage", 0))
                     ws_run.cell(row=run_row, column=9, value=q.get("activeNodes", 0))
                     ws_run.cell(row=run_row, column=10, value="Đúng" if q.get("isAccurate", False) else "Sai")
-                    ws_run.cell(row=run_row, column=11, value=results_dict.get(f"{'trad' if 'Trad' in mode else 'cfg'}Accuracy", 0))
+                    ws_run.cell(row=run_row, column=11, value=results_dict.get(f"{prefix}Accuracy", 0))
                     ws_run.cell(row=run_row, column=12, value=q.get("cyclomatic", 0))
                     
                     run_row += 1
                     stt += 1
 
-            if method in ["Both", "Traditional"]:
+            if method in ["All", "Traditional"]:
                 write_run_sheet("Traditional", results, results.get("tradDetails", []))
-            if method in ["Both", "CFG"]:
+            if method in ["All", "CFG"]:
                 write_run_sheet("Graph-based (CFG)", results, results.get("cfgDetails", []))
+            if method in ["All", "E2E"]:
+                write_run_sheet("E2E (Kết hợp 3 Tầng)", results, results.get("e2eDetails", []))
 
             # --- DETAILS SHEET ---
             if "Chi tiết Câu hỏi" not in wb.sheetnames:
@@ -583,17 +631,20 @@ class BenchmarkApp(ctk.CTk):
                 
                 stt = 1
                 for q in details_list:
-                    ws_details.cell(row=d_row, column=1, value=f"{results['runId']}_{'TRAD' if 'Trad' in mode else 'CFG'}")
+                    mode_label = "TRAD" if "Trad" in mode else ("E2E" if "E2E" in mode else "CFG")
+                    ws_details.cell(row=d_row, column=1, value=f"{results['runId']}_{mode_label}")
                     ws_details.cell(row=d_row, column=2, value=mode)
                     ws_details.cell(row=d_row, column=3, value=stt)
                     ws_details.cell(row=d_row, column=4, value=q.get("question", ""))
                     d_row += 1
                     stt += 1
 
-            if method in ["Both", "Traditional"]:
+            if method in ["All", "Traditional"]:
                 write_details("Traditional", results.get("tradDetails", []))
-            if method in ["Both", "CFG"]:
+            if method in ["All", "CFG"]:
                 write_details("Graph-based (CFG)", results.get("cfgDetails", []))
+            if method in ["All", "E2E"]:
+                write_details("E2E (Kết hợp 3 Tầng)", results.get("e2eDetails", []))
 
             wb.save(excel_path)
             self.log(f"Đã lưu thành công vào file Excel!")
@@ -742,6 +793,18 @@ class BenchmarkApp(ctk.CTk):
                         q_text = q.get("question", q.get("Question", ""))
                         btn = ctk.CTkButton(left_panel, text=f"Câu {i}", fg_color="transparent", text_color="#333333", hover_color="#E1E5EB", anchor="w",
                                             command=lambda m="cfg", idx=i, qt=q_text: show_question_details(m, idx, qt))
+                        btn.pack(fill="x", padx=5, pady=2)
+                        
+                # Add buttons for E2E
+                if current_data.get("e2e"):
+                    lbl_e = ctk.CTkLabel(left_panel, text="E2E (3 Tầng)", font=ctk.CTkFont(weight="bold"), text_color="#0066CC")
+                    lbl_e.pack(pady=(15, 5), anchor="w", padx=10)
+                    
+                    e_gen = current_data["e2e"]["generate"].get("generatedQuestionDtos", current_data["e2e"]["generate"].get("GeneratedQuestionDtos", []))
+                    for i, q in enumerate(e_gen, 1):
+                        q_text = q.get("question", q.get("Question", ""))
+                        btn = ctk.CTkButton(left_panel, text=f"Câu {i}", fg_color="transparent", text_color="#333333", hover_color="#E1E5EB", anchor="w",
+                                            command=lambda m="e2e", idx=i, qt=q_text: show_question_details(m, idx, qt))
                         btn.pack(fill="x", padx=5, pady=2)
                         
             except Exception as e:

@@ -529,3 +529,37 @@ def _parse_once(code: str, language: str, allow_synthetic: bool = True) -> dict:
         "methods": methods,
         "warnings": warnings,
     }
+
+
+# ── Che comment / chuoi bang chinh node type cua tree-sitter ─────────
+# Dung cho buoc quet metadata (async marker, annotation, dependency).
+# Khong dung bo quet chuoi tu viet -> khong dinh cac bay "chuoi chua tu khoa".
+MASK_NODE_TYPES = {
+    "comment", "line_comment", "block_comment", "documentation_comment",
+    "string_literal", "character_literal", "text_block", "raw_string_literal",
+    "verbatim_string_literal", "interpolated_string_expression",
+    "interpolated_verbatim_string_text", "string_content", "char_literal",
+}
+
+
+def mask_source(code: str, language: str) -> str:
+    """Tra ve ban sao cua ma nguon voi comment va chuoi bi thay bang dau cach
+    (giu nguyen do dai va so dong, nen moi chi so van anh xa 1-1)."""
+    lang_key = EXT_MAP.get((language or "").strip().lower(), "cs")
+    parser = PARSERS[lang_key]
+
+    src = _Src(code or "")
+    tree = parser.parse(src.data)
+    buf = list(src.code)
+
+    def walk(node):
+        if node.type in MASK_NODE_TYPES:
+            for i in range(src.ch(node.start_byte), src.ch(node.end_byte)):
+                if i < len(buf) and buf[i] != "\n":
+                    buf[i] = " "
+            return
+        for child in node.children:
+            walk(child)
+
+    walk(tree.root_node)
+    return "".join(buf)

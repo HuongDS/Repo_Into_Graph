@@ -17,13 +17,12 @@ namespace Repo_Into_Graph_Application.Services.AI
             int numberOfQuestions,
             string difficulty,
             string? additionalContext = null,
-            
             IEnumerable<FewShotExample>? fewShotExamples = null);
 
-      
-
-
-
+        /// <summary>
+        /// [Tầng 3] Sinh câu hỏi sử dụng Polly Retry & Latency tracking. Trả về GeminiQuestionResponse.
+        /// </summary>
+        Task<(Repo_Into_Graph_Application.Dtos.LLMOrchestrator.GeminiQuestionResponse Response, int InputTokens, int OutputTokens)> GenerateCodeQuestionsAsync(string systemPrompt, string finalPayload);
     }
 }
 

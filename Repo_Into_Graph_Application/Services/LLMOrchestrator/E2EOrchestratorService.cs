@@ -79,7 +79,7 @@ namespace Repo_Into_Graph_Application.Services.LLMOrchestrator
                     SourceCode = method.SourceCode
                 };
                 var routerDecision = await _routerService.EvaluateCodeContextAsync(routerRequest);
-                
+
                 string routeType = routerDecision?.SelectedRoute == Repo_Into_Graph_Application.Dtos.AdaptiveContextRouter.RoutingType.HybridGraph ? "ROUTE_HYBRID" : "ROUTE_RAW_CODE";
 
                 // Map language string for markdown fencing
@@ -91,27 +91,39 @@ namespace Repo_Into_Graph_Application.Services.LLMOrchestrator
                 {
                     NodeName = $"{method.ClassName}.{method.MethodName}",
                     Language = language,
-                    RouteType = routeType,
+                    RouteType = "ROUTE_RAW_CODE",
                     SourceCode = method.SourceCode
                 };
 
-                // Tầng 2: Nếu là ROUTE_HYBRID thì sinh Hybrid CFG
+                // Tầng 2: Nếu là ROUTE_HYBRID thì dùng lại kết quả Tầng 2 mà Tầng 1 đã
+                // sinh sẵn (routerDecision.HybridContextResult) — KHÔNG gọi lại
+                // _hybridContextService.GenerateAsync lần nữa (tránh gọi trùng Python
+                // Microservice và tốn thời gian vô ích).
                 if (routeType == "ROUTE_HYBRID")
                 {
-                    var hybridInput = new HybridContextInputDto
-                    {
-                        ModuleId = method.MethodName,
-                        Language = language,
-                        RoutingDecision = routeType,
-                        RawSourceCode = method.SourceCode
-                    };
-                    var hybridResult = await _hybridContextService.GenerateAsync(hybridInput);
+                    var hybridResult = routerDecision?.HybridContextResult;
 
-                    if (hybridResult != null)
+                    // Chỉ dùng ngữ cảnh lai khi Tầng 2 chạy thành công VÀ thực sự tiết
+                    // kiệm token so với mã nguồn gốc. hybrid_prompt là bản đã được Tầng 2
+                    // TỐI ƯU SẴN (CFG + critical logic đã lọc theo trọng số + metadata) —
+                    // phải dùng thẳng field này thay vì tự ghép CfgSkeleton với TOÀN BỘ
+                    // CriticalSnippets (chưa lọc, tối đa 40 đoạn) vì cách ghép thủ công đó
+                    // vừa trùng lặp thông tin với CFG vừa không lọc theo trọng số, nên
+                    // thường DÀI HƠN cả mã nguồn gốc — đây chính là lý do token vượt quá
+                    // cách gửi code base thuần.
+                    bool hybridIsUsable = hybridResult != null
+                        && hybridResult.Status != "FAILED"
+                        && !string.IsNullOrWhiteSpace(hybridResult.HybridPrompt)
+                        && hybridResult.Metrics.EstimatedTokenSavingPct > 0;
+
+                    if (hybridIsUsable)
                     {
-                        functionNode.CfgSkeleton = hybridResult.CfgSkeleton ?? string.Empty;
-                        functionNode.CriticalSnippets = hybridResult.CriticalSnippets != null ? string.Join("\n", hybridResult.CriticalSnippets) : string.Empty;
+                        functionNode.RouteType = "ROUTE_HYBRID";
+                        functionNode.HybridPrompt = hybridResult!.HybridPrompt;
                     }
+                    // Nếu Tầng 2 lỗi hoặc ngữ cảnh lai không nhỏ hơn mã nguồn gốc,
+                    // functionNode giữ nguyên ROUTE_RAW_CODE + SourceCode đã gán ở trên
+                    // (an toàn, không bao giờ tốn token hơn cách gửi code base thuần).
                 }
 
                 functionNodes.Add(functionNode);

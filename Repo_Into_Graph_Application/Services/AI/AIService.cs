@@ -28,7 +28,10 @@ namespace Repo_Into_Graph_Application.Services.AI
 
             var clientOptions = new ClientOptions
             {
-                HttpClientFactory = () => httpClientFactory.CreateClient()
+                // Dùng client "GeminiLongRunning" (timeout 10 phút) thay cho client mặc
+                // định (timeout 100 giây). Prompt lớn của luồng E2E sinh lâu hơn 100s nên
+                // client mặc định ném TaskCanceledException -> API trả 499.
+                HttpClientFactory = () => httpClientFactory.CreateClient("GeminiLongRunning")
             };
 
             _client = new Client(apiKey: apiKey, clientOptions: clientOptions);

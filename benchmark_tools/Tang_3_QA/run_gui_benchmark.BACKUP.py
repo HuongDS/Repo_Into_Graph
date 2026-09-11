@@ -11,32 +11,6 @@ from tkinter import filedialog, messagebox
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ==========================================================================
-# CAU HINH CHONG LOI API (Gemini / DeepSeek co the loi tam thoi: 429, 503, timeout)
-# ==========================================================================
-REQUEST_TIMEOUT = 300        # giay - cho toi da cho 1 lan goi API
-MAX_RETRIES     = 4          # tong so lan thu cho MOI buoc (1 lan dau + 3 lan thu lai)
-RETRY_WAIT      = [20, 45, 90]   # giay - nghi bao lau truoc moi lan thu lai
-RATE_LIMIT_WAIT = 65         # giay - nghi lau hon khi bi HTTP 429 (rate limit)
-
-
-def _validate_generate(data):
-    """Kiem tra ket qua buoc sinh cau hoi. Tra ve None neu OK, hoac chuoi mo ta loi."""
-    qs = data.get("generatedQuestionDtos", data.get("GeneratedQuestionDtos", []))
-    if not qs:
-        return "API khong tra ve cau hoi nao (0 questions)"
-    if not data.get("inputTokens"):
-        return "API khong tra ve inputTokens (= 0) -> ket qua khong hop le"
-    return None
-
-
-def _validate_assessment(data):
-    """Kiem tra ket qua cac buoc cham diem."""
-    if not data.get("questionResults"):
-        return "API khong tra ve questionResults"
-    return None
-
-
 # --- THEME CONFIGURATION ---
 ctk.set_appearance_mode("Light")  # The user explicitly requested Light mode
 ctk.set_default_color_theme("blue")
@@ -52,7 +26,6 @@ class BenchmarkApp(ctk.CTk):
 
         
         self.loaded_businesses = []  # List of dicts: {"name": "...", "id": "..."}
-        self.last_call_ms = 0        # thoi gian (ms) cua lan goi API thanh cong gan nhat
         
         # --- UI SETUP ---
         self.setup_ui()
@@ -278,83 +251,7 @@ class BenchmarkApp(ctk.CTk):
         thread.start()
 
     # --- BENCHMARK WORKFLOW LOGIC ---
-
-    def post_with_retry(self, url, payload, step_name, mode, validate=None):
-        """
-        Goi POST co kiem tra loi day du + TU DONG CHAY LAI khi API loi tam thoi.
-
-        Khac biet so voi ban cu:
-          - Co timeout (truoc day khong co -> treo vo han).
-          - Kiem tra HTTP status (truoc day HTTP 500/429 van bi coi la thanh cong).
-          - Kiem tra noi dung tra ve (truoc day response rong -> am tham ghi so 0).
-          - Het so lan thu thi NEM LOI, KHONG BAO GIO tra ve du lieu rong.
-
-        Thoi gian cua lan goi thanh cong duoc luu vao self.last_call_ms
-        (khong tinh thoi gian nghi giua cac lan thu).
-        """
-        last_error = "khong ro"
-
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                t0 = time.time()
-                resp = requests.post(url, json=payload, verify=False, timeout=REQUEST_TIMEOUT)
-                elapsed_ms = int((time.time() - t0) * 1000)
-
-                # --- 1. Kiem tra ma HTTP ---
-                if resp.status_code != 200:
-                    last_error = "HTTP %d: %s" % (resp.status_code, resp.text[:300])
-
-                    if resp.status_code == 429:
-                        retry_after = resp.headers.get("Retry-After", "")
-                        wait = int(retry_after) if retry_after.isdigit() else RATE_LIMIT_WAIT
-                        self.log("   [!] %s (%s) bi RATE LIMIT (429) - lan %d/%d."
-                                 % (step_name, mode, attempt, MAX_RETRIES))
-                        if attempt >= MAX_RETRIES:
-                            break
-                        self.log("       -> Nghi %ds roi CHAY LAI buoc nay..." % wait)
-                        self.set_status("Trang thai: Bi rate limit, cho %ds roi thu lai..." % wait)
-                        time.sleep(wait)
-                        continue
-
-                    if resp.status_code in (500, 502, 503, 504):
-                        raise requests.exceptions.RequestException(last_error)
-
-                    # 4xx khac (400 sai payload, 404 sai endpoint...) -> thu lai vo ich
-                    raise RuntimeError("[%s] %s that bai VINH VIEN - %s" % (mode, step_name, last_error))
-
-                # --- 2. Parse JSON ---
-                data = resp.json()
-
-                # --- 3. Kiem tra noi dung ---
-                if validate is not None:
-                    problem = validate(data)
-                    if problem:
-                        last_error = "%s | Response: %s" % (problem, str(data)[:300])
-                        raise requests.exceptions.RequestException(last_error)
-
-                if attempt > 1:
-                    self.log("   [OK] %s (%s) da thanh cong o lan thu %d." % (step_name, mode, attempt))
-                self.last_call_ms = elapsed_ms
-                return data
-
-            except RuntimeError:
-                raise  # loi vinh vien -> khong thu lai nua
-            except Exception as e:
-                last_error = str(e)[:300]
-                if attempt >= MAX_RETRIES:
-                    break
-                wait = RETRY_WAIT[min(attempt - 1, len(RETRY_WAIT) - 1)]
-                self.log("   [!] %s (%s) LOI lan %d/%d: %s"
-                         % (step_name, mode, attempt, MAX_RETRIES, last_error))
-                self.log("       -> Nghi %ds roi CHAY LAI buoc nay..." % wait)
-                self.set_status("Trang thai: Loi API, dang thu lai lan %d..." % (attempt + 1))
-                time.sleep(wait)
-
-        raise RuntimeError(
-            "[%s] %s that bai sau %d lan thu. Loi cuoi: %s"
-            % (mode, step_name, MAX_RETRIES, last_error)
-        )
-
+    
     def run_pipeline(self, api_url, business_id, num_questions, difficulty, mode):
         self.log(f"\n--- Bắt đầu Pipeline {mode} ---")
         self.set_status(f"Trạng thái: Khởi động Pipeline {mode}...")
@@ -377,41 +274,28 @@ class BenchmarkApp(ctk.CTk):
             "mode": "Traditional" if mode == "Traditional" else ("E2E" if mode == "E2E" else "Graph")
         }
         
-        # Buoc 1: sinh cau hoi (tu dong chay lai neu Gemini loi)
-        gen_res = self.post_with_retry(
-            generate_endpoint, gen_payload,
-            "Buoc 1 - Sinh cau hoi", mode, validate=_validate_generate
-        )
-        gen_time = self.last_call_ms
-
+        gen_res = requests.post(generate_endpoint, json=gen_payload, verify=False).json()
+        gen_time = int((time.time() - start_time) * 1000)
+        
         questions = gen_res.get("generatedQuestionDtos", gen_res.get("GeneratedQuestionDtos", []))
         self.log(f"   -> Đã sinh thành công {len(questions)} câu hỏi trong {gen_time}ms.")
         self.set_progress(0.3)
-
+        
         self.set_status(f"Trạng thái: Đang chấm điểm Coverage ({mode})...")
         self.log(f"2. Calling Coverage Assessment ({mode})...")
-        cov_res = self.post_with_retry(
-            f"{api_url}/api/WorkflowAssessment/assess-from-response", gen_res,
-            "Buoc 2 - Coverage", mode, validate=_validate_assessment
-        )
+        cov_res = requests.post(f"{api_url}/api/WorkflowAssessment/assess-from-response", json=gen_res, verify=False).json()
         self.log(f"   -> Hoàn thành Coverage Assessment.")
         self.set_progress(0.5)
-
+        
         self.set_status(f"Trạng thái: Đang chấm điểm Accuracy ({mode})...")
         self.log(f"3. Calling Accuracy Assessment ({mode})...")
-        acc_res = self.post_with_retry(
-            f"{api_url}/api/WorkflowAssessment/assess-accuracy", gen_res,
-            "Buoc 3 - Accuracy", mode, validate=_validate_assessment
-        )
+        acc_res = requests.post(f"{api_url}/api/WorkflowAssessment/assess-accuracy", json=gen_res, verify=False).json()
         self.log(f"   -> Hoàn thành Accuracy Assessment.")
         self.set_progress(0.7)
-
+        
         self.set_status(f"Trạng thái: Đang đánh giá Độ khó ({mode})...")
         self.log(f"4. Calling Difficulty Assessment ({mode})...")
-        diff_res = self.post_with_retry(
-            f"{api_url}/api/WorkflowAssessment/assess-difficulty", gen_res,
-            "Buoc 4 - Difficulty", mode, validate=_validate_assessment
-        )
+        diff_res = requests.post(f"{api_url}/api/WorkflowAssessment/assess-difficulty", json=gen_res, verify=False).json()
         self.log(f"   -> Hoàn thành Difficulty Assessment.")
         self.set_progress(0.9)
         

@@ -41,6 +41,21 @@ builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName)
 // Also register the named client "BaseModel" used by Mscc.GenerativeAI with the same HTTP/1.1 fallback policy
 builder.Services.AddHttpClient("BaseModel", client =>
 {
+    client.Timeout = TimeSpan.FromMinutes(10);
+    client.DefaultRequestVersion = System.Net.HttpVersion.Version11;
+    client.DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower;
+});
+
+// Client RIÊNG cho các lời gọi LLM sinh câu hỏi (Gemini).
+// HttpClient mặc định timeout 100 giây -> prompt lớn của luồng E2E (gom ngữ cảnh
+// của TOÀN BỘ method trong nghiệp vụ) sinh lâu hơn 100s sẽ bị ném
+// TaskCanceledException và bị GlobalExceptionHandler map thành 499
+// "Yêu cầu bị hủy bởi client" (thực ra client không hề hủy).
+// Tách riêng client này để KHÔNG nới timeout của các lời gọi sang Python
+// Microservice (Tầng 1/Tầng 2) - những lời gọi đó cần fail nhanh.
+builder.Services.AddHttpClient("GeminiLongRunning", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(10);
     client.DefaultRequestVersion = System.Net.HttpVersion.Version11;
     client.DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower;
 });

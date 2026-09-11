@@ -1,6 +1,9 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
+using Polly;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration;
 using Google.GenAI;
 using Google.GenAI.Types;
@@ -214,7 +217,79 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
             }
         }
 
+        public async Task<(Repo_Into_Graph_Application.Dtos.LLMOrchestrator.GeminiQuestionResponse Response, int InputTokens, int OutputTokens)> GenerateCodeQuestionsAsync(string systemPrompt, string finalPayload)
+        {
+            var config = new GenerateContentConfig
+            {
+                SystemInstruction = new Content { Parts = [new Part { Text = systemPrompt }] },
+                Temperature = 0.2f,
+                ResponseMimeType = "application/json"
+            };
 
+            var retryPolicy = Policy
+                .Handle<ClientError>(ex => ex.StatusCode == 429 || ex.StatusCode >= 500)
+                .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
+                    (exception, timeSpan, context) =>
+                    {
+                        Console.WriteLine($"⚠️ [AIService Tầng 3] Retry after {timeSpan.TotalSeconds}s due to {exception.Message}");
+                    });
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            
+            var response = await retryPolicy.ExecuteAsync(async () =>
+            {
+                return await _client.Models.GenerateContentAsync(
+                    model: "gemini-3.1-flash-lite",
+                    contents: finalPayload,
+                    config: config
+                );
+            });
+
+            stopwatch.Stop();
+            var latencyMs = stopwatch.ElapsedMilliseconds;
+            Console.WriteLine($"[AIService Tầng 3] Gemini API call latency: {latencyMs} ms");
+
+            if (response == null || string.IsNullOrWhiteSpace(response.Text))
+            {
+                throw new System.Exception("AI API did not return any text response.");
+            }
+
+            string aiJsonText = response.Text.Trim();
+            if (aiJsonText.StartsWith("```"))
+            {
+                int firstNewline = aiJsonText.IndexOf('\n');
+                if (firstNewline != -1) aiJsonText = aiJsonText.Substring(firstNewline + 1);
+                int lastFence = aiJsonText.LastIndexOf("```");
+                if (lastFence != -1) aiJsonText = aiJsonText.Substring(0, lastFence);
+                aiJsonText = aiJsonText.Trim();
+            }
+
+            try
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var result = JsonSerializer.Deserialize<Repo_Into_Graph_Application.Dtos.LLMOrchestrator.GeminiQuestionResponse>(aiJsonText, options);
+                
+                if (result != null && result.MetaData == null)
+                {
+                    result.MetaData = new Repo_Into_Graph_Application.Dtos.LLMOrchestrator.ResponseMetaData
+                    {
+                        TotalGenerated = result.Questions?.Count ?? 0,
+                        Topic = "Software Engineering Context"
+                    };
+                }
+                var responseObj = result ?? new Repo_Into_Graph_Application.Dtos.LLMOrchestrator.GeminiQuestionResponse();
+                
+                int inputTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
+                int outputTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
+                
+                return (responseObj, inputTokens, outputTokens);
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"[AIService Tầng 3] Graceful Degradation - JSON Parse failed: {ex.Message}");
+                return (new Repo_Into_Graph_Application.Dtos.LLMOrchestrator.GeminiQuestionResponse(), 0, 0);
+            }
+        }
     }
 }
 

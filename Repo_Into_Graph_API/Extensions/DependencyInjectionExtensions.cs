@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
+using Repo_Into_Graph_Application.Services.LLMOrchestrator;
 using Repo_Into_Graph_Application.Services.AI;
 using Repo_Into_Graph_Application.Services.Analysis;
 using Repo_Into_Graph_Application.Services.Caculation;
@@ -69,6 +70,11 @@ namespace Repo_Into_Graph_API.Extensions
 
             // AI & Embedding
             services.AddScoped<Repo_Into_Graph_Application.Services.AI.IEmbeddingService, Repo_Into_Graph_Application.Services.AI.EmbeddingService>();
+
+            // LLM Orchestrator (Tang 3)
+            services.AddScoped<IContextAggregatorService, ContextAggregatorService>();
+            services.AddScoped<IPromptBuilderService, PromptBuilderService>();
+            services.AddScoped<IE2EOrchestratorService, E2EOrchestratorService>();
 
             // AutoMapper
             services.AddAutoMapper(cfg => cfg.AddMaps(AppDomain.CurrentDomain.GetAssemblies()));

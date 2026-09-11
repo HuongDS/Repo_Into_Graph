@@ -41,7 +41,7 @@ def analyze_ast(code: str, language_ext: str):
         'if_statement', 'for_statement', 'enhanced_for_statement', 'for_each_statement', 'foreach_statement',
         'while_statement', 'do_statement', 'switch_statement', 'switch_expression',
         'expression_statement', 'local_variable_declaration', 'local_declaration_statement',
-        'field_declaration', 'method_declaration', 'constructor_declaration',
+        'field_declaration', 'method_declaration', 'constructor_declaration', 'local_function_statement',
         'class_declaration', 'interface_declaration', 'enum_declaration',
         'return_statement', 'throw_statement', 'break_statement', 'continue_statement',
         'try_statement', 'catch_clause', 'except_clause', 'finally_clause', 'using_statement', 'lock_statement',

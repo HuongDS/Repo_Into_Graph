@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Repo_Into_Graph_Application.Dtos.WorkflowAssessment;
 
@@ -26,20 +27,26 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.DifficultyEval
                 "[DifficultyAssessment] Bắt đầu – {N} Active Nodes | E_q={E}",
                 activeNodes.Count, request.TotalEdgesInSubgraph);
 
-            // Chỉ số 1: Cyclomatic Complexity – V(G) = E_q - V_q + 2
-            int vq = activeNodes.Count;      // Số nút của đồ thị con G_q
-            int eq = request.TotalEdgesInSubgraph;
-            // Đảm bảo E_q hợp lệ: phải >= V_q - 1 (cây tối giản)
-            if (eq < Math.Max(0, vq - 1))
-            {
-                _logger.LogWarning(
-                    "[DifficultyAssessment] TotalEdgesInSubgraph ({E}) nhỏ hơn V_q-1 ({V}). " +
-                    "Fallback: tính E_q = V_q - 1 (đồ thị tuyến tính).",
-                    eq, vq - 1);
-                eq = Math.Max(0, vq - 1);
-            }
+            // Chỉ số 1: Cyclomatic Complexity – V(G) = E_q - V_q + 2P  (McCabe 1976)
+            //
+            // V_q phải đếm số nút PHÂN BIỆT: ExtractedPath có thể lặp lại cùng một nút,
+            // nếu đếm cả bản lặp thì V(G) sẽ bị âm một cách vô nghĩa.
+            int vq = activeNodes.Select(n => n.NodeId).Distinct().Count();
+            int eq = Math.Max(0, request.TotalEdgesInSubgraph);   // cạnh THẬT của đồ thị con cảm sinh
+            int pq = Math.Max(1, request.ConnectedComponents);    // số thành phần liên thông
 
-            int cyclomaticComplexity = eq - vq + 2;
+            // Đồ thị rỗng thì không có gì để đo.
+            int cyclomaticComplexity = vq == 0 ? 0 : eq - vq + 2 * pq;
+
+            // Với đồ thị con cảm sinh hợp lệ luôn có E_q >= V_q - P, nên V(G) >= P >= 1.
+            // Nếu rơi xuống dưới 1 nghĩa là dữ liệu đầu vào mâu thuẫn (E_q hoặc P sai) -> báo động.
+            if (vq > 0 && cyclomaticComplexity < 1)
+            {
+                _logger.LogError(
+                    "[DifficultyAssessment] DU LIEU MAU THUAN: V(G)={VG} < 1 voi V_q={V}, E_q={E}, P={P}. " +
+                    "Kiem tra lai cach dem canh/thanh phan lien thong o tang Controller.",
+                    cyclomaticComplexity, vq, eq, pq);
+            }
 
             // Chỉ số 2: Impact Path Length – L_q = V_q - 1
             int impactPathLength = Math.Max(0, activeNodes.Count - 1);
@@ -62,11 +69,11 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.DifficultyEval
             // Xây dựng Reasoning
             string reasoning = BuildReasoning(
                 level, cyclomaticComplexity, impactPathLength,
-                gatewaysCount, gatewayNames, vq, eq, pathType);
+                gatewaysCount, gatewayNames, vq, eq, pq, activeNodes.Count, pathType);
 
             _logger.LogInformation(
-                "[DifficultyAssessment] Hoàn thành – Level={Level} | V(G)={VG} | L_q={L} | Gateways={G}",
-                level, cyclomaticComplexity, impactPathLength, gatewaysCount);
+                "[DifficultyAssessment] Hoàn thành – Level={Level} | V(G)={VG} (V_q={V}, E_q={E}, P={P}) | L_q={L} | Gateways={G}",
+                level, cyclomaticComplexity, vq, eq, pq, impactPathLength, gatewaysCount);
 
             var result = new DifficultyAssessmentResultDto
             {
@@ -115,16 +122,18 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.DifficultyEval
             List<string> gatewayNames,
             int      vq,
             int      eq,
+            int      pq,
+            int      stepCount,
             string   pathType)
         {
             var sb = new System.Text.StringBuilder();
 
             sb.Append($"Câu hỏi đạt mức {level.ToUpper()} (Path Type: {pathType}). ");
-            sb.Append($"Luồng nghiệp vụ trải qua {vq} bước xử lý, ");
-            sb.Append($"tạo thành {impactPathLength} bước chuyển tiếp logic (L_q = V_q - 1 = {vq} - 1 = {impactPathLength}). ");
+            sb.Append($"Luồng nghiệp vụ trải qua {stepCount} bước xử lý, ");
+            sb.Append($"tạo thành {impactPathLength} bước chuyển tiếp logic (L_q = {stepCount} - 1 = {impactPathLength}). ");
 
             // Độ phức tạp tuần hoàn
-            sb.Append($"Độ phức tạp tuần hoàn V(G) = E_q - V_q + 2 = {eq} - {vq} + 2 = {cyclomaticComplexity}, ");
+            sb.Append($"Độ phức tạp tuần hoàn V(G) = E_q - V_q + 2P = {eq} - {vq} + 2*{pq} = {cyclomaticComplexity}, ");
             sb.Append($"tương ứng với {cyclomaticComplexity} kịch bản kiểm thử (test cases) cần thiết. ");
 
             // Gateways

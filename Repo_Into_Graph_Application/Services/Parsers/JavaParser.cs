@@ -14,6 +14,15 @@ public class JavaParser : ILanguageParser
     public string LanguageName => "Java (Spring Boot)";
     public IReadOnlyList<string> SupportedExtensions => new[] { ".java" };
 
+    /// <summary>
+    /// Caller gia dung de danh dau "day la diem vao cua class" (endpoint HTTP hoac method
+    /// public cua Spring bean). Day KHONG phai mot method co that, nen BusinessFlowParser
+    /// phai loai no ra khoi danh sach ung vien entry point — neu khong, EntryPoint cua
+    /// Feature se thanh "SurveyController.__CLASS__" thay vi "SurveyController.getSurveys",
+    /// va khong the khop voi template_business.json.
+    /// </summary>
+    public const string EntryMarker = "__CLASS__";
+
     // ─── Class-level Spring annotations ─────────────────────────────────────
     private static readonly Regex SpringClassAnnotationRegex = new(
         @"@(RestController|Controller|Service|Repository|Component|Configuration|RestControllerAdvice)\b",
@@ -42,6 +51,18 @@ public class JavaParser : ILanguageParser
     // ─── Annotations that indicate a method is a Spring component ────────────
     private static readonly Regex MethodAnnotationRegex = new(
         @"@(Transactional|Async|Scheduled|EventListener|Override)\b",
+        RegexOptions.Compiled);
+
+    // ─── Cau truc re nhanh -> NodeType.DecisionGateway ───────────────────────
+    // Giu DUNG tap cau truc ma CSharpParser.cs:260 dem, de GatewaysCount so sanh duoc
+    // giua hai ngon ngu: if / switch / while / do / for (bao gom ca enhanced-for cua
+    // Java, cung tu khoa "for") / toan tu ba ngoi. KHONG dem catch, vi ben C# cung khong.
+    //
+    // Truoc day JavaParser khong gan Type nen moi method Java deu la NodeType.Activity
+    // (gia tri mac dinh), khien GatewaysCount LUON = 0 voi repo Java — chi so nay mat
+    // hoan toan kha nang do luong, va PathType luon bi xep la "Happy Path".
+    private static readonly Regex BranchRegex = new(
+        @"\bif\s*\(|\bswitch\s*\(|\bwhile\s*\(|\bfor\s*\(|\bdo\s*\{|\?[^;{}\n]{1,120}:",
         RegexOptions.Compiled);
 
     // ─── Noise: Java built-in calls to skip ──────────────────────────────────
@@ -108,21 +129,36 @@ public class JavaParser : ILanguageParser
                     continue;
                 }
 
-                var displayName = pendingHttpVerb != null
-                    ? $"{pendingHttpVerb} {methodName}"
-                    : methodName;
-
                 // Extract method body lines until matching closing brace
                 var methodBody = ExtractMethodBody(lines, i);
 
                 // Store method source
+                bool isDecisionGateway = BranchRegex.IsMatch(methodBody);
+
                 result.MethodSources.Add(new MethodSource
                 {
                     ClassName = currentClass,
                     MethodName = methodName,
                     SourceCode = methodBody,
-                    Language = LanguageName
+                    Language = LanguageName,
+                    Type = isDecisionGateway
+                        ? Repo_Into_Graph_DataAccess.Consts.NodeType.DecisionGateway
+                        : Repo_Into_Graph_DataAccess.Consts.NodeType.Activity
                 });
+
+                // LUU Y VE TEN METHOD TRONG CALL GRAPH:
+                // Truoc day cho nay dung `displayName` = "GET getSurveys" (co tien to HTTP verb)
+                // cho CalleeMethod/CallerMethod, TRONG KHI MethodSources.MethodName luu ten thuan
+                // "getSurveys". Hai ben khong bao gio khop nhau, nen GraphMapperService dung
+                // BuildKey(class, method) tra ra hai khoa khac nhau:
+                //     methodIdLookup : "surveycontroller.getsurveys"
+                //     graphLookup    : "surveycontroller.get getsurveys"
+                // => FindAllMethodsInSubTree khong duyet duoc canh nao, FeatureMethodMapping rong,
+                //    va moi API sinh cau hoi deu khong tim thay source code.
+                //
+                // CSharpParser da xu ly dung viec nay tu truoc (xem CSharpParser.cs:301 —
+                // "Dung ten thuan tuy dong bo") nhung chua duoc port sang day.
+                // HTTP verb chi mang tinh hien thi, khong duoc phep di vao khoa dinh danh.
 
                 // Add entry node if it's an HTTP endpoint or Spring component method
                 if (isSpringClass && (pendingHttpVerb != null || IsPublicMethod(line)))
@@ -130,15 +166,15 @@ public class JavaParser : ILanguageParser
                     result.CallGraphEdges.Add(new CallGraphEdge
                     {
                         CallerClass = currentClass,
-                        CallerMethod = "__CLASS__",
+                        CallerMethod = EntryMarker,
                         CalleeClass = currentClass,
-                        CalleeMethod = displayName,
+                        CalleeMethod = methodName,
                         Language = LanguageName
                     });
                 }
 
                 // Extract calls from method body
-                ExtractMethodCalls(methodBody, currentClass, displayName, result);
+                ExtractMethodCalls(methodBody, currentClass, methodName, result);
 
                 pendingHttpVerb = null;
                 pendingAnnotation = null;
@@ -181,7 +217,9 @@ public class JavaParser : ILanguageParser
                     ? currentClass
                     : InferClassName(objectName);
 
-                if (calleeClass == currentClass && calledMethod == currentMethod.Split(' ').Last()) continue;
+                // Bo canh tu-goi-chinh-minh. currentMethod gio la ten thuan (khong con tien to
+                // HTTP verb) nen so sanh truc tiep, khong can Split(' ').Last() nhu truoc.
+                if (calleeClass == currentClass && calledMethod == currentMethod) continue;
 
                 result.CallGraphEdges.Add(new CallGraphEdge
                 {

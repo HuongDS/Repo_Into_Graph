@@ -21,6 +21,16 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
             "ApplicationService", "AppService", "Endpoint", "Consumer"
         };
 
+        /// <summary>
+        /// Caller giả do JavaParser sinh ra để đánh dấu điểm vào của class — không phải method thật.
+        /// Khai báo tại chỗ (thay vì tham chiếu JavaParser.EntryMarker) để lớp dựng luồng nghiệp vụ
+        /// không phụ thuộc ngược vào một parser cụ thể nào.
+        /// </summary>
+        private const string EntryMarker = "__CLASS__";
+
+        private static bool IsEntryMarker(string? methodName)
+            => string.Equals(methodName?.Trim(), EntryMarker, StringComparison.OrdinalIgnoreCase);
+
         public List<Feature> ParseBusinessFlows(Guid analysisRunId, List<CallGraphEdge> edges)
         {
             var features = new List<Feature>();
@@ -34,7 +44,15 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
             );
 
             // 2. Identify entry points theo naming convention phổ biến (Controller/Handler/UseCase/...)
+            //
+            // Loại JavaParser.EntryMarker ("__CLASS__"): đó là caller giả mà JavaParser sinh ra để
+            // đánh dấu "method này là điểm vào của class", KHÔNG phải một method có thật. Nếu để lọt,
+            // nó vừa tạo EntryPoint rác dạng "SurveyController.__CLASS__" (không khớp được với
+            // template_business.json), vừa khiến bước 4 loại nhầm chính method thật
+            // ("SurveyController.getSurveys") vì method đó reachable từ "__CLASS__".
+            // Hệ quả: toàn bộ repo Java không map được method nào vào Feature.
             var controllerMethods = edges
+                .Where(e => !IsEntryMarker(e.CallerMethod))
                 .Where(e => _entryPointSuffixes.Any(suffix => e.CallerClass.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)))
                 .Select(e => new { Class = e.CallerClass, Method = e.CallerMethod })
                 .Distinct()
@@ -49,6 +67,7 @@ namespace Repo_Into_Graph_Application.Services.DataFlowParser
                     edges.Select(e => $"{e.CalleeClass.Trim().ToLower()}::{e.CalleeMethod.Trim().ToLower()}"));
 
                 controllerMethods = edges
+                    .Where(e => !IsEntryMarker(e.CallerMethod))
                     .Select(e => new { Class = e.CallerClass, Method = e.CallerMethod })
                     .Distinct()
                     .Where(e => !calleeKeys.Contains($"{e.Class.Trim().ToLower()}::{e.Method.Trim().ToLower()}"))

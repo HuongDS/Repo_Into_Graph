@@ -8,6 +8,7 @@ using Repo_Into_Graph_Application.Dtos.HybridContextGenerator;
 using Repo_Into_Graph_Application.Dtos.LLMOrchestrator;
 using Repo_Into_Graph_Application.Dtos.QuestionGenerate;
 using Repo_Into_Graph_Application.Exceptions;
+using Repo_Into_Graph_Application.Helper;
 using Repo_Into_Graph_Application.Services.AdaptiveContextRouter;
 using Repo_Into_Graph_Application.Services.AI;
 using Repo_Into_Graph_Application.Services.HybridContextGenerator;
@@ -72,20 +73,16 @@ namespace Repo_Into_Graph_Application.Services.LLMOrchestrator
             // 4. Chạy Tầng 1 và Tầng 2 cho từng method
             foreach (var method in methodSources)
             {
-                // Tầng 1: Đánh giá Router
-                var routerRequest = new RouterRequestDto
-                {
-                    ModuleId = method.MethodName,
-                    SourceCode = method.SourceCode
-                };
-                var routerDecision = await _routerService.EvaluateCodeContextAsync(routerRequest);
-
-                string routeType = routerDecision?.SelectedRoute == Repo_Into_Graph_Application.Dtos.AdaptiveContextRouter.RoutingType.HybridGraph ? "ROUTE_HYBRID" : "ROUTE_RAW_CODE";
-
-                // Map language string for markdown fencing
-                string language = "csharp";
-                // Assuming extension or something could determine this, or default to csharp since backend mostly is C#.
-                // For this E2E, we default to csharp for method sources.
+                // Xác định ngôn ngữ THẬT của method. Ưu tiên cột Language đã lưu lúc phân
+                // tích repo; nếu null (bản ghi tạo trước migration AddLanguageToMethodSource)
+                // thì LanguageNormalizer suy luận từ chính mã nguồn.
+                //
+                // Trước đây chỗ này hardcode "csharp" và KHÔNG truyền Language xuống
+                // RouterRequestDto, nên mọi method Java đều bị Tầng 1 phân tích bằng
+                // tree-sitter C# => V(G) và SLOC sai => định tuyến sai, và Tầng 2 dựng CFG
+                // trên cây cú pháp sai. Lỗi này im lặng, không ném exception.
+                bool languageSupported = LanguageNormalizer.TryNormalize(
+                    method.Language, method.SourceCode, out string language);
 
                 var functionNode = new FunctionNode
                 {
@@ -94,6 +91,26 @@ namespace Repo_Into_Graph_Application.Services.LLMOrchestrator
                     RouteType = "ROUTE_RAW_CODE",
                     SourceCode = method.SourceCode
                 };
+
+                // Tầng 1 + Tầng 2 chỉ hỗ trợ Java và C#. Với ngôn ngữ khác (Python, Node.js)
+                // Python Microservice trả HTTP 400; gửi lên chỉ tốn một vòng mạng rồi rơi vào
+                // nhánh lỗi. Đi thẳng bằng mã nguồn gốc là hành vi đúng và an toàn.
+                if (!languageSupported)
+                {
+                    functionNodes.Add(functionNode);
+                    continue;
+                }
+
+                // Tầng 1: Đánh giá Router
+                var routerRequest = new RouterRequestDto
+                {
+                    ModuleId = method.MethodName,
+                    SourceCode = method.SourceCode,
+                    Language = language
+                };
+                var routerDecision = await _routerService.EvaluateCodeContextAsync(routerRequest);
+
+                string routeType = routerDecision?.SelectedRoute == Repo_Into_Graph_Application.Dtos.AdaptiveContextRouter.RoutingType.HybridGraph ? "ROUTE_HYBRID" : "ROUTE_RAW_CODE";
 
                 // Tầng 2: Nếu là ROUTE_HYBRID thì dùng lại kết quả Tầng 2 mà Tầng 1 đã
                 // sinh sẵn (routerDecision.HybridContextResult) — KHÔNG gọi lại

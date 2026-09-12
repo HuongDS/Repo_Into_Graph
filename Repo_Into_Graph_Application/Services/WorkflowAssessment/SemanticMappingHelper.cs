@@ -10,6 +10,92 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
     {
         private const double BaseSimilarityThreshold = 0.50;
 
+        // ─────────────────────────────────────────────────────────────────────
+        // ĐỐI CHIẾU TargetedEntryPoints VỚI NODE CỦA ĐỒ THỊ
+        //
+        // Bản cũ dùng Contains() HAI CHIỀU:
+        //     t.Contains(n.NodeName) || n.NodeName.Contains(t)
+        // Với các tên có quan hệ tiền tố, nó khớp bừa:
+        //     t = "DatasetController.getAllDatasetType"
+        //     n = "DatasetController.getAllDataset"      -> t.Contains(n) = TRUE
+        // Nên mọi câu hỏi về getAllDatasetType hay getAllDatasetParent đều bị chèn
+        // thêm node getAllDataset vào đường đi. Node thừa này không có cạnh nối với
+        // các node còn lại => brokenTransitions => isAccurate = false.
+        //
+        // Hậu quả đo được (nghiệp vụ "Danh mục & Loại Dataset", 9 câu):
+        //   - 7/9 câu có node lạ chen vào đầu đường đi
+        //   - 2 câu DUY NHẤT đạt 25/25 là 2 câu về searchByDatasetName — cái tên
+        //     duy nhất không phải tiền tố của tên nào khác
+        // Tức tỷ lệ chính xác đang phản ánh VA CHẠM TÊN, không phải chất lượng câu hỏi.
+        //
+        // Bản mới: chỉ khớp TUYỆT ĐỐI. Ưu tiên khớp đủ "Class.Method"; nếu không có
+        // node nào khớp đủ thì mới khớp tuyệt đối phần tên method (để xử lý trường hợp
+        // LLM khai tên interface "IDatasetService.getX" trong khi đồ thị lưu lớp cài đặt
+        // "DatasetServiceImpl.getX"). Không bao giờ dùng so khớp chuỗi con.
+        //
+        // Thứ tự trả về bám theo thứ tự LLM khai (call stack), không phải thứ tự node
+        // trong đồ thị — bản cũ dùng nodes.Where() nên trả về theo thứ tự đồ thị, làm
+        // đảo ngược đường đi (ServiceImpl đứng trước Controller).
+        // ─────────────────────────────────────────────────────────────────────
+        private static string NormalizeNodeName(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            var v = s.Trim();
+
+            // LLM đôi khi viết kèm tham số: "getAllDataset()" hoặc "getAll(String name)"
+            int paren = v.IndexOf('(');
+            if (paren >= 0) v = v.Substring(0, paren);
+
+            return v.Trim().ToLowerInvariant();
+        }
+
+        private static string MethodSegment(string normalized)
+        {
+            int dot = normalized.LastIndexOf('.');
+            return dot >= 0 && dot < normalized.Length - 1
+                ? normalized.Substring(dot + 1)
+                : normalized;
+        }
+
+        private static List<WorkflowNodeInputDto> MatchTargetedEntryPoints(
+            string[] targetedEntryPoints,
+            List<WorkflowNodeInputDto> nodes)
+        {
+            var result = new List<WorkflowNodeInputDto>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var raw in targetedEntryPoints)
+            {
+                var t = NormalizeNodeName(raw);
+                if (t.Length == 0) continue;
+
+                // 1. Khớp tuyệt đối cả "Class.Method"
+                var hits = nodes
+                    .Where(n => NormalizeNodeName(n.NodeName) == t)
+                    .ToList();
+
+                // 2. Không có thì khớp tuyệt đối phần TÊN METHOD (interface <-> impl)
+                if (hits.Count == 0)
+                {
+                    var tm = MethodSegment(t);
+                    if (tm.Length > 0)
+                    {
+                        hits = nodes
+                            .Where(n => MethodSegment(NormalizeNodeName(n.NodeName)) == tm)
+                            .ToList();
+                    }
+                }
+
+                foreach (var n in hits)
+                {
+                    var key = NormalizeNodeName(n.NodeName);
+                    if (key.Length > 0 && seen.Add(key)) result.Add(n);
+                }
+            }
+
+            return result;
+        }
+
         private readonly IEmbeddingService _embeddingService;
         private readonly IDistributedCache _cache;
         private readonly ILogger<SemanticMappingHelper> _logger;
@@ -37,14 +123,7 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment
             // Nếu đã biết TargetedEntryPoints, bypass vector search!
             if (targetedEntryPoints != null && targetedEntryPoints.Length > 0)
             {
-                var matchedNodes = nodes.Where(n =>
-                    !string.IsNullOrWhiteSpace(n.NodeName) && targetedEntryPoints.Any(t =>
-                        !string.IsNullOrWhiteSpace(t) &&
-                        (string.Equals(t.Trim(), n.NodeName.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                         t.Trim().Contains(n.NodeName.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                         n.NodeName.Trim().Contains(t.Trim(), StringComparison.OrdinalIgnoreCase))
-                    )
-                ).ToList();
+                var matchedNodes = MatchTargetedEntryPoints(targetedEntryPoints, nodes);
 
                 if (matchedNodes.Count > 0)
                 {

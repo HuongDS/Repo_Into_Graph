@@ -114,6 +114,10 @@ namespace Repo_Into_Graph_Application.Services.Analysis
                         ClassName = source.ClassName,
                         MethodName = source.MethodName,
                         SourceCode = source.SourceCode,
+                        // Giu lai ngon ngu mà ILanguageParser da xac dinh. Truoc day truong
+                        // nay bi bo qua khi map MethodSource -> MethodSourceRecord, nen Tang 1
+                        // va Tang 3 khong con cach nao biet method la Java hay C#.
+                        Language = source.Language,
                         Type = source.Type,
                         CreatedAt = DateTime.UtcNow
                     }).ToList(),

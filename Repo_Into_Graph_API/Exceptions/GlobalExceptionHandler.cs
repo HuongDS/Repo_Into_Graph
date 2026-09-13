@@ -86,6 +86,16 @@ namespace Repo_Into_Graph_API.Exceptions
             UnauthorizedAccessException => (401, ex.Message),
             NotSupportedException => (400, ex.Message),
             TimeoutException => (504, "Yêu cầu bị timeout. Vui lòng thử lại sau."),
+
+            // TaskCanceledException do HttpClient HẾT TIMEOUT (InnerException là
+            // TimeoutException) KHÁC hẳn việc client chủ động hủy request: đây là lỗi
+            // phía server khi gọi dịch vụ ngoài (Gemini / DeepSeek / Python Microservice).
+            // Phải map 504 kèm thông báo đúng bản chất, không được báo "client hủy" gây
+            // hiểu nhầm là do bên gọi.
+            TaskCanceledException tce when tce.InnerException is TimeoutException
+                => (504, "Lời gọi tới dịch vụ ngoài (Gemini / DeepSeek / Python Microservice) bị hết thời gian chờ. " +
+                         "Nếu prompt lớn (luồng E2E), hãy tăng Timeout của HttpClient tương ứng."),
+
             OperationCanceledException => (499, "Yêu cầu bị hủy bởi client."),
 
             // Mọi exception khác → 500

@@ -75,10 +75,16 @@ public class GraphMapperService
 
             foreach (var api in bizConfig.apis)
             {
-                if (string.IsNullOrEmpty(api.controller) || string.IsNullOrEmpty(api.method)) continue;
+                if (string.IsNullOrWhiteSpace(api.controller)) continue;
 
-                var methodParts = api.method.Trim().Split(' ');
-                string methodName = methodParts.Length > 1 ? methodParts[1].Trim() : methodParts[0].Trim();
+                // Doc ten ham qua ResolveMethodName() de ho tro ca hai schema cua
+                // template_business.json ("method": "POST CreateBudget" lan
+                // "function": "getAllProvinces" + "http_method": "GET").
+                // Truoc day cho nay doc thang api.method, nen moi template viet theo schema
+                // thu hai deu bi bo qua toan bo -> khong sinh duoc mapping nao.
+                string methodName = api.ResolveMethodName();
+                if (string.IsNullOrWhiteSpace(methodName)) continue;
+
                 string controllerName = api.controller.Trim();
 
                 // Roslyn-captured method names almost always keep the "Async" suffix
@@ -220,9 +226,42 @@ public class GraphMapperService
         }
     }
 
+    /// <summary>
+    /// Bac cau tu KHOA GIAO DIEN sang KHOA LOP CAI DAT, de FindAllMethodsInSubTree khong
+    /// dung lai khi call graph tro toi interface con source code nam o lop implementation.
+    ///
+    /// Ho tro HAI quy uoc dat ten:
+    ///   - .NET  : IDatasetService  -> DatasetService / DatasetServiceImpl   (I dung dau)
+    ///   - Java  : DatasetService   -> DatasetServiceImpl                    (hau to Impl)
+    ///
+    /// Truoc day chi co nhanh .NET. Voi repo Java, canh tu Controller tro toi
+    /// "DatasetService.uploadCSVFile" trong khi MethodSources chi co
+    /// "DatasetServiceImpl.uploadCSVFile" => khong bac cau duoc => BFS dung ngay sau node
+    /// dau tien. Do tren repo test-appJava: 231/241 canh xuat phat tu Controller khong
+    /// khop duoc method nao, khien moi nghiep vu chi map ~1 method va prompt gui LLM gan
+    /// nhu khong chua ma nguon (Survey: 67 token code tren tong 1296 token prompt).
+    /// </summary>
     private ILookup<string, string> BuildImplementationLookup(List<MethodSourceRecord> methods)
     {
         var mappings = new List<(string InterfaceKey, string ConcreteKey)>();
+
+        // --- Quy uoc Java/Spring: <Ten>Impl cai dat interface <Ten> ---
+        // Khong doi hoi interface phai ton tai trong MethodSources: interface Java thuong
+        // khai bao method khong co tu khoa truy cap nen JavaParser (doi hoi public/protected/
+        // private) khong bat duoc, nhung canh trong call graph van tro toi ten interface.
+        const string implSuffix = "Impl";
+        foreach (var m in methods)
+        {
+            string cls = m.ClassName.Trim();
+            if (cls.Length <= implSuffix.Length) continue;
+            if (!cls.EndsWith(implSuffix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            string interfaceName = cls.Substring(0, cls.Length - implSuffix.Length);
+            if (string.IsNullOrWhiteSpace(interfaceName)) continue;
+
+            mappings.Add((BuildKey(interfaceName, m.MethodName), BuildKey(cls, m.MethodName)));
+        }
+
         var groupedByMethod = methods.GroupBy(m => StripAsyncSuffix(m.MethodName.Trim().ToLower()));
 
         foreach (var group in groupedByMethod)

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Repo_Into_Graph_Application.Dtos.AdaptiveContextRouter;
 using Repo_Into_Graph_Application.Dtos.HybridContextGenerator;
+using Repo_Into_Graph_Application.Helper;
 using Repo_Into_Graph_Application.Services.HybridContextGenerator;
 using System;
 using System.Net.Http;
@@ -36,6 +37,20 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                 };
             }
 
+            // Chuan hoa ngon ngu MOT LAN o day. Python Microservice chi chap nhan
+            // {java, csharp, c#, dotnet}; ten hien thi cua parser ("Java (Spring Boot)",
+            // "C# (.NET)") se bi tu choi bang HTTP 400. Neu nhan rong hoac khong ro thi
+            // suy luan tu chinh ma nguon thay vi mac dinh "csharp" — mac dinh im lang
+            // chinh la nguyen nhan moi method Java bi parse bang tree-sitter C#.
+            if (!LanguageNormalizer.TryNormalize(request.Language, request.SourceCode, out var language))
+            {
+                return new RouterDecisionDto
+                {
+                    IsValidSyntax = false,
+                    Message = $"Ngon ngu khong duoc ho tro boi Tang 1/Tang 2 (chi Java va C#): '{request.Language}'."
+                };
+            }
+
             try
             {
                 // --- TANG 1: Goi Python Microservice de phan tich AST, SLOC, V(G) ---
@@ -43,7 +58,7 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                 var pythonResponse = await _httpClient.PostAsJsonAsync(apiUrl, new
                 {
                     code = request.SourceCode,
-                    language = request.Language
+                    language = language
                 });
 
                 if (!pythonResponse.IsSuccessStatusCode)
@@ -98,7 +113,7 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                     var hybridInput = new HybridContextInputDto
                     {
                         ModuleId = request.ModuleId,
-                        Language = request.Language.ToLower(),
+                        Language = language,
                         RoutingDecision = "ROUTE_HYBRID",
                         Metrics = new HybridContextMetricsDto
                         {

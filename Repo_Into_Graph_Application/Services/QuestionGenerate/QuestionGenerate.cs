@@ -55,19 +55,25 @@ namespace Repo_Into_Graph_Application.Services.QuestionGenerate
                 .DistinctBy(m => m.Id)
                 .ToList();
 
+            // Không có source code thì DỪNG, không sinh câu hỏi.
+            //
+            // Trước đây chỗ này chỉ ghi một dòng chú thích "// Không tìm thấy Source Code..." rồi
+            // chạy tiếp, nên Gemini vẫn trả về đủ số câu hỏi — bịa hoàn toàn từ tên nghiệp vụ, không
+            // dựa trên một dòng mã nào. Benchmark nhận HTTP 200 và ghi thẳng vào Excel như một kết
+            // quả hợp lệ (dấu hiệu nhận biết: input token tụt xuống ~1200 thay vì ~5000).
+            //
+            // Đây là lỗi nguy hiểm nhất trong ba arm: E2E ném 400 nên thấy ngay, còn Traditional và
+            // Graph thì im lặng tạo ra dữ liệu giả. Ném lỗi ở đây để cả ba arm thất bại NHẤT QUÁN,
+            // không arm nào được phép bịa.
+            if (!methodSources.Any())
+                throw new BadRequestException("Không tìm thấy Source Code nào được map cho Business này để sinh câu hỏi.");
+
             var codeBuilder = new StringBuilder();
-            if (methodSources.Any())
+            foreach (var method in methodSources)
             {
-                foreach (var method in methodSources)
-                {
-                    codeBuilder.AppendLine($"// Class: {method.ClassName}, Method: {method.MethodName}");
-                    codeBuilder.AppendLine(method.SourceCode);
-                    codeBuilder.AppendLine();
-                }
-            }
-            else
-            {
-                codeBuilder.AppendLine("// Không tìm thấy Source Code nào được map cho Business này.");
+                codeBuilder.AppendLine($"// Class: {method.ClassName}, Method: {method.MethodName}");
+                codeBuilder.AppendLine(method.SourceCode);
+                codeBuilder.AppendLine();
             }
 
             var contextBuilder = new StringBuilder();

@@ -20,6 +20,61 @@ namespace Repo_Into_Graph_Application.Services.AI
 {
     public class AIService : IAIService
     {
+        // ─────────────────────────────────────────────────────────────────────
+        // CAT BO PHAN RAC SAU GIA TRI JSON DAU TIEN
+        //
+        // Gemini thinh thoang tra ve dung mot mang JSON hop le roi DAN THEM ky tu thua
+        // o cuoi, vi du:
+        //     [ {...}, {...} ]
+        //     ]
+        //     ]
+        // System.Text.Json doc xong mang dau tien, gap ']' lac va nem:
+        //     "']' is invalid after a single JSON value. Expected end of data. Path: $[8]"
+        //
+        // Cau hoi sinh ra HOAN TOAN DUNG — chi vuong vai ky tu thua. Truoc day toan bo
+        // phan hoi bi vut di, benchmark thu lai toi 3 lan => 3 luot goi Gemini lang phi
+        // cho mot ket qua da co san. Voi han muc free tier 500 request/ngay thi day la
+        // chi phi that.
+        //
+        // Ham nay quet tu dau mo ngoac dau tien, dem do sau (bo qua ngoac nam trong
+        // chuoi va ky tu escape), va cat ngay tai ngoac dong khop voi no.
+        // ─────────────────────────────────────────────────────────────────────
+        private static string TrimToFirstJsonValue(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return raw;
+
+            int start = raw.IndexOfAny(new[] { '[', '{' });
+            if (start < 0) return raw;
+
+            char open = raw[start];
+            char close = open == '[' ? ']' : '}';
+
+            int depth = 0;
+            bool inString = false;
+            bool escape = false;
+
+            for (int i = start; i < raw.Length; i++)
+            {
+                char c = raw[i];
+
+                if (escape) { escape = false; continue; }
+                if (c == '\\') { if (inString) escape = true; continue; }
+                if (c == '"') { inString = !inString; continue; }
+                if (inString) continue;
+
+                if (c == open) depth++;
+                else if (c == close)
+                {
+                    depth--;
+                    if (depth == 0) return raw.Substring(start, i - start + 1);
+                }
+            }
+
+            // Khong tim duoc ngoac dong khop (phan hoi bi cat giua chung) -> giu nguyen
+            // tu vi tri mo ngoac de thong bao loi phia sau con doc duoc noi dung that.
+            return raw.Substring(start);
+        }
+
         private readonly Client _client;
 
         public AIService(IConfiguration configuration, IHttpClientFactory httpClientFactory)
@@ -28,7 +83,10 @@ namespace Repo_Into_Graph_Application.Services.AI
 
             var clientOptions = new ClientOptions
             {
-                HttpClientFactory = () => httpClientFactory.CreateClient()
+                // Dùng client "GeminiLongRunning" (timeout 10 phút) thay cho client mặc
+                // định (timeout 100 giây). Prompt lớn của luồng E2E sinh lâu hơn 100s nên
+                // client mặc định ném TaskCanceledException -> API trả 499.
+                HttpClientFactory = () => httpClientFactory.CreateClient("GeminiLongRunning")
             };
 
             _client = new Client(apiKey: apiKey, clientOptions: clientOptions);
@@ -198,6 +256,9 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
                 aiJsonText = aiJsonText.Trim();
             }
 
+            // Bo ky tu thua sau mang JSON (xem TrimToFirstJsonValue)
+            aiJsonText = TrimToFirstJsonValue(aiJsonText);
+
             try
             {
                 var questions = JsonSerializer.Deserialize<List<GeneratedQuestionDto>>(aiJsonText, new JsonSerializerOptions
@@ -223,7 +284,10 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
             {
                 SystemInstruction = new Content { Parts = [new Part { Text = systemPrompt }] },
                 Temperature = 0.2f,
-                ResponseMimeType = "application/json"
+                ResponseMimeType = "application/json",
+                // Không đặt giới hạn này thì phản hồi cho nghiệp vụ lớn (nhiều bước, nhiều câu hỏi)
+                // bị CẮT giữa chừng -> chuỗi JSON không đóng ngoặc -> JsonException.
+                MaxOutputTokens = 8192
             };
 
             var retryPolicy = Policy
@@ -235,7 +299,7 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
                     });
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            
+
             var response = await retryPolicy.ExecuteAsync(async () =>
             {
                 return await _client.Models.GenerateContentAsync(
@@ -264,11 +328,14 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
                 aiJsonText = aiJsonText.Trim();
             }
 
+            // Bo ky tu thua sau doi tuong JSON (xem TrimToFirstJsonValue)
+            aiJsonText = TrimToFirstJsonValue(aiJsonText);
+
             try
             {
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var result = JsonSerializer.Deserialize<Repo_Into_Graph_Application.Dtos.LLMOrchestrator.GeminiQuestionResponse>(aiJsonText, options);
-                
+
                 if (result != null && result.MetaData == null)
                 {
                     result.MetaData = new Repo_Into_Graph_Application.Dtos.LLMOrchestrator.ResponseMetaData
@@ -278,16 +345,60 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
                     };
                 }
                 var responseObj = result ?? new Repo_Into_Graph_Application.Dtos.LLMOrchestrator.GeminiQuestionResponse();
-                
+
                 int inputTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
                 int outputTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
-                
+
+                // Phản hồi parse được nhưng KHÔNG có câu hỏi nào thì vẫn là thất bại.
+                // Trả về rỗng ở đây sẽ biến thành dòng "0 câu / 0 token" trong file Excel —
+                // trông như một kết quả thực nghiệm hợp lệ, trong khi thực chất là lỗi.
+                if (responseObj.Questions == null || responseObj.Questions.Count == 0)
+                {
+                    Console.WriteLine(
+                        $"[AIService Tầng 3] LỖI: phản hồi hợp lệ nhưng KHÔNG có câu hỏi nào " +
+                        $"({aiJsonText.Length} ký tự, input={inputTokens}, output={outputTokens}).");
+                    Console.WriteLine(
+                        $"[AIService Tầng 3] Nội dung phản hồi: " +
+                        $"{aiJsonText.Substring(0, Math.Min(1500, aiJsonText.Length))}");
+
+                    throw new Exception(
+                        $"Gemini trả về 0 câu hỏi (phản hồi {aiJsonText.Length} ký tự, " +
+                        $"input={inputTokens} token, output={outputTokens} token). " +
+                        "Không dùng kết quả rỗng làm dữ liệu thực nghiệm.");
+                }
+
                 return (responseObj, inputTokens, outputTokens);
             }
             catch (JsonException ex)
             {
-                Console.WriteLine($"[AIService Tầng 3] Graceful Degradation - JSON Parse failed: {ex.Message}");
-                return (new Repo_Into_Graph_Application.Dtos.LLMOrchestrator.GeminiQuestionResponse(), 0, 0);
+                // KHÔNG nuốt lỗi. Trước đây chỗ này trả về (rỗng, 0, 0) nên benchmark nhận
+                // HTTP 200 và ghi thẳng số 0 vào báo cáo — sai lệch số liệu mà không ai biết.
+                string raw = aiJsonText ?? string.Empty;
+                string trimmed = raw.TrimEnd();
+                bool looksTruncated = trimmed.Length > 0
+                    && !trimmed.EndsWith("}")
+                    && !trimmed.EndsWith("]");
+
+                int promptTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
+                int candidateTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
+
+                Console.WriteLine(
+                    $"[AIService Tầng 3] LỖI PARSE JSON — {raw.Length} ký tự, " +
+                    $"input={promptTokens} token, output={candidateTokens} token, " +
+                    $"nghi bị cắt={looksTruncated}. Chi tiết: {ex.Message}");
+                Console.WriteLine(
+                    $"[AIService Tầng 3] 1500 ký tự CUỐI của phản hồi: " +
+                    $"{raw.Substring(Math.Max(0, raw.Length - 1500))}");
+
+                string hint = looksTruncated
+                    ? " Chuỗi JSON không đóng ngoặc nên nhiều khả năng phản hồi BỊ CẮT do chạm giới hạn token đầu ra — " +
+                      "hãy tăng MaxOutputTokens hoặc giảm NumberOfQuestions cho nghiệp vụ lớn."
+                    : string.Empty;
+
+                throw new Exception(
+                    $"Gemini trả về JSON không hợp lệ ({raw.Length} ký tự, " +
+                    $"input={promptTokens} token, output={candidateTokens} token): {ex.Message}.{hint}",
+                    ex);
             }
         }
     }

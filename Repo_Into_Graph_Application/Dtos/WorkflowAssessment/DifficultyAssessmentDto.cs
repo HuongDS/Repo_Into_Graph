@@ -45,11 +45,23 @@ namespace Repo_Into_Graph_Application.Dtos.WorkflowAssessment
         public List<GraphNodeDto> ActiveNodes { get; set; } = new();
 
         /// <summary>
-        /// Tổng số Cạnh (E_q) của đồ thị con G_q (chỉ tính các cạnh kết nối giữa Active Nodes).
-        /// Dùng để tính V(G) = E_q - V_q + 2.
-        /// Nếu không biết chính xác, có thể truyền tổng số cạnh của toàn bộ Workflow.
+        /// Tổng số Cạnh (E_q) của đồ thị con cảm sinh G_q — CHỈ đếm những cạnh có
+        /// CẢ HAI đầu mút nằm trong tập ActiveNodes. Dùng để tính V(G) = E_q - V_q + 2P.
+        ///
+        /// <para>
+        /// LƯU Ý: tuyệt đối KHÔNG truyền giá trị suy ra từ số nút (ví dụ ActiveNodes.Count - 1).
+        /// Làm vậy sẽ ép V(G) = 1 với mọi dữ liệu đầu vào (đẳng thức đại số), khiến chỉ số
+        /// mất hoàn toàn phương sai và không còn đo lường được gì.
+        /// </para>
         /// </summary>
         public int TotalEdgesInSubgraph { get; set; }
+
+        /// <summary>
+        /// Số thành phần liên thông (P) của đồ thị con G_q, dùng cho công thức McCabe đầy đủ
+        /// V(G) = E_q - V_q + 2P. Với đồ thị con liên thông thì P = 1.
+        /// Mặc định 1 để tương thích ngược với các lời gọi cũ.
+        /// </summary>
+        public int ConnectedComponents { get; set; } = 1;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

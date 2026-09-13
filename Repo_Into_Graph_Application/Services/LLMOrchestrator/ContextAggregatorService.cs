@@ -27,15 +27,12 @@ namespace Repo_Into_Graph_Application.Services.LLMOrchestrator
                 }
                 else if (node.RouteType == "ROUTE_HYBRID")
                 {
-                    builder.AppendLine("#### CFG Skeleton:");
-                    builder.AppendLine("```mermaid");
-                    builder.AppendLine(node.CfgSkeleton);
-                    builder.AppendLine("```");
-
-                    builder.AppendLine("#### Critical Snippets:");
-                    builder.AppendLine($"```{node.Language}");
-                    builder.AppendLine(node.CriticalSnippets);
-                    builder.AppendLine("```");
+                    // Dùng thẳng hybrid_prompt đã được Tầng 2 tối ưu sẵn (CFG + critical
+                    // logic đã lọc theo trọng số + metadata). KHÔNG tự ghép CfgSkeleton
+                    // với CriticalSnippets thô ở đây nữa: cách ghép cũ lặp lại thông tin
+                    // (CFG mermaid + toàn bộ snippet chưa lọc) nên thường dài hơn cả việc
+                    // gửi nguyên mã nguồn, phủ nhận mục đích tiết kiệm token của Tầng 2.
+                    builder.AppendLine(node.HybridPrompt);
                 }
                 
                 builder.AppendLine();

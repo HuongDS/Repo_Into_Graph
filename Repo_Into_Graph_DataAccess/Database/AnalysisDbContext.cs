@@ -189,22 +189,69 @@ public class AnalysisDbContext : DbContext
     {
         if (!optionsBuilder.IsConfigured)
         {
-            if (File.Exists(".env"))
+            // Dò .env ở CẢ thư mục hiện hành LẪN thư mục chứa .dll (bin), vì
+            // `dotnet run` và chạy trực tiếp .exe có thư mục hiện hành khác nhau.
+            foreach (var dir in ProbeDirectories())
             {
-                DotNetEnv.Env.Load();
+                var envFile = Path.Combine(dir, ".env");
+                if (File.Exists(envFile))
+                {
+                    DotNetEnv.Env.Load(envFile);
+                    break;
+                }
             }
 
             string dbUser = Environment.GetEnvironmentVariable("DB_USERNAME") ?? "postgres";
             string dbPass = Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "postgres";
-            var configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .Build();
 
-            string baseConnectionString = configuration.GetConnectionString("PostgreSQL");
+            // Nạp cấu hình giống cách Host của ASP.NET nạp: appsettings.json +
+            // appsettings.<Environment>.json + biến môi trường. Tất cả đều optional và
+            // dò ở nhiều thư mục, nên chạy từ đâu cũng không văng FileNotFoundException.
+            string environmentName =
+                Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+                ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+                ?? "Development";
+
+            var configBuilder = new ConfigurationBuilder();
+            foreach (var dir in ProbeDirectories())
+            {
+                configBuilder.AddJsonFile(Path.Combine(dir, "appsettings.json"), optional: true, reloadOnChange: false);
+                configBuilder.AddJsonFile(Path.Combine(dir, $"appsettings.{environmentName}.json"), optional: true, reloadOnChange: false);
+            }
+            var configuration = configBuilder.Build();
+
+            // Ưu tiên biến môi trường (đọc trực tiếp để không phải thêm package
+            // Microsoft.Extensions.Configuration.EnvironmentVariables vào project).
+            string baseConnectionString =
+                Environment.GetEnvironmentVariable("ConnectionStrings__PostgreSQL")
+                ?? configuration.GetConnectionString("PostgreSQL");
+            if (string.IsNullOrWhiteSpace(baseConnectionString))
+            {
+                throw new InvalidOperationException(
+                    "Không tìm thấy ConnectionStrings:PostgreSQL. Đã dò appsettings.json và " +
+                    $"appsettings.{environmentName}.json tại: " + string.Join(" | ", ProbeDirectories()) +
+                    ". Hãy đặt file cấu hình vào một trong các thư mục đó, hoặc set biến môi trường " +
+                    "ConnectionStrings__PostgreSQL.");
+            }
+
             string connectionString = $"{baseConnectionString.TrimEnd(';')};Username={dbUser};Password={dbPass};";
 
             optionsBuilder.UseNpgsql(connectionString);
+        }
+    }
+
+    /// <summary>
+    /// Thư mục sẽ dò file cấu hình: thư mục hiện hành (khi chạy `dotnet run`) và
+    /// thư mục chứa assembly (bin/Debug/net8.0 — nơi appsettings được copy ra khi build).
+    /// </summary>
+    private static IEnumerable<string> ProbeDirectories()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var dir in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            if (string.IsNullOrWhiteSpace(dir)) continue;
+            var full = Path.GetFullPath(dir);
+            if (seen.Add(full)) yield return full;
         }
     }
 }

@@ -1,0 +1,16 @@
+<Project>
+
+	<!--
+		Loai cac file sao luu ra khoi qua trinh bien dich cho TOAN BO solution.
+
+		Ly do: .NET SDK tu dong dua moi file *.cs trong thu muc project vao bien dich.
+		Vi vay mot ban sao luu nhu "DifficultyAssessmentDto.BACKUP.cs" cung duoc bien dich,
+		dan den loi CS0101 / CS0111 (trung dinh nghia class / method).
+
+		Dat ten file sao luu theo dang *.BACKUP.cs hoac *.OLD.cs thi se duoc bo qua.
+	-->
+	<PropertyGroup>
+		<DefaultItemExcludes>$(DefaultItemExcludes);**\*.BACKUP.cs;**\*.backup.cs;**\*.OLD.cs;**\*.old.cs;**\*.cs.bak</DefaultItemExcludes>
+	</PropertyGroup>
+
+</Project>

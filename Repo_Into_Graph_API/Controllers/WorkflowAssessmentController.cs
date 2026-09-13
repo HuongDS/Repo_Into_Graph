@@ -115,10 +115,28 @@ namespace Repo_Into_Graph_API.Controllers
                     };
                 }).ToList();
 
+                // ── Đếm CẠNH THẬT của đồ thị con cảm sinh G_q ──────────────────────
+                // Trước đây dòng này là: TotalEdgesInSubgraph = activeNodes.Count - 1
+                // Thay E_q = V_q - 1 vào V(G) = E_q - V_q + 2 sẽ ra V(G) = 1 với MỌI dữ liệu
+                // (đẳng thức đại số) -> chỉ số mất sạch phương sai. Nay đếm cạnh thật.
+                var activeIds = activeNodes
+                    .Select(n => n.NodeId)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .ToHashSet();
+
+                int realEdges = businessWorkflowGraph.Edges.Count(e =>
+                    !string.IsNullOrWhiteSpace(e.FromNodeId) &&
+                    !string.IsNullOrWhiteSpace(e.ToNodeId) &&
+                    activeIds.Contains(e.FromNodeId) &&
+                    activeIds.Contains(e.ToNodeId));
+
+                int components = CountConnectedComponents(activeIds, businessWorkflowGraph.Edges);
+
                 var diffRequest = new DifficultyAssessmentRequestDto
                 {
                     ActiveNodes = activeNodes,
-                    TotalEdgesInSubgraph = Math.Max(0, activeNodes.Count - 1)
+                    TotalEdgesInSubgraph = realEdges,
+                    ConnectedComponents = components
                 };
 
                 var diffResult = await _assessmentService.Difficulty.AssessAsync(diffRequest);
@@ -131,6 +149,51 @@ namespace Repo_Into_Graph_API.Controllers
             }
 
             return Ok(batchDifficultyResult);
+        }
+
+        /// <summary>
+        /// Đếm số thành phần liên thông (P) của đồ thị con cảm sinh trên tập nút
+        /// <paramref name="nodeIds"/>, phục vụ công thức McCabe đầy đủ V(G) = E - N + 2P.
+        /// Cạnh được xem là VÔ HƯỚNG khi xét tính liên thông (hướng không ảnh hưởng tới P).
+        /// </summary>
+        private static int CountConnectedComponents(
+            HashSet<string> nodeIds,
+            List<BusinessWorkflowEdgeDto> edges)
+        {
+            if (nodeIds == null || nodeIds.Count == 0) return 0;
+
+            // Danh sách kề vô hướng, chỉ giữ cạnh nằm TRỌN trong tập nút
+            var adj = nodeIds.ToDictionary(id => id, _ => new List<string>());
+            foreach (var e in edges ?? new List<BusinessWorkflowEdgeDto>())
+            {
+                if (string.IsNullOrWhiteSpace(e.FromNodeId) || string.IsNullOrWhiteSpace(e.ToNodeId)) continue;
+                if (!nodeIds.Contains(e.FromNodeId) || !nodeIds.Contains(e.ToNodeId)) continue;
+                if (e.FromNodeId == e.ToNodeId) continue;   // self-loop không ảnh hưởng tính liên thông
+                adj[e.FromNodeId].Add(e.ToNodeId);
+                adj[e.ToNodeId].Add(e.FromNodeId);
+            }
+
+            var visited = new HashSet<string>();
+            int components = 0;
+
+            foreach (var start in nodeIds)
+            {
+                if (!visited.Add(start)) continue;
+                components++;
+
+                var stack = new Stack<string>();
+                stack.Push(start);
+                while (stack.Count > 0)
+                {
+                    var current = stack.Pop();
+                    foreach (var next in adj[current])
+                    {
+                        if (visited.Add(next)) stack.Push(next);
+                    }
+                }
+            }
+
+            return components;
         }
     }
 }

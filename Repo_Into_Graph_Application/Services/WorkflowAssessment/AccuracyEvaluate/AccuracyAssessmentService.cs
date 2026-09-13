@@ -18,6 +18,45 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
 {
     public class AccuracyAssessmentService : IAccuracyAssessmentService
     {
+        // ─────────────────────────────────────────────────────────────────────
+        // NGHI GIUA CAC LAN GOI GIAM KHAO
+        //
+        // Truoc day co dinh 15 giay, voi chu thich "de Groq hoi phuc Token (12.000 TPM)".
+        // He thong hien goi DEEPSEEK (api.deepseek.com), khong phai Groq — nha cung cap nay
+        // khong ap gioi han TPM chat nhu vay, va do tre thuc te do duoc chi ~180ms/cau.
+        // Tuc 98% thoi gian la nam cho.
+        //
+        // Voi mot lan cham lai toan bo (~67 nghiep vu x 3 phuong phap x ~7 cau ~ 1.400 cau):
+        //     15s/cau -> ~5,8 GIO nam cho  tren  ~5 phut lam viec that
+        //      2s/cau -> ~47 phut
+        //      0s/cau -> chi con thoi gian goi API
+        //
+        // Giam an toan vi DeepSeekEvaluationService DA co san xu ly 429: 5 lan thu lai voi
+        // backoff 3->6->12->24->48s. Neu that su bi rate limit, lop do se xu ly.
+        //
+        // Dieu chinh bang bien moi truong JUDGE_DELAY_SECONDS (0..120):
+        //     JUDGE_DELAY_SECONDS=0   -> khong nghi
+        //     JUDGE_DELAY_SECONDS=15  -> giu nguyen hanh vi cu
+        // Doc tu bien moi truong thay vi IConfiguration de khong phai doi chu ky
+        // constructor va dang ky DI.
+        // ─────────────────────────────────────────────────────────────────────
+        private static readonly TimeSpan JudgeDelay = ResolveJudgeDelay();
+
+        private static TimeSpan ResolveJudgeDelay()
+        {
+            var raw = Environment.GetEnvironmentVariable("JUDGE_DELAY_SECONDS");
+            if (!string.IsNullOrWhiteSpace(raw)
+                && double.TryParse(raw,
+                                   System.Globalization.NumberStyles.Any,
+                                   System.Globalization.CultureInfo.InvariantCulture,
+                                   out var seconds)
+                && seconds >= 0 && seconds <= 120)
+            {
+                return TimeSpan.FromSeconds(seconds);
+            }
+            return TimeSpan.FromSeconds(2);
+        }
+
         private readonly IEmbeddingService _embeddingService;
         private readonly ILogger<AccuracyAssessmentService> _logger;
         private readonly IDistributedCache _cache;
@@ -105,9 +144,13 @@ namespace Repo_Into_Graph_Application.Services.WorkflowAssessment.AccuracyEvalua
                     }
                 });
 
-                // Tách câu hỏi ra và gửi từng câu: Chờ 15 giây giữa các lần gọi để Groq hồi phục Token (12.000 TPM limit)
-                _logger.LogInformation("[AssessAccuracyBatchAsync] Đã chấm xong 1 câu, đang nghỉ 15s để tránh Rate Limit...");
-                await Task.Delay(TimeSpan.FromSeconds(15));
+                if (JudgeDelay > TimeSpan.Zero)
+                {
+                    _logger.LogInformation(
+                        "[AssessAccuracyBatchAsync] Đã chấm xong 1 câu, nghỉ {Sec}s trước câu tiếp theo...",
+                        JudgeDelay.TotalSeconds);
+                    await Task.Delay(JudgeDelay);
+                }
             }
 
             // Save the batch result to Redis/StashUp Cache for future requests

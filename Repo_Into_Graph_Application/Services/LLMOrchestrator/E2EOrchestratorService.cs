@@ -159,21 +159,54 @@ namespace Repo_Into_Graph_Application.Services.LLMOrchestrator
             }
             string workflowOverview = overviewBuilder.ToString();
 
-            // 6. Tầng 3: Build Prompt và Gọi AI
+            // ════════════════════════════════════════════════════════════════
+            // 6. TẦNG 3 — DÙNG CHUNG PROMPT VỚI TRADITIONAL VÀ GRAPH
+            //
+            // Trước đây E2E đi qua PromptBuilderService — một prompt HOÀN TOÀN KHÁC:
+            //   - Xin "targetNode" (MỘT node, số ít) thay vì "targetedEntryPoints"
+            //     (mảng 3-4 mắt xích Controller -> Service -> ServiceImpl -> Repository)
+            //   - Xin câu TRẮC NGHIỆM A/B/C/D thay vì câu hỏi tình huống mở
+            //   - Không nạp few-shot examples trong khi Traditional/Graph có nạp
+            //
+            // Hệ quả đo được: đường đi trích xuất của E2E luôn chỉ có 1 node
+            // => L_q = 0 và V(G) = 1 với PHƯƠNG SAI ĐÚNG BẰNG 0 trên mọi nghiệp vụ
+            // => accuracyScore = (bước hợp lệ / tổng bước) không có bước nào để sai
+            // => E2E "thắng" ~95% một cách TẤT YẾU VỀ MẶT TOÁN HỌC, không phải do
+            //    chất lượng ngữ cảnh.
+            //
+            // Thí nghiệm khi đó lẫn ba biến: biểu diễn ngữ cảnh (biến cần đo), định dạng
+            // câu hỏi, và số node được khai báo. Không cô lập được cái nào.
+            //
+            // Nay cả ba phương pháp gọi CHUNG GenerateUnifiedQuestionsAsync. Khác biệt
+            // duy nhất còn lại là NỘI DUNG hai khe ngữ cảnh:
+            //     Traditional : codeBuilder = mã nguồn thô     | contextBuilder = (rỗng)
+            //     Graph       : codeBuilder = (rỗng)           | contextBuilder = Mermaid
+            //     E2E         : codeBuilder = ngữ cảnh ĐÃ ĐỊNH TUYẾN (raw hoặc CFG nén
+            //                   tuỳ độ phức tạp từng hàm)      | contextBuilder = tổng quan luồng
+            // ════════════════════════════════════════════════════════════════
             string aggregatedContext = _contextAggregatorService.AggregateContext(functionNodes);
-            
-            int numQs = request.NumberOfQuestions > 0 && request.NumberOfQuestions <= 20 ? request.NumberOfQuestions : 5;
-            string systemPrompt = _promptBuilderService.BuildSystemPrompt(numQs, request.Difficulty);
-            string finalPayload = _promptBuilderService.BuildFinalPayload(workflowOverview, aggregatedContext);
 
-            // Bổ sung Description từ người dùng vào payload nếu có
-            if (!string.IsNullOrWhiteSpace(request.Description))
+            int numQs = request.NumberOfQuestions > 0 && request.NumberOfQuestions <= 20 ? request.NumberOfQuestions : 5;
+
+            // Nạp few-shot GIỐNG HỆT QuestionGenerate, nếu không đây lại là một biến lẫn nữa.
+            IEnumerable<Repo_Into_Graph_DataAccess.Models.FewShot.FewShotExample>? fewShotExamples = null;
+            if (request.FewShotExampleIds != null && request.FewShotExampleIds.Count > 0)
             {
-                finalPayload += $"\n\n=== NGỮ CẢNH BỔ SUNG ===\n{request.Description}\n";
+                fewShotExamples = await _unitOfWork.FewShotExamples.GetByIdsAsync(request.FewShotExampleIds);
+            }
+            else if (!string.IsNullOrWhiteSpace(request.Difficulty))
+            {
+                fewShotExamples = await _unitOfWork.FewShotExamples.GetByDifficultyAsync(request.Difficulty, 5);
             }
 
-            var aiResult = await _aiService.GenerateCodeQuestionsAsync(systemPrompt, finalPayload);
-            var aiResponse = aiResult.Response;
+            var (questions, inputTokens, outputTokens) = await _aiService.GenerateUnifiedQuestionsAsync(
+                businessName: businessModel.BusinessName,
+                codeBuilder: aggregatedContext,
+                contextBuilder: workflowOverview,
+                numberOfQuestions: numQs,
+                difficulty: request.Difficulty,
+                additionalContext: request.Description,
+                fewShotExamples: fewShotExamples);
 
             // 7. Trả về Response
             return new GenerateQuestionsResponse
@@ -182,16 +215,10 @@ namespace Repo_Into_Graph_Application.Services.LLMOrchestrator
                 BusinessName = businessModel.BusinessName,
                 EntryPoint = string.Join(", ", features.Select(f => f.EntryPoint)),
                 TotalSteps = features.Sum(f => f.Steps?.Count ?? 0),
-                FewShotUsed = 0, // Không dùng Few-Shot theo cấu hình
-                InputTokens = aiResult.InputTokens,
-                OutputTokens = aiResult.OutputTokens, 
-                GeneratedQuestionDtos = (aiResponse.Questions ?? new List<CodeQuestion>()).Select(q => new GeneratedQuestionDto 
-                {
-                    Question = q.QuestionText,
-                    SuggestedAnswer = q.CorrectAnswer,
-                    Difficulty = q.DifficultyLevel,
-                    TargetedEntryPoints = new[] { q.TargetNode }
-                }).ToList()
+                FewShotUsed = fewShotExamples?.Count() ?? 0,
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens,
+                GeneratedQuestionDtos = questions
             };
         }
     }

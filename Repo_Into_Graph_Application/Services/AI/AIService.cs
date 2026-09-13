@@ -20,6 +20,61 @@ namespace Repo_Into_Graph_Application.Services.AI
 {
     public class AIService : IAIService
     {
+        // ─────────────────────────────────────────────────────────────────────
+        // CAT BO PHAN RAC SAU GIA TRI JSON DAU TIEN
+        //
+        // Gemini thinh thoang tra ve dung mot mang JSON hop le roi DAN THEM ky tu thua
+        // o cuoi, vi du:
+        //     [ {...}, {...} ]
+        //     ]
+        //     ]
+        // System.Text.Json doc xong mang dau tien, gap ']' lac va nem:
+        //     "']' is invalid after a single JSON value. Expected end of data. Path: $[8]"
+        //
+        // Cau hoi sinh ra HOAN TOAN DUNG — chi vuong vai ky tu thua. Truoc day toan bo
+        // phan hoi bi vut di, benchmark thu lai toi 3 lan => 3 luot goi Gemini lang phi
+        // cho mot ket qua da co san. Voi han muc free tier 500 request/ngay thi day la
+        // chi phi that.
+        //
+        // Ham nay quet tu dau mo ngoac dau tien, dem do sau (bo qua ngoac nam trong
+        // chuoi va ky tu escape), va cat ngay tai ngoac dong khop voi no.
+        // ─────────────────────────────────────────────────────────────────────
+        private static string TrimToFirstJsonValue(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return raw;
+
+            int start = raw.IndexOfAny(new[] { '[', '{' });
+            if (start < 0) return raw;
+
+            char open = raw[start];
+            char close = open == '[' ? ']' : '}';
+
+            int depth = 0;
+            bool inString = false;
+            bool escape = false;
+
+            for (int i = start; i < raw.Length; i++)
+            {
+                char c = raw[i];
+
+                if (escape) { escape = false; continue; }
+                if (c == '\\') { if (inString) escape = true; continue; }
+                if (c == '"') { inString = !inString; continue; }
+                if (inString) continue;
+
+                if (c == open) depth++;
+                else if (c == close)
+                {
+                    depth--;
+                    if (depth == 0) return raw.Substring(start, i - start + 1);
+                }
+            }
+
+            // Khong tim duoc ngoac dong khop (phan hoi bi cat giua chung) -> giu nguyen
+            // tu vi tri mo ngoac de thong bao loi phia sau con doc duoc noi dung that.
+            return raw.Substring(start);
+        }
+
         private readonly Client _client;
 
         public AIService(IConfiguration configuration, IHttpClientFactory httpClientFactory)
@@ -201,6 +256,9 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
                 aiJsonText = aiJsonText.Trim();
             }
 
+            // Bo ky tu thua sau mang JSON (xem TrimToFirstJsonValue)
+            aiJsonText = TrimToFirstJsonValue(aiJsonText);
+
             try
             {
                 var questions = JsonSerializer.Deserialize<List<GeneratedQuestionDto>>(aiJsonText, new JsonSerializerOptions
@@ -269,6 +327,9 @@ Nếu Mermaid Graph hoặc Source Code chỉ là một luồng đơn giản (kh�
                 if (lastFence != -1) aiJsonText = aiJsonText.Substring(0, lastFence);
                 aiJsonText = aiJsonText.Trim();
             }
+
+            // Bo ky tu thua sau doi tuong JSON (xem TrimToFirstJsonValue)
+            aiJsonText = TrimToFirstJsonValue(aiJsonText);
 
             try
             {

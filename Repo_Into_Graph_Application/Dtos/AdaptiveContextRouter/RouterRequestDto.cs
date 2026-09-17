@@ -20,5 +20,16 @@ namespace Repo_Into_Graph_Application.Dtos.AdaptiveContextRouter
         /// sai dan den dinh tuyen sai, rat kho phat hien.
         /// </summary>
         public string Language { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Khi true, bo qua nguong SLOC/Cyclomatic Complexity (SLOC &lt; 25 hoac Vg &lt;= 2)
+        /// va LUON dinh tuyen sang HybridGraph.
+        ///
+        /// Nguong RawCode duoc thiet ke cho quyet dinh cua Tang 1/2 khi sinh prompt cho LLM
+        /// (ham qua don gian thi khong can ton cong build CFG). Nhung tinh nang "View Graph"
+        /// o GUI Tang 3 can XEM duoc do thi cua 1 function bat ke ham do don gian den muc nao,
+        /// nen phai co co che bypass rieng thay vi dung chung nguong nay.
+        /// </summary>
+        public bool ForceHybrid { get; set; } = false;
     }
 }

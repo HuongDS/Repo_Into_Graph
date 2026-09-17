@@ -78,7 +78,7 @@ namespace Repo_Into_Graph_API.Controllers
         }
 
         [HttpGet("{businessId:guid}/hybrid-context")]
-        public async Task<IActionResult> GetHybridContext(Guid businessId)
+        public async Task<IActionResult> GetHybridContext(Guid businessId, [FromQuery] bool forceGraph = false)
         {
             var business = await _codeQueryable.GetBusinessByIdAsync(businessId);
             if (business == null)
@@ -104,14 +104,35 @@ namespace Repo_Into_Graph_API.Controllers
             {
                 ModuleId = business.BusinessName,
                 SourceCode = sourceCodeBuilder.ToString(),
-                Language = "" // Để Router tự phân tích
+                Language = "", // Để Router tự phân tích
+                // Graph Viewer (Tầng 3 QA) cần XEM đồ thị của 1 function bất kể hàm đó
+                // đơn giản đến mức nào — không áp dụng ngưỡng SLOC/Vg vốn chỉ dành cho
+                // quyết định định tuyến ngữ cảnh khi SINH câu hỏi (Tầng 1/2).
+                ForceHybrid = forceGraph
             };
 
             var decision = await _routerService.EvaluateCodeContextAsync(request);
             if (decision.SelectedRoute != RoutingType.HybridGraph || decision.HybridContextResult == null)
             {
-                // Fallback nếu code quá ngắn
-                return BadRequest(new { message = "Mã nguồn không đủ độ phức tạp để tạo Hybrid Graph (được định tuyến qua RawCode)." });
+                // QUAN TRỌNG: RoutingType.RawCode là giá trị enum MẶC ĐỊNH (= 0). Router
+                // trả về SelectedRoute mặc định này (chưa từng chạm tới nhánh SLOC/Vg,
+                // nên forceGraph=true KHÔNG có tác dụng) ở MỌI early-return: source rỗng,
+                // ngôn ngữ không hỗ trợ, KHÔNG GỌI ĐƯỢC Python Microservice (AST Engine,
+                // port 8000), response null, hoặc lỗi cú pháp. Trước đây luôn trả đúng 1
+                // câu "không đủ độ phức tạp" cho MỌI trường hợp trên -> gây hiểu lầm khi
+                // debug (kể cả khi thật ra Python Engine đang không chạy). Nay trả kèm
+                // decision.Message (lý do THẬT từ Router) để không còn mù thông tin.
+                var reason = string.IsNullOrWhiteSpace(decision.Message)
+                    ? "Mã nguồn không đủ độ phức tạp để tạo Hybrid Graph (được định tuyến qua RawCode)."
+                    : decision.Message;
+                return BadRequest(new
+                {
+                    message = $"Không thể tạo Hybrid Graph. Lý do từ Router: {reason}",
+                    isValidSyntax = decision.IsValidSyntax,
+                    selectedRoute = decision.SelectedRoute.ToString(),
+                    sloc = decision.Sloc,
+                    vg = decision.Vg
+                });
             }
 
             return Ok(decision.HybridContextResult);

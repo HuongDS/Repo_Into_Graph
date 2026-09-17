@@ -189,20 +189,21 @@ class BenchmarkApp(ctk.CTk):
     # --- ACTIONS ---
     
     def set_status(self, text):
-        self.lbl_status.configure(text=text)
-        self.update_idletasks()
-        
+        # Được gọi từ cả main thread và các thread nền (analyze/benchmark/graph) ->
+        # luôn đẩy việc đổi widget qua self.after(0, ...) để chạy trên main thread.
+        self.after(0, lambda: self.lbl_status.configure(text=text))
+
     def set_progress(self, value):
-        self.progress_bar.set(value)
-        self.update_idletasks()
-        
+        self.after(0, lambda: self.progress_bar.set(value))
+
     def log(self, message):
-        """Helper to append log messages thread-safely."""
-        self.textbox_log.configure(state="normal")
-        self.textbox_log.insert("end", message + "\n")
-        self.textbox_log.see("end")
-        self.textbox_log.configure(state="disabled")
-        self.update_idletasks()
+        """Helper to append log messages thread-safely (thực sự chạy qua self.after)."""
+        def _append():
+            self.textbox_log.configure(state="normal")
+            self.textbox_log.insert("end", message + "\n")
+            self.textbox_log.see("end")
+            self.textbox_log.configure(state="disabled")
+        self.after(0, _append)
 
     def fetch_existing_repos(self):
         try:
@@ -281,8 +282,13 @@ class BenchmarkApp(ctk.CTk):
                 self.update_ui_after_analyze(success=False, msg="No valid businesses parsed.")
                 return
                 
-            self.combo_business.configure(values=combo_values)
-            self.combo_business.set(combo_values[0])
+            # QUAN TRỌNG: hàm này chạy trong thread nền (do on_repo_selected /
+            # _analyze_repo_thread khởi tạo). Tkinter/CustomTkinter KHÔNG thread-safe,
+            # nên mọi thay đổi widget phải đi qua self.after(0, ...) để được thực thi
+            # trên main thread — nếu không, combo box business sẽ không refresh (đây
+            # chính là bug "đổi repo không load được service").
+            self.after(0, lambda: self.combo_business.configure(values=combo_values))
+            self.after(0, lambda: self.combo_business.set(combo_values[0]))
             self.update_ui_after_analyze(success=True, msg=f"✅ Successfully loaded {len(combo_values)} businesses.")
             
         except Exception as e:
@@ -339,15 +345,19 @@ class BenchmarkApp(ctk.CTk):
             self.update_ui_after_analyze(success=False, msg="Exception during analysis. See logs.")
 
     def update_ui_after_analyze(self, success, msg):
-        self.btn_analyze.configure(state="normal")
-        self.entry_repo.configure(state="normal")
-        self.combo_repo.configure(state="readonly")
-        if success:
-            self.set_status("Status: Ready")
-            self.lbl_loaded_status.configure(text=msg, text_color="#10B981")
-        else:
-            self.set_status("Status: Analysis Failed")
-            self.lbl_loaded_status.configure(text=f"⚠ {msg}", text_color="#EF4444")
+        # Có thể được gọi từ thread nền -> luôn thực thi việc đổi UI qua self.after
+        # (không thread-safe nếu gọi trực tiếp, xem ghi chú ở _load_businesses_for_run).
+        def _update():
+            self.btn_analyze.configure(state="normal")
+            self.entry_repo.configure(state="normal")
+            self.combo_repo.configure(state="readonly")
+            if success:
+                self.set_status("Status: Ready")
+                self.lbl_loaded_status.configure(text=msg, text_color="#10B981")
+            else:
+                self.set_status("Status: Analysis Failed")
+                self.lbl_loaded_status.configure(text=f"⚠ {msg}", text_color="#EF4444")
+        self.after(0, _update)
 
     def get_selected_business_id(self):
         selected_text = self.combo_business.get()
@@ -402,7 +412,8 @@ class BenchmarkApp(ctk.CTk):
             nodes_json = "[]"
             edges_json = "[]"
             snippets_json = "[]"
-            
+            function_list_json = "[]"  # Chỉ có dữ liệu khi mode == "E2E" (xem theo từng function)
+
             if mode == "CFG":
                 # Lấy Đồ thị tổng quan (Macro Graph)
                 url = f"https://localhost:55060/api/businesses/{business_id}/graph"
@@ -463,7 +474,10 @@ class BenchmarkApp(ctk.CTk):
                     return
             else:
                 # Mode E2E: Lấy Micro CFG và Critical Snippets từ Tầng 2
-                url = f"https://localhost:55060/api/businesses/{business_id}/hybrid-context"
+                # forceGraph=true: Graph Viewer cần XEM đồ thị của 1 function bất kể
+                # hàm đó đơn giản đến mức nào, nên bỏ qua ngưỡng SLOC/Vg (RawCode)
+                # mà backend áp dụng khi định tuyến ngữ cảnh cho việc SINH câu hỏi.
+                url = f"https://localhost:55060/api/businesses/{business_id}/hybrid-context?forceGraph=true"
                 try:
                     resp = requests.get(url, verify=False, timeout=60)
                     if resp.status_code != 200:
@@ -482,9 +496,22 @@ class BenchmarkApp(ctk.CTk):
                         self.set_status("Graph is empty!")
                         return
                         
+                    # QUAN TRỌNG: khi Business gồm nhiều method, CFG trả về là NHIỀU CFG
+                    # con dồn chung 1 danh sách (mỗi cfg_node có sẵn field "method" cho biết
+                    # nó thuộc hàm nào — CfgNodeDto.Method ở backend). Trước đây tool vẽ
+                    # TẤT CẢ node của MỌI function lên chung 1 canvas -> chồng chéo không
+                    # đọc được. Nay gắn "method" vào từng node để phía JS lọc, chỉ hiện
+                    # 1 function tại 1 thời điểm (dropdown chọn function, giống "1 trang").
+                    UNKNOWN_METHOD = "(Không xác định)"
+                    nodes_by_method = {}  # method -> list các cfg_node THEO THỨ TỰ gốc
+                    for n in cfg_nodes:
+                        m = (n.get("method") or "").strip() or UNKNOWN_METHOD
+                        nodes_by_method.setdefault(m, []).append(n)
+
                     vis_nodes = []
                     for n in cfg_nodes:
                         nkind = n.get("kind", "")
+                        method_name = (n.get("method") or "").strip() or UNKNOWN_METHOD
                         if nkind == "START":
                             color = {"background": "#10B981", "border": "#059669"}
                             size = 20
@@ -497,7 +524,7 @@ class BenchmarkApp(ctk.CTk):
                         else:
                             color = {"background": "#6366F1", "border": "#4F46E5"} # Indigo
                             size = 15
-                            
+
                         vis_nodes.append({
                             "id": n["id"],
                             "label": n.get("label") or nkind,
@@ -505,9 +532,10 @@ class BenchmarkApp(ctk.CTk):
                             "color": color,
                             "shape": "dot",
                             "size": size,
-                            "font": {"color": "#1e293b", "face": "Inter, sans-serif", "size": 14}
+                            "font": {"color": "#1e293b", "face": "Inter, sans-serif", "size": 14},
+                            "method": method_name
                         })
-                        
+
                     vis_edges = []
                     for e in cfg_edges:
                         vis_edges.append({
@@ -519,10 +547,39 @@ class BenchmarkApp(ctk.CTk):
                             "font": {"size": 11, "color": "#64748b", "face": "Inter, sans-serif", "align": "middle"},
                             "smooth": {"type": "continuous"}
                         })
-                        
+
+                    # --- Node GỐC (entry) cho mỗi function: "tên hàm" -> mũi tên vào node
+                    # bắt đầu (kind=START, nếu không có thì lấy node đầu tiên của hàm đó) ---
+                    function_list = sorted(nodes_by_method.keys())
+                    for method_name in function_list:
+                        method_nodes = nodes_by_method[method_name]
+                        start_node = next((n for n in method_nodes if n.get("kind") == "START"), method_nodes[0])
+                        root_id = f"__root__::{method_name}"
+                        vis_nodes.append({
+                            "id": root_id,
+                            "label": f"🔹 {method_name}",
+                            "title": f"Hàm: {method_name}",
+                            "color": {"background": "#8B5CF6", "border": "#6D28D9"},  # Violet - nổi bật, tách biệt CFG
+                            "shape": "box",
+                            "margin": 10,
+                            "font": {"color": "#ffffff", "face": "Inter, sans-serif", "size": 15, "bold": True},
+                            "method": method_name
+                        })
+                        vis_edges.append({
+                            "from": root_id,
+                            "to": start_node["id"],
+                            "label": "",
+                            "arrows": {"to": {"enabled": True, "scaleFactor": 0.8}},
+                            "color": {"color": "#8B5CF6", "highlight": "#6D28D9"},
+                            "font": {"size": 11},
+                            "smooth": {"type": "continuous"},
+                            "width": 2
+                        })
+
                     nodes_json = json.dumps(vis_nodes)
                     edges_json = json.dumps(vis_edges)
                     snippets_json = json.dumps(snippets)
+                    function_list_json = json.dumps(function_list)
                 except Exception as e:
                     self.log(f"[LỖI] Exception when calling hybrid-context API: {e}")
                     return
@@ -550,7 +607,13 @@ class BenchmarkApp(ctk.CTk):
                 <div id="graph-container">
                     <div id="mynetwork"></div>
                     <div class="title-box">{title_text}</div>
-                    <div id="tour-controls" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; gap: 10px; align-items: center;">
+                    <div id="function-controls" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; background: #f5f3ff; border: 1px solid #c4b5fd; padding: 8px 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none; gap: 10px; align-items: center;">
+                        <button id="btnFuncPrev" onclick="funcPrev()" style="padding: 5px 10px; cursor: pointer; border: 1px solid #8B5CF6; border-radius: 4px; background: #ffffff; color: #6D28D9;">⬅ Function</button>
+                        <select id="functionSelector" onchange="selectFunctionFromDropdown()" style="padding: 5px; border-radius: 4px; border: 1px solid #8B5CF6; font-weight: bold; cursor: pointer; max-width: 320px;"></select>
+                        <span id="functionStatus" style="font-weight: bold; font-family: sans-serif; color: #6D28D9; min-width: 70px; text-align: center;"></span>
+                        <button id="btnFuncNext" onclick="funcNext()" style="padding: 5px 10px; cursor: pointer; border: 1px solid #8B5CF6; border-radius: 4px; background: #ffffff; color: #6D28D9;">Function ➡</button>
+                    </div>
+                    <div id="tour-controls" style="position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; gap: 10px; align-items: center;">
                         <select id="pathSelector" onchange="selectPath()" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer;"></select>
                         <button id="btnPrev" onclick="tourPrev()" style="padding: 5px 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f8f9fa;">⬅ Prev Node</button>
                         <span id="tourStatus" style="font-weight: bold; font-family: sans-serif; color: #334155; min-width: 100px; text-align: center;">Overview</span>
@@ -568,9 +631,28 @@ class BenchmarkApp(ctk.CTk):
                     var nodes = new vis.DataSet({nodes_json});
                     var edges = new vis.DataSet({edges_json});
                     var snippets = {snippets_json};
-                    
+                    var functionList = {function_list_json};  // [] ở mode CFG (không chia trang theo function)
+                    var currentFunctionIndex = 0;
+                    var useFunctionFilter = functionList.length > 0;
+
+                    // Khi có nhiều function (mode E2E/Hybrid): chỉ hiện CFG của 1 function
+                    // tại 1 thời điểm (như "1 trang 1 hàm"), dùng vis.DataView lọc theo
+                    // trường "method" đã gắn vào từng node/cạnh (xem selectFunctionFromDropdown).
+                    var nodesView = useFunctionFilter
+                        ? new vis.DataView(nodes, {{ filter: function(item) {{
+                              return item.method === functionList[currentFunctionIndex];
+                          }} }})
+                        : nodes;
+                    var edgesView = useFunctionFilter
+                        ? new vis.DataView(edges, {{ filter: function(item) {{
+                              var f = nodes.get(item.from), t = nodes.get(item.to);
+                              return f && t && f.method === functionList[currentFunctionIndex]
+                                         && t.method === functionList[currentFunctionIndex];
+                          }} }})
+                        : edges;
+
                     var container = document.getElementById('mynetwork');
-                    var data = {{ nodes: nodes, edges: edges }};
+                    var data = {{ nodes: nodesView, edges: edgesView }};
                     var options = {{
                         layout: {{
                             hierarchical: {{
@@ -595,39 +677,43 @@ class BenchmarkApp(ctk.CTk):
                         }}
                     }};
                     var network = new vis.Network(container, data, options);
-                    
+
                     // Tính năng Smart Path Tracing
                     var allPaths = [];
                     var currentPathIndex = 0;
                     var currentStepIndex = -1;
-                    
-                    network.once("afterDrawing", function() {{
+
+                    // Tách logic tính path ra 1 hàm riêng để CHẠY LẠI mỗi khi đổi function
+                    // (trước đây chỉ chạy 1 lần "afterDrawing" trên TOÀN BỘ graph gồm nhiều
+                    // function dồn chung -> allPaths lẫn lộn giữa các function không liên quan).
+                    function recomputePaths() {{
                         var adj = {{}};
                         var inDegree = {{}};
-                        var allNodeIds = nodes.getIds();
-                        var rawEdges = edges.get();
-                        
+                        var allNodeIds = nodesView.getIds();
+                        var rawEdges = edgesView.get();
+
                         allNodeIds.forEach(id => {{
                             adj[id] = [];
                             inDegree[id] = 0;
                         }});
-                        
+
                         rawEdges.forEach(e => {{
                             if (adj[e.from]) {{
                                 adj[e.from].push(e.to);
                                 if (inDegree[e.to] !== undefined) inDegree[e.to]++;
                             }}
                         }});
-                        
+
                         var startNodes = allNodeIds.filter(id => inDegree[id] === 0);
                         if (startNodes.length === 0 && allNodeIds.length > 0) startNodes = [allNodeIds[0]];
-                        
+
+                        allPaths = [];
                         function dfs(currentNode, currentPath, visited) {{
                             if (allPaths.length > 30) return; // Limit paths to avoid UI freeze
-                            
+
                             currentPath.push(currentNode);
                             visited.add(currentNode);
-                            
+
                             var neighbors = adj[currentNode] || [];
                             if (neighbors.length === 0) {{
                                 allPaths.push([...currentPath]);
@@ -643,13 +729,13 @@ class BenchmarkApp(ctk.CTk):
                                 }}
                             }}
                         }}
-                        
+
                         startNodes.forEach(startNode => {{
                             dfs(startNode, [], new Set());
                         }});
-                        
+
                         if (allPaths.length === 0) allPaths.push(allNodeIds); // Fallback
-                        
+
                         var selector = document.getElementById("pathSelector");
                         selector.innerHTML = "";
                         allPaths.forEach((p, idx) => {{
@@ -658,8 +744,60 @@ class BenchmarkApp(ctk.CTk):
                             opt.innerHTML = "Luồng " + (idx + 1) + " (" + p.length + " nodes)";
                             selector.appendChild(opt);
                         }});
+                        currentPathIndex = 0;
+                        currentStepIndex = -1;
+                        document.getElementById("tourStatus").innerText = "Overview";
+                    }}
+
+                    // --- Điều khiển chọn Function (chỉ hiện khi useFunctionFilter = true) ---
+                    function renderCurrentFunction() {{
+                        var fname = functionList[currentFunctionIndex];
+                        document.getElementById("functionSelector").value = currentFunctionIndex;
+                        document.getElementById("functionStatus").innerText =
+                            (currentFunctionIndex + 1) + " / " + functionList.length;
+                        nodesView.refresh();
+                        edgesView.refresh();
+                        network.fit({{animation: {{duration: 500}}}});
+                        network.unselectAll();
+                        recomputePaths();
+                        document.getElementById("code-content").innerHTML =
+                            '<div class="empty-state">👉 Click on a Node in the graph to view the attached critical snippet (if any).</div>';
+                    }}
+
+                    window.selectFunctionFromDropdown = function() {{
+                        currentFunctionIndex = parseInt(document.getElementById("functionSelector").value);
+                        renderCurrentFunction();
+                    }};
+                    window.funcPrev = function() {{
+                        if (!useFunctionFilter) return;
+                        currentFunctionIndex = (currentFunctionIndex - 1 + functionList.length) % functionList.length;
+                        renderCurrentFunction();
+                    }};
+                    window.funcNext = function() {{
+                        if (!useFunctionFilter) return;
+                        currentFunctionIndex = (currentFunctionIndex + 1) % functionList.length;
+                        renderCurrentFunction();
+                    }};
+
+                    if (useFunctionFilter) {{
+                        document.getElementById("function-controls").style.display = "flex";
+                        var funcSelector = document.getElementById("functionSelector");
+                        functionList.forEach((fname, idx) => {{
+                            var opt = document.createElement("option");
+                            opt.value = idx;
+                            opt.innerHTML = fname;
+                            funcSelector.appendChild(opt);
+                        }});
+                    }}
+
+                    network.once("afterDrawing", function() {{
+                        if (useFunctionFilter) {{
+                            renderCurrentFunction();
+                        }} else {{
+                            recomputePaths();
+                        }}
                     }});
-                    
+
                     window.selectPath = function() {{
                         var selector = document.getElementById("pathSelector");
                         currentPathIndex = parseInt(selector.value);

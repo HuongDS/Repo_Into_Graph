@@ -99,7 +99,8 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                     Vg = analysisResult.Vg
                 };
 
-                if (decision.Sloc < 25 || decision.Vg <= 2)
+                bool isSimpleFunction = decision.Sloc < 25 || decision.Vg <= 2;
+                if (isSimpleFunction && !request.ForceHybrid)
                 {
                     decision.SelectedRoute = RoutingType.RawCode;
                     decision.Message = "Ham don gian, dinh tuyen su dung Ma Nguon Goc (Raw Code).";
@@ -107,7 +108,9 @@ namespace Repo_Into_Graph_Application.Services.AdaptiveContextRouter
                 else
                 {
                     decision.SelectedRoute = RoutingType.HybridGraph;
-                    decision.Message = "Ham phuc tap, dinh tuyen sang Tang 2: Ngu canh Lai (Hybrid Graph).";
+                    decision.Message = isSimpleFunction
+                        ? "Ham don gian nhung ForceHybrid=true (VD: xem Graph Viewer) nen van build Hybrid Graph du khong dat nguong SLOC/Vg."
+                        : "Ham phuc tap, dinh tuyen sang Tang 2: Ngu canh Lai (Hybrid Graph).";
 
                     // --- HANDOFF: Dong goi va chuyen tiep sang Tang 2 ---
                     var hybridInput = new HybridContextInputDto

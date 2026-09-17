@@ -35,6 +35,16 @@ Khi người dùng nhấn nút **"CHẠY BENCHMARK"**, Tool sẽ tự động ch
     *   Tool tổng hợp toàn bộ số liệu, tính trung bình (Average) và xuất ra file Excel `CFG_vs_Traditional_Benchmark_Template.xlsx` (có sheet 3 cột để so sánh Delta).
     *   Đồng thời lưu raw log vào thư mục `benchmark_logs/` để xem chi tiết bằng UI "Xem Logs".
 
+### 2. Tính năng Graph Viewer và Smart Path Tracing
+
+Bộ công cụ đi kèm một tính năng xem đồ thị (Graph Viewer) trên trình duyệt cực kỳ mạnh mẽ:
+*   **Tích hợp Cơ sở dữ liệu:** Tự động tải danh sách repository đã phân tích từ Database. Người dùng chỉ cần nhập mới khi có source code hoàn toàn mới.
+*   **Hierarchical Layout:** Đồ thị tự động sắp xếp theo chiều dọc (Top-Down) nề nếp, giúp dễ dàng quan sát điểm bắt đầu và kết thúc của các hàm.
+*   **Smart Path Tracing (Mô phỏng Debugger):**
+    *   Tự động quét và tách đồ thị thành nhiều **"Luồng chạy" (Execution Paths)** biệt lập.
+    *   Cung cấp Menu Dropdown cho phép chọn từng luồng (Ví dụ: Luồng if, Luồng else, Luồng Exception).
+    *   Tính năng **Next Node / Prev Node** cho phép camera tự động vuốt và zoom sát vào duy nhất 1 node đang thực thi, loại bỏ sự rối rắm khi xem các nhánh song song. Tính năng này giống hệt như đang ấn `F10/F11` debug mã nguồn.
+
 ---
 
 ## PHẦN 2: CHI TIẾT CÁC API ĐÁNH GIÁ (WORKFLOW ASSESSMENT)

@@ -5,7 +5,9 @@ import threading
 import datetime
 import urllib3
 import requests
+import json
 import openpyxl
+import webbrowser
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 
@@ -45,119 +47,145 @@ class BenchmarkApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        self.title("Repo Into Graph - Auto Benchmark & Testing Tool")
-        self.geometry("850x800")
+        self.title("Source Code Question Generator")
+        self.geometry("900x850")
         self.resizable(True, True)
-        self.configure(fg_color="#F0F4F8")  # Soft light background
+        self.configure(fg_color="#F8FAFC")  # Crisp and modern background
 
         
         self.loaded_businesses = []  # List of dicts: {"name": "...", "id": "..."}
+        self.loaded_repos = []       # List of dicts: {"id": "...", "path": "..."}
         self.last_call_ms = 0        # thoi gian (ms) cua lan goi API thanh cong gan nhat
         
         # --- UI SETUP ---
         self.setup_ui()
         
+        # Fetch initial repos
+        threading.Thread(target=self.fetch_existing_repos, daemon=True).start()
+        
     def setup_ui(self):
         # 1. HEADER
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(pady=(20, 10), fill="x")
-        header_label = ctk.CTkLabel(header_frame, text="📊 AUTO BENCHMARK & TESTING TOOL", font=ctk.CTkFont(size=26, weight="bold", family="Segoe UI"))
+        header_frame.pack(pady=(25, 15), fill="x")
+        header_label = ctk.CTkLabel(header_frame, text="📊 SOURCE CODE QUESTION GENERATOR", font=ctk.CTkFont(size=28, weight="bold", family="Inter"))
         header_label.pack()
-        sub_label = ctk.CTkLabel(header_frame, text="Repo Into Graph Solutions", font=ctk.CTkFont(size=14, slant="italic", family="Segoe UI"), text_color="gray50")
-        sub_label.pack()
+        sub_label = ctk.CTkLabel(header_frame, text="Repo Into Graph Solutions", font=ctk.CTkFont(size=14, family="Inter"), text_color="#64748B")
+        sub_label.pack(pady=(2,0))
         
-        # 2. FRAME 1: Data Loading (Nạp Dữ liệu)
-        frame_data = ctk.CTkFrame(self, corner_radius=12, fg_color="#FFFFFF", border_width=1, border_color="#E1E5EB")
-        frame_data.pack(padx=30, pady=10, fill="x")
+        # 2. FRAME 1: Data Loading
+        frame_data = ctk.CTkFrame(self, corner_radius=12, fg_color="#FFFFFF", border_width=1, border_color="#E2E8F0")
+        frame_data.pack(padx=35, pady=10, fill="x")
         
-        lbl_data = ctk.CTkLabel(frame_data, text="📝 BƯỚC 1: NẠP TẬP DỮ LIỆU ĐẦU VÀO", font=ctk.CTkFont(size=16, weight="bold"))
-        lbl_data.grid(row=0, column=0, padx=20, pady=15, sticky="w")
+        lbl_data = ctk.CTkLabel(frame_data, text="📁 STEP 1: LOAD REPOSITORY", font=ctk.CTkFont(size=16, weight="bold", family="Inter"), text_color="#1E293B")
+        lbl_data.grid(row=0, column=0, padx=25, pady=(15, 10), sticky="w", columnspan=3)
         
-        btn_generate_template = ctk.CTkButton(frame_data, text="📑 Tạo Template Mẫu", command=self.generate_template, fg_color="#107C41", hover_color="#0b5c30", font=ctk.CTkFont(weight="bold"))
-        btn_generate_template.grid(row=0, column=1, padx=10, pady=15)
+        # Select existing repo
+        ctk.CTkLabel(frame_data, text="Load from DB:", font=ctk.CTkFont(weight="bold", family="Inter"), text_color="#334155").grid(row=1, column=0, padx=25, pady=(0, 10), sticky="w")
+        self.combo_repo = ctk.CTkComboBox(frame_data, values=["(Loading existing repositories...)"], width=450, state="readonly", fg_color="#F1F5F9", border_color="#CBD5E1", dropdown_fg_color="#FFFFFF", dropdown_hover_color="#E2E8F0", command=self.on_repo_selected)
+        self.combo_repo.grid(row=1, column=1, padx=10, pady=(0, 10), sticky="w")
+        self.combo_repo.set("(Loading existing repositories...)")
         
-        btn_load_excel = ctk.CTkButton(frame_data, text="📂 Chọn File Excel", command=self.load_excel, fg_color="#2b579a", hover_color="#1d3d6b", font=ctk.CTkFont(weight="bold"))
-        btn_load_excel.grid(row=0, column=2, padx=10, pady=15)
+        # OR Analyze new repo
+        ctk.CTkLabel(frame_data, text="Or Analyze New:", font=ctk.CTkFont(weight="bold", family="Inter"), text_color="#334155").grid(row=2, column=0, padx=25, pady=(0, 15), sticky="w")
+        self.entry_repo = ctk.CTkEntry(frame_data, placeholder_text="Enter GitHub URL or Local Folder Path...", width=450, height=35, font=ctk.CTkFont(family="Inter"))
+        self.entry_repo.grid(row=2, column=1, padx=10, pady=(0, 15), sticky="w")
         
-        self.lbl_loaded_status = ctk.CTkLabel(frame_data, text="⚠ Chưa nạp file danh sách nghiệp vụ nào.", text_color="#d13438", font=ctk.CTkFont(slant="italic"))
-        self.lbl_loaded_status.grid(row=1, column=0, columnspan=3, padx=20, pady=(0, 15), sticky="w")
+        # Analyze button
+        self.btn_analyze = ctk.CTkButton(frame_data, text="Analyze Repository", command=self.analyze_repository, fg_color="#3B82F6", hover_color="#2563EB", font=ctk.CTkFont(weight="bold", family="Inter"), corner_radius=6, width=160, height=35)
+        self.btn_analyze.grid(row=2, column=2, padx=10, pady=(0, 15), sticky="w")
         
-        # 3. FRAME 2: Configuration (Cấu hình Chạy Test)
-        frame_config = ctk.CTkFrame(self, corner_radius=12, fg_color="#FFFFFF", border_width=1, border_color="#E1E5EB")
-        frame_config.pack(padx=30, pady=10, fill="x")
+        self.lbl_loaded_status = ctk.CTkLabel(frame_data, text="⚠ No repository selected yet.", text_color="#EF4444", font=ctk.CTkFont(slant="italic", family="Inter"))
+        self.lbl_loaded_status.grid(row=3, column=0, columnspan=3, padx=25, pady=(0, 15), sticky="w")
         
-        lbl_config = ctk.CTkLabel(frame_config, text="⚙️ BƯỚC 2: CẤU HÌNH KIỂM THỬ", font=ctk.CTkFont(size=16, weight="bold"))
-        lbl_config.grid(row=0, column=0, padx=20, pady=15, sticky="w", columnspan=2)
+        # 3. FRAME 2: Configuration
+        frame_config = ctk.CTkFrame(self, corner_radius=12, fg_color="#FFFFFF", border_width=1, border_color="#E2E8F0")
+        frame_config.pack(padx=35, pady=10, fill="x")
+        
+        lbl_config = ctk.CTkLabel(frame_config, text="⚙️ STEP 2: TEST CONFIGURATION", font=ctk.CTkFont(size=16, weight="bold", family="Inter"), text_color="#1E293B")
+        lbl_config.grid(row=0, column=0, padx=25, pady=20, sticky="w", columnspan=2)
         
         # - Chọn nghiệp vụ
-        ctk.CTkLabel(frame_config, text="📌 Chọn Nghiệp Vụ:", font=ctk.CTkFont(weight="bold")).grid(row=1, column=0, padx=20, pady=10, sticky="w")
-        self.combo_business = ctk.CTkComboBox(frame_config, values=["(Hãy nạp file Excel trước)"], width=450, state="readonly")
-        self.combo_business.grid(row=1, column=1, padx=10, pady=10, sticky="w", columnspan=3)
-        self.combo_business.set("(Hãy nạp file Excel trước)")
+        ctk.CTkLabel(frame_config, text="📌 Select Business:", font=ctk.CTkFont(weight="bold", family="Inter"), text_color="#334155").grid(row=1, column=0, padx=25, pady=(5,15), sticky="w")
+        self.combo_business = ctk.CTkComboBox(frame_config, values=["(Please analyze a repository first)"], width=480, state="readonly", fg_color="#F1F5F9", border_color="#CBD5E1", dropdown_fg_color="#FFFFFF", dropdown_hover_color="#E2E8F0")
+        self.combo_business.grid(row=1, column=1, padx=10, pady=(5,15), sticky="w", columnspan=3)
+        self.combo_business.set("(Please analyze a repository first)")
         
         # - Phương pháp
-        ctk.CTkLabel(frame_config, text="🔬 Phương Pháp Test:", font=ctk.CTkFont(weight="bold")).grid(row=2, column=0, padx=20, pady=10, sticky="w")
+        ctk.CTkLabel(frame_config, text="🔬 Test Method:", font=ctk.CTkFont(weight="bold", family="Inter"), text_color="#334155").grid(row=2, column=0, padx=25, pady=15, sticky="w")
         self.radio_var = ctk.StringVar(value="All")
-        r_all = ctk.CTkRadioButton(frame_config, text="Run All (Cả 3)", variable=self.radio_var, value="All")
-        r_trad = ctk.CTkRadioButton(frame_config, text="Truyền Thống", variable=self.radio_var, value="Traditional")
-        r_cfg = ctk.CTkRadioButton(frame_config, text="CFG (Graph)", variable=self.radio_var, value="CFG")
-        r_e2e = ctk.CTkRadioButton(frame_config, text="E2E (3 Tầng)", variable=self.radio_var, value="E2E")
+        r_all = ctk.CTkRadioButton(frame_config, text="Run All (All 3)", variable=self.radio_var, value="All", text_color="#475569", border_color="#94A3B8")
+        r_trad = ctk.CTkRadioButton(frame_config, text="Traditional", variable=self.radio_var, value="Traditional", text_color="#475569", border_color="#94A3B8")
+        r_cfg = ctk.CTkRadioButton(frame_config, text="CFG (Graph)", variable=self.radio_var, value="CFG", text_color="#475569", border_color="#94A3B8")
+        r_e2e = ctk.CTkRadioButton(frame_config, text="E2E (Hybrid 3-Tier)", variable=self.radio_var, value="E2E", text_color="#475569", border_color="#94A3B8")
         
-        r_all.grid(row=2, column=1, padx=5, pady=10, sticky="w")
-        r_trad.grid(row=2, column=2, padx=5, pady=10, sticky="w")
-        r_cfg.grid(row=2, column=3, padx=5, pady=10, sticky="w")
-        r_e2e.grid(row=2, column=4, padx=5, pady=10, sticky="w")
+        r_all.grid(row=2, column=1, padx=10, pady=15, sticky="w")
+        r_trad.grid(row=2, column=2, padx=10, pady=15, sticky="w")
+        r_cfg.grid(row=2, column=3, padx=10, pady=15, sticky="w")
+        r_e2e.grid(row=2, column=4, padx=10, pady=15, sticky="w")
         
         # - Số câu hỏi & Độ khó
-        ctk.CTkLabel(frame_config, text="🔢 Số Lượng Câu Hỏi:", font=ctk.CTkFont(weight="bold")).grid(row=3, column=0, padx=20, pady=10, sticky="w")
-        self.combo_num = ctk.CTkComboBox(frame_config, values=["5", "10", "15", "20"], width=120, state="readonly")
-        self.combo_num.grid(row=3, column=1, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(frame_config, text="🔢 Number of Questions:", font=ctk.CTkFont(weight="bold", family="Inter"), text_color="#334155").grid(row=3, column=0, padx=25, pady=(15,20), sticky="w")
+        self.combo_num = ctk.CTkComboBox(frame_config, values=["5", "10", "15", "20"], width=130, state="readonly", fg_color="#F1F5F9", border_color="#CBD5E1", dropdown_fg_color="#FFFFFF", dropdown_hover_color="#E2E8F0")
+        self.combo_num.grid(row=3, column=1, padx=10, pady=(15,20), sticky="w")
         self.combo_num.set("5")
         
-        ctk.CTkLabel(frame_config, text="🔥 Độ Khó:", font=ctk.CTkFont(weight="bold")).grid(row=3, column=2, padx=10, pady=10, sticky="e")
-        self.combo_difficulty = ctk.CTkComboBox(frame_config, values=["Easy", "Medium", "Hard"], width=120, state="readonly")
+        ctk.CTkLabel(frame_config, text="🔥 Difficulty:", font=ctk.CTkFont(weight="bold", family="Inter"), text_color="#334155").grid(row=3, column=2, padx=10, pady=(15,20), sticky="e")
+        self.combo_difficulty = ctk.CTkComboBox(frame_config, values=["Easy", "Medium", "Hard"], width=130, state="readonly", fg_color="#F1F5F9", border_color="#CBD5E1", dropdown_fg_color="#FFFFFF", dropdown_hover_color="#E2E8F0")
         self.combo_difficulty.set("Medium")
-        self.combo_difficulty.grid(row=3, column=3, padx=10, pady=10, sticky="w")
+        self.combo_difficulty.grid(row=3, column=3, padx=10, pady=(15,20), sticky="w")
         
         # 4. FRAME 3: Execution & Logs
-        frame_exec = ctk.CTkFrame(self, corner_radius=12, fg_color="#FFFFFF", border_width=1, border_color="#E1E5EB")
-        frame_exec.pack(padx=30, pady=10, fill="both", expand=True)
+        frame_exec = ctk.CTkFrame(self, corner_radius=12, fg_color="#FFFFFF", border_width=1, border_color="#E2E8F0")
+        frame_exec.pack(padx=35, pady=10, fill="both", expand=True)
         
         button_frame = ctk.CTkFrame(frame_exec, fg_color="transparent")
-        button_frame.pack(fill="x", padx=20, pady=15)
+        button_frame.pack(fill="x", padx=25, pady=20)
         
         self.btn_run = ctk.CTkButton(
             button_frame, 
-            text="🚀 CHẠY BENCHMARK", 
-            font=ctk.CTkFont(size=18, weight="bold"), 
-            height=50, 
+            text="🚀 RUN BENCHMARK", 
+            font=ctk.CTkFont(size=16, weight="bold", family="Inter"), 
+            height=45, 
             corner_radius=8,
-            fg_color="#0066CC", 
-            hover_color="#0052A3",
+            fg_color="#3B82F6", 
+            hover_color="#2563EB",
             command=self.start_benchmark_thread
         )
         self.btn_run.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
+        self.btn_view_graph = ctk.CTkButton(
+            button_frame, 
+            text="👁 VIEW GRAPH", 
+            font=ctk.CTkFont(size=16, weight="bold", family="Inter"), 
+            height=45, 
+            corner_radius=8,
+            fg_color="#F59E0B", 
+            hover_color="#D97706",
+            command=self.open_graph_viewer
+        )
+        self.btn_view_graph.pack(side="left", fill="x", expand=True, padx=(5, 5))
+        
         self.btn_view_logs = ctk.CTkButton(
             button_frame, 
-            text="📂 XEM LOGS", 
-            font=ctk.CTkFont(size=18, weight="bold"), 
-            height=50, 
+            text="📂 VIEW LOGS", 
+            font=ctk.CTkFont(size=16, weight="bold", family="Inter"), 
+            height=45, 
             corner_radius=8,
-            fg_color="#107C41", 
-            hover_color="#0b5c30",
+            fg_color="#64748B", 
+            hover_color="#475569",
             command=self.open_logs_viewer
         )
         self.btn_view_logs.pack(side="right", fill="x", expand=True, padx=(10, 0))
-        self.lbl_status = ctk.CTkLabel(frame_exec, text="Trạng thái: Sẵn sàng", font=ctk.CTkFont(weight="bold", slant="italic"), text_color="#0066CC")
-        self.lbl_status.pack(anchor="w", padx=20)
+        
+        self.lbl_status = ctk.CTkLabel(frame_exec, text="Status: Ready", font=ctk.CTkFont(weight="bold", slant="italic", family="Inter"), text_color="#3B82F6")
+        self.lbl_status.pack(anchor="w", padx=25)
 
-        self.progress_bar = ctk.CTkProgressBar(frame_exec, height=12, corner_radius=6, progress_color="#107C41", fg_color="#E1E5EB")
-        self.progress_bar.pack(fill="x", padx=20, pady=(5, 15))
+        self.progress_bar = ctk.CTkProgressBar(frame_exec, height=8, corner_radius=4, progress_color="#10B981", fg_color="#E2E8F0")
+        self.progress_bar.pack(fill="x", padx=25, pady=(10, 20))
         self.progress_bar.set(0)
         
-        self.textbox_log = ctk.CTkTextbox(frame_exec, height=200, state="disabled", font=ctk.CTkFont(family="Consolas", size=13), fg_color="#F8F9FA", text_color="#333333", border_width=1, border_color="#E1E5EB")
-        self.textbox_log.pack(padx=20, pady=(0, 20), fill="both", expand=True)
+        self.textbox_log = ctk.CTkTextbox(frame_exec, height=220, state="disabled", font=ctk.CTkFont(family="Consolas", size=13), fg_color="#F8FAFC", text_color="#1E293B", border_width=1, border_color="#CBD5E1")
+        self.textbox_log.pack(padx=25, pady=(0, 25), fill="both", expand=True)
     # --- ACTIONS ---
     
     def set_status(self, text):
@@ -176,74 +204,150 @@ class BenchmarkApp(ctk.CTk):
         self.textbox_log.configure(state="disabled")
         self.update_idletasks()
 
-    def generate_template(self):
+    def fetch_existing_repos(self):
         try:
-            filename = "DanhSachNghiepVu.xlsx"
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Nghiệp Vụ"
-            
-            # Header
-            ws.cell(row=1, column=1, value="Business Name")
-            ws.cell(row=1, column=2, value="Business ID")
-            
-            # Data
-            ws.cell(row=2, column=1, value="Đăng nhập hệ thống")
-            ws.cell(row=2, column=2, value="12345678-1234-1234-1234-123456789012")
-            
-            ws.cell(row=3, column=1, value="Thanh toán giỏ hàng")
-            ws.cell(row=3, column=2, value="87654321-4321-4321-4321-210987654321")
-            
-            wb.save(filename)
-            messagebox.showinfo("Thành công", f"Đã tạo file mẫu '{filename}' tại thư mục hiện tại.\nHãy mở file lên và thay thế bằng ID thật của bạn.")
+            url = "https://localhost:55060/api/analysis-runs?page=1&pageSize=50"
+            resp = requests.get(url, verify=False, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                items = data.get("items", []) or data.get("Items", [])
+                
+                self.loaded_repos = []
+                combo_values = []
+                
+                for item in items:
+                    r_id = item.get("id") or item.get("Id")
+                    r_path = item.get("repositoryPath") or item.get("RepositoryPath")
+                    if r_id and r_path:
+                        self.loaded_repos.append({"id": r_id, "path": r_path})
+                        combo_values.append(f"{r_path} ({r_id[:8]}...)")
+                
+                if combo_values:
+                    # Update combo from main thread
+                    self.after(0, lambda: self.combo_repo.configure(values=combo_values))
+                    self.after(0, lambda: self.combo_repo.set("(Select an existing repository)"))
+                else:
+                    self.after(0, lambda: self.combo_repo.set("(No existing repos found)"))
         except Exception as e:
-            messagebox.showerror("Lỗi", f"Không thể tạo file: {str(e)}")
+            self.log(f"[WARNING] Could not fetch existing repos: {e}")
+            self.after(0, lambda: self.combo_repo.set("(Failed to load DB repos)"))
 
-    def load_excel(self):
-        filepath = filedialog.askopenfilename(title="Chọn file Excel", filetypes=[("Excel files", "*.xlsx *.xls")])
-        if not filepath:
+    def on_repo_selected(self, selected_text):
+        if not selected_text or selected_text.startswith("("):
             return
             
+        r_id = None
+        for r in self.loaded_repos:
+            # We displayed it as f"{path} ({id[:8]}...)"
+            if r["path"] in selected_text:
+                r_id = r["id"]
+                break
+                
+        if r_id:
+            self.lbl_loaded_status.configure(text=f"⏳ Loading businesses for {r_id}...", text_color="#F59E0B")
+            threading.Thread(target=self._fetch_businesses_thread, args=(r_id,), daemon=True).start()
+
+    def _fetch_businesses_thread(self, analysis_run_id):
+        self._load_businesses_for_run(analysis_run_id)
+
+    def _load_businesses_for_run(self, analysis_run_id):
         try:
-            wb = openpyxl.load_workbook(filepath, data_only=True)
-            ws = wb.active
+            self.log(f"[*] Fetching businesses for Run ID: {analysis_run_id}...")
+            url_businesses = f"https://localhost:55060/api/businesses?analysisRunId={analysis_run_id}"
+            b_resp = requests.get(url_businesses, verify=False, timeout=60)
             
-            # Find column indices for Business Name and Business ID
-            name_col = None
-            id_col = None
-            
-            for col in range(1, ws.max_column + 1):
-                header = str(ws.cell(row=1, column=col).value).strip()
-                if header == "Business Name":
-                    name_col = col
-                elif header == "Business ID":
-                    id_col = col
-                    
-            if name_col is None or id_col is None:
-                messagebox.showerror("Lỗi Cấu Trúc", "File Excel phải có ít nhất 2 cột: 'Business Name' và 'Business ID'")
+            if b_resp.status_code != 200:
+                self.log(f"[ERROR] Fail to fetch businesses. Status {b_resp.status_code}")
+                self.update_ui_after_analyze(success=False, msg="Failed to fetch businesses.")
                 return
                 
+            businesses = b_resp.json()
+            if not businesses:
+                self.log("[WARNING] No businesses found for this repository.")
+                self.update_ui_after_analyze(success=False, msg="No businesses found.")
+                return
+                
+            # 3. Cập nhật giao diện
             self.loaded_businesses = []
             combo_values = []
-            
-            for row in range(2, ws.max_row + 1):
-                b_name = str(ws.cell(row=row, column=name_col).value).strip()
-                b_id = str(ws.cell(row=row, column=id_col).value).strip()
-                
-                if b_id and b_id.lower() not in ["none", "nan", ""]:
+            for b in businesses:
+                b_id = b.get("id") or b.get("Id")
+                b_name = b.get("businessName") or b.get("BusinessName")
+                if b_id and b_name:
                     self.loaded_businesses.append({"name": b_name, "id": b_id})
                     combo_values.append(f"{b_name} ({b_id})")
                     
-            if not self.loaded_businesses:
-                self.lbl_loaded_status.configure(text="Không tìm thấy dữ liệu hợp lệ trong file.", text_color="red")
+            if not combo_values:
+                self.update_ui_after_analyze(success=False, msg="No valid businesses parsed.")
                 return
                 
             self.combo_business.configure(values=combo_values)
             self.combo_business.set(combo_values[0])
-            self.lbl_loaded_status.configure(text=f"✅ Đã tải thành công {len(self.loaded_businesses)} nghiệp vụ.", text_color="green")
+            self.update_ui_after_analyze(success=True, msg=f"✅ Successfully loaded {len(combo_values)} businesses.")
             
         except Exception as e:
-            messagebox.showerror("Lỗi", f"Đã xảy ra lỗi khi đọc file:\n{str(e)}")
+            self.log(f"[ERROR] Exception during fetching businesses: {e}")
+            self.update_ui_after_analyze(success=False, msg="Exception fetching businesses. See logs.")
+
+    def analyze_repository(self):
+        repo_path = self.entry_repo.get().strip()
+        if not repo_path:
+            messagebox.showwarning("Warning", "Please enter a GitHub URL or local folder path.")
+            return
+            
+        self.btn_analyze.configure(state="disabled")
+        self.entry_repo.configure(state="disabled")
+        self.combo_repo.configure(state="disabled")
+        self.set_status("Status: Analyzing Repository... (This may take a while)")
+        self.lbl_loaded_status.configure(text="⏳ Analyzing Repository, extracting businesses...", text_color="#F59E0B")
+        
+        thread = threading.Thread(target=self._analyze_repo_thread, args=(repo_path,))
+        thread.start()
+
+    def _analyze_repo_thread(self, repo_path):
+        try:
+            # 1. Gọi API phân tích (clone, parse code, build CFG, lưu DB)
+            url_analyze = "https://localhost:55060/api/analysis/analyze"
+            payload = {"repositoryPath": repo_path}
+            
+            self.log(f"[*] Gửi yêu cầu phân tích repository: {repo_path}")
+            resp = requests.post(url_analyze, json=payload, verify=False, timeout=600)
+            
+            if resp.status_code != 200:
+                self.log(f"[ERROR] Fail to analyze repo. Status {resp.status_code}: {resp.text}")
+                self.update_ui_after_analyze(success=False, msg="Failed to analyze repository.")
+                return
+                
+            data = resp.json()
+            analysis_run_id = data.get("analysisRunId") or data.get("AnalysisRunId")
+            if not analysis_run_id:
+                self.log("[ERROR] API returned 200 but missing AnalysisRunId.")
+                self.update_ui_after_analyze(success=False, msg="Failed to get AnalysisRunId.")
+                return
+                
+            self.log(f"[*] Phân tích thành công! AnalysisRunId: {analysis_run_id}")
+            self.log(f"[*] Edges: {data.get('edgesCount', 0)}, Methods: {data.get('methodsCount', 0)}")
+            
+            # Fetch and update repo dropdown so the new repo appears
+            self.fetch_existing_repos()
+            
+            # 2. Gọi API lấy danh sách Businesses
+            self._load_businesses_for_run(analysis_run_id)
+            
+        except Exception as e:
+            self.log(f"[ERROR] Exception during analysis: {e}")
+            self.update_ui_after_analyze(success=False, msg="Exception during analysis. See logs.")
+
+    def update_ui_after_analyze(self, success, msg):
+        self.btn_analyze.configure(state="normal")
+        self.entry_repo.configure(state="normal")
+        self.combo_repo.configure(state="readonly")
+        if success:
+            self.set_status("Status: Ready")
+            self.lbl_loaded_status.configure(text=msg, text_color="#10B981")
+        else:
+            self.set_status("Status: Analysis Failed")
+            self.lbl_loaded_status.configure(text=f"⚠ {msg}", text_color="#EF4444")
 
     def get_selected_business_id(self):
         selected_text = self.combo_business.get()
@@ -254,15 +358,15 @@ class BenchmarkApp(ctk.CTk):
 
     def start_benchmark_thread(self):
         if not self.loaded_businesses:
-            messagebox.showwarning("Cảnh báo", "Vui lòng nạp danh sách nghiệp vụ trước!")
+            messagebox.showwarning("Warning", "Please load business list first!")
             return
             
         b_id, b_name = self.get_selected_business_id()
         if not b_id:
-            messagebox.showwarning("Cảnh báo", "Nghiệp vụ đã chọn không hợp lệ!")
+            messagebox.showwarning("Warning", "Invalid selected business!")
             return
             
-        answer = messagebox.askyesnocancel("Ghi dữ liệu Excel", "Bạn muốn GHI TIẾP vào dữ liệu hiện có (Yes)\nHay XÓA TOÀN BỘ dữ liệu cũ (No)?\n\n(Bấm Cancel để hủy chạy)")
+        answer = messagebox.askyesnocancel("Write Excel Data", "Do you want to APPEND to existing data (Yes)\nOr CLEAR ALL old data (No)?\n\n(Press Cancel to abort)")
         if answer is None:
             return
             
@@ -276,6 +380,376 @@ class BenchmarkApp(ctk.CTk):
         # Start thread
         thread = threading.Thread(target=self.run_benchmark_workflow, args=(b_id, b_name, clear_old_data))
         thread.start()
+
+    # --- GRAPH VIEWER LOGIC ---
+    def open_graph_viewer(self):
+        b_id, b_name = self.get_selected_business_id()
+        if not b_id:
+            messagebox.showwarning("Warning", "Please select a business first!")
+            return
+            
+        mode = self.radio_var.get()
+        if mode == "Traditional":
+            messagebox.showinfo("Information", "Phương pháp Traditional (Code Base) không sử dụng Đồ Thị.")
+            return
+            
+        self.set_status("Fetching Graph data from Backend...")
+        thread = threading.Thread(target=self._generate_and_open_graph, args=(b_id, mode))
+        thread.start()
+        
+    def _generate_and_open_graph(self, business_id, mode):
+        try:
+            nodes_json = "[]"
+            edges_json = "[]"
+            snippets_json = "[]"
+            
+            if mode == "CFG":
+                # Lấy Đồ thị tổng quan (Macro Graph)
+                url = f"https://localhost:55060/api/businesses/{business_id}/graph"
+                try:
+                    resp = requests.get(url, verify=False, timeout=30)
+                    if resp.status_code != 200:
+                        self.log(f"[ERROR] Failed to fetch Graph. Status: {resp.status_code}")
+                        self.set_status("Error lấy Đồ thị")
+                        return
+                        
+                    data = resp.json()
+                    nodes = data.get("nodes", [])
+                    edges = data.get("edges", [])
+                    
+                    if not nodes:
+                        self.log("[WARNING] No Nodes in Graph.")
+                        self.set_status("Graph is empty!")
+                        return
+                        
+                    vis_nodes = []
+                    for n in nodes:
+                        ntype = n.get("type", "")
+                        if ntype == "StartEvent":
+                            color = {"background": "#10B981", "border": "#059669"} # Emerald
+                            size = 20
+                        elif ntype == "EndEvent":
+                            color = {"background": "#EF4444", "border": "#B91C1C"} # Red
+                            size = 20
+                        else:
+                            color = {"background": "#6366F1", "border": "#4F46E5"} # Indigo (Tasks)
+                            size = 15
+                        vis_nodes.append({
+                            "id": n["id"],
+                            "label": n.get("name") or ntype,
+                            "title": n.get("description", ""),
+                            "color": color,
+                            "shape": "box",
+                            "margin": 10,
+                            "font": {"color": "#1e293b", "face": "Inter, sans-serif", "size": 16}
+                        })
+                        
+                    vis_edges = []
+                    for e in edges:
+                        vis_edges.append({
+                            "from": e["fromNodeId"],
+                            "to": e["toNodeId"],
+                            "label": e.get("condition", ""),
+                            "arrows": {"to": {"enabled": True, "scaleFactor": 1.2}},
+                            "color": {"color": "#94a3b8", "highlight": "#3b82f6", "hover": "#3b82f6"},
+                            "font": {"size": 12, "color": "#475569", "face": "Inter, sans-serif", "align": "horizontal", "background": "#ffffff"},
+                            "smooth": {"type": "cubicBezier", "forceDirection": "vertical", "roundness": 0.4}
+                        })
+                    
+                    nodes_json = json.dumps(vis_nodes)
+                    edges_json = json.dumps(vis_edges)
+                except Exception as e:
+                    self.log(f"[LỖI] Exception when calling graph API: {e}")
+                    return
+            else:
+                # Mode E2E: Lấy Micro CFG và Critical Snippets từ Tầng 2
+                url = f"https://localhost:55060/api/businesses/{business_id}/hybrid-context"
+                try:
+                    resp = requests.get(url, verify=False, timeout=60)
+                    if resp.status_code != 200:
+                        self.log(f"[ERROR] Failed to fetch Hybrid Context. Status: {resp.status_code}")
+                        self.log(f"Details: {resp.text}")
+                        self.set_status("Error lấy Hybrid Context")
+                        return
+                        
+                    data = resp.json()
+                    cfg_nodes = data.get("cfgNodes", [])
+                    cfg_edges = data.get("cfgEdges", [])
+                    snippets = data.get("criticalSnippetDetails", [])
+                    
+                    if not cfg_nodes:
+                        self.log("[WARNING] No Nodes in Hybrid CFG.")
+                        self.set_status("Graph is empty!")
+                        return
+                        
+                    vis_nodes = []
+                    for n in cfg_nodes:
+                        nkind = n.get("kind", "")
+                        if nkind == "START":
+                            color = {"background": "#10B981", "border": "#059669"}
+                            size = 20
+                        elif nkind == "END" or nkind == "THROW" or nkind == "RETURN":
+                            color = {"background": "#EF4444", "border": "#B91C1C"}
+                            size = 20
+                        elif nkind == "DECISION":
+                            color = {"background": "#F59E0B", "border": "#D97706"} # Amber cho rẻ nhánh
+                            size = 18
+                        else:
+                            color = {"background": "#6366F1", "border": "#4F46E5"} # Indigo
+                            size = 15
+                            
+                        vis_nodes.append({
+                            "id": n["id"],
+                            "label": n.get("label") or nkind,
+                            "title": n.get("code", ""),
+                            "color": color,
+                            "shape": "dot",
+                            "size": size,
+                            "font": {"color": "#1e293b", "face": "Inter, sans-serif", "size": 14}
+                        })
+                        
+                    vis_edges = []
+                    for e in cfg_edges:
+                        vis_edges.append({
+                            "from": e.get("from", ""),
+                            "to": e.get("to", ""),
+                            "label": e.get("label", ""),
+                            "arrows": {"to": {"enabled": True, "scaleFactor": 0.5}},
+                            "color": {"color": "#94a3b8", "highlight": "#64748b"},
+                            "font": {"size": 11, "color": "#64748b", "face": "Inter, sans-serif", "align": "middle"},
+                            "smooth": {"type": "continuous"}
+                        })
+                        
+                    nodes_json = json.dumps(vis_nodes)
+                    edges_json = json.dumps(vis_edges)
+                    snippets_json = json.dumps(snippets)
+                except Exception as e:
+                    self.log(f"[LỖI] Exception when calling hybrid-context API: {e}")
+                    return
+
+            # HTML Template sử dụng Vis.js CDN
+            title_text = "Layer 1 Graph (Pure CFG - Macro)" if mode == "CFG" else "Layer 2 Graph (Hybrid Micro CFG)"
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Graph Viewer</title>
+                <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+                <style type="text/css">
+                    body {{ margin: 0; padding: 0; display: flex; height: 100vh; font-family: sans-serif; }}
+                    #graph-container {{ flex: 1; position: relative; border-right: 2px solid #ccc; background-color: #ffffff; }}
+                    #mynetwork {{ width: 100%; height: 100%; }}
+                    #codeview {{ flex: 1; padding: 20px; overflow-y: auto; background-color: #f8f9fa; display: {'block' if mode == "E2E" else 'none'}; }}
+                    pre {{ background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; font-family: Consolas, monospace; overflow-x: auto; white-space: pre-wrap; }}
+                    .title-box {{ position: absolute; top: 10px; left: 10px; z-index: 1000; background: white; padding: 5px 10px; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.2); font-weight: bold; }}
+                    .empty-state {{ color: #9ca3af; font-style: italic; margin-top: 20px; }}
+                </style>
+            </head>
+            <body>
+                <div id="graph-container">
+                    <div id="mynetwork"></div>
+                    <div class="title-box">{title_text}</div>
+                    <div id="tour-controls" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; gap: 10px; align-items: center;">
+                        <select id="pathSelector" onchange="selectPath()" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; cursor: pointer;"></select>
+                        <button id="btnPrev" onclick="tourPrev()" style="padding: 5px 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f8f9fa;">⬅ Prev Node</button>
+                        <span id="tourStatus" style="font-weight: bold; font-family: sans-serif; color: #334155; min-width: 100px; text-align: center;">Overview</span>
+                        <button id="btnNext" onclick="tourNext()" style="padding: 5px 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f8f9fa;">Next Node ➡</button>
+                    </div>
+                </div>
+                <div id="codeview">
+                    <h3>Critical Snippets Included</h3>
+                    <div id="code-content">
+                        <div class="empty-state">👉 Click on a Node in the graph to view the attached critical snippet (if any).</div>
+                    </div>
+                </div>
+                
+                <script type="text/javascript">
+                    var nodes = new vis.DataSet({nodes_json});
+                    var edges = new vis.DataSet({edges_json});
+                    var snippets = {snippets_json};
+                    
+                    var container = document.getElementById('mynetwork');
+                    var data = {{ nodes: nodes, edges: edges }};
+                    var options = {{
+                        layout: {{
+                            hierarchical: {{
+                                direction: 'UD',          // Up-Down
+                                sortMethod: 'directed',   // Follow edge direction
+                                shakeTowards: 'roots',    // Giữ layout không dẹt
+                                levelSeparation: 150,     // Vertical space between nodes
+                                nodeSpacing: 250,         // Horizontal space
+                                treeSpacing: 250
+                            }}
+                        }},
+                        interaction: {{
+                            hover: true,
+                            tooltipDelay: 200,
+                            zoomView: true,
+                            dragView: true,
+                            hoverConnectedEdges: true,
+                            selectConnectedEdges: true
+                        }},
+                        physics: {{
+                            enabled: false // Tắt physics để các Node không bị chạy lộn xộn
+                        }}
+                    }};
+                    var network = new vis.Network(container, data, options);
+                    
+                    // Tính năng Smart Path Tracing
+                    var allPaths = [];
+                    var currentPathIndex = 0;
+                    var currentStepIndex = -1;
+                    
+                    network.once("afterDrawing", function() {{
+                        var adj = {{}};
+                        var inDegree = {{}};
+                        var allNodeIds = nodes.getIds();
+                        var rawEdges = edges.get();
+                        
+                        allNodeIds.forEach(id => {{
+                            adj[id] = [];
+                            inDegree[id] = 0;
+                        }});
+                        
+                        rawEdges.forEach(e => {{
+                            if (adj[e.from]) {{
+                                adj[e.from].push(e.to);
+                                if (inDegree[e.to] !== undefined) inDegree[e.to]++;
+                            }}
+                        }});
+                        
+                        var startNodes = allNodeIds.filter(id => inDegree[id] === 0);
+                        if (startNodes.length === 0 && allNodeIds.length > 0) startNodes = [allNodeIds[0]];
+                        
+                        function dfs(currentNode, currentPath, visited) {{
+                            if (allPaths.length > 30) return; // Limit paths to avoid UI freeze
+                            
+                            currentPath.push(currentNode);
+                            visited.add(currentNode);
+                            
+                            var neighbors = adj[currentNode] || [];
+                            if (neighbors.length === 0) {{
+                                allPaths.push([...currentPath]);
+                            }} else {{
+                                for (var i = 0; i < neighbors.length; i++) {{
+                                    var nextNode = neighbors[i];
+                                    if (!visited.has(nextNode)) {{
+                                        dfs(nextNode, [...currentPath], new Set(visited));
+                                    }} else {{
+                                        var cyclePath = [...currentPath, nextNode];
+                                        allPaths.push(cyclePath);
+                                    }}
+                                }}
+                            }}
+                        }}
+                        
+                        startNodes.forEach(startNode => {{
+                            dfs(startNode, [], new Set());
+                        }});
+                        
+                        if (allPaths.length === 0) allPaths.push(allNodeIds); // Fallback
+                        
+                        var selector = document.getElementById("pathSelector");
+                        selector.innerHTML = "";
+                        allPaths.forEach((p, idx) => {{
+                            var opt = document.createElement("option");
+                            opt.value = idx;
+                            opt.innerHTML = "Luồng " + (idx + 1) + " (" + p.length + " nodes)";
+                            selector.appendChild(opt);
+                        }});
+                    }});
+                    
+                    window.selectPath = function() {{
+                        var selector = document.getElementById("pathSelector");
+                        currentPathIndex = parseInt(selector.value);
+                        currentStepIndex = -1;
+                        updateTourView();
+                    }};
+                    
+                    window.updateTourView = function() {{
+                        if (allPaths.length === 0) return;
+                        var currentPathNodes = allPaths[currentPathIndex];
+                        
+                        if (currentStepIndex === -1) {{
+                            document.getElementById("tourStatus").innerText = "Overview";
+                            network.fit({{animation: {{duration: 800}}}});
+                            network.unselectAll();
+                        }} else {{
+                            document.getElementById("tourStatus").innerText = "Node " + (currentStepIndex + 1) + " / " + currentPathNodes.length;
+                            var activeNodeId = currentPathNodes[currentStepIndex];
+                            
+                            network.focus(activeNodeId, {{
+                                scale: 1.2,
+                                animation: {{ duration: 500 }}
+                            }});
+                            network.selectNodes([activeNodeId]);
+                        }}
+                    }};
+                    
+                    window.tourNext = function() {{
+                        if (allPaths.length === 0) return;
+                        var currentPathNodes = allPaths[currentPathIndex];
+                        if (currentStepIndex < currentPathNodes.length - 1) {{
+                            currentStepIndex++;
+                            updateTourView();
+                        }}
+                    }};
+                    
+                    window.tourPrev = function() {{
+                        if (currentStepIndex > -1) {{
+                            currentStepIndex--;
+                            updateTourView();
+                        }}
+                    }};
+                    // Xử lý sự kiện click trên Node
+                    network.on("click", function (params) {{
+                        if (params.nodes.length > 0) {{
+                            var nodeId = params.nodes[0];
+                            var codeContent = document.getElementById('code-content');
+                            
+                            // Tìm snippet tương ứng với Node Id
+                            var matchingSnippets = snippets.filter(s => s.nodeId === nodeId || s.NodeId === nodeId);
+                            
+                            if (matchingSnippets.length > 0) {{
+                                var html = '';
+                                matchingSnippets.forEach(function(s) {{
+                                    var kind = s.kind || s.Kind || 'Code';
+                                    var reason = s.reason || s.Reason || '';
+                                    var code = s.code || s.Code || '';
+                                    
+                                    code = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                                    
+                                    html += `<div style="margin-bottom: 20px;">
+                                                <div style="background: #e2e8f0; padding: 5px 10px; border-radius: 5px 5px 0 0; font-weight: bold; color: #334155; font-size: 13px;">
+                                                    Type: ${{kind}} | Reason: ${{reason}}
+                                                </div>
+                                                <pre style="margin-top: 0; border-radius: 0 0 5px 5px;"><code>${{code}}</code></pre>
+                                             </div>`;
+                                }});
+                                codeContent.innerHTML = html;
+                            }} else {{
+                                codeContent.innerHTML = '<div class="empty-state">No critical snippet attached to this Node.</div>';
+                            }}
+                        }}
+                    }});
+                </script>
+            </body>
+            </html>
+            """
+            
+            import time
+            file_name = f"graph_viewer_{business_id}_{int(time.time())}.html"
+            with open(file_name, "w", encoding="utf-8") as f:
+                f.write(html_content)
+                
+            webbrowser.open(f"file://{os.path.abspath(file_name)}")
+            self.set_status("Graph opened in browser!")
+            self.log(f"Created and opened graph file: {file_name}")
+            
+        except Exception as e:
+            self.log(f"[ERROR] Could not generate graph: {str(e)}")
+            self.set_status("Error tạo đồ thị!")
 
     # --- BENCHMARK WORKFLOW LOGIC ---
 
@@ -357,7 +831,7 @@ class BenchmarkApp(ctk.CTk):
 
     def run_pipeline(self, api_url, business_id, num_questions, difficulty, mode):
         self.log(f"\n--- Bắt đầu Pipeline {mode} ---")
-        self.set_status(f"Trạng thái: Khởi động Pipeline {mode}...")
+        self.set_status(f"Status: Khởi động Pipeline {mode}...")
         self.set_progress(0.1)
         
         if mode == "Traditional":
@@ -367,7 +841,7 @@ class BenchmarkApp(ctk.CTk):
         else:
             generate_endpoint = f"{api_url}/api/QuestionGenerator/generate-graph"
         
-        self.set_status(f"Trạng thái: Đang sinh {num_questions} câu hỏi ({mode})...")
+        self.set_status(f"Status: Đang sinh {num_questions} câu hỏi ({mode})...")
         self.log(f"1. Calling QuestionGenerator ({mode})...")
         start_time = time.time()
         gen_payload = {
@@ -388,7 +862,7 @@ class BenchmarkApp(ctk.CTk):
         self.log(f"   -> Đã sinh thành công {len(questions)} câu hỏi trong {gen_time}ms.")
         self.set_progress(0.3)
 
-        self.set_status(f"Trạng thái: Đang chấm điểm Coverage ({mode})...")
+        self.set_status(f"Status: Đang chấm điểm Coverage ({mode})...")
         self.log(f"2. Calling Coverage Assessment ({mode})...")
         cov_res = self.post_with_retry(
             f"{api_url}/api/WorkflowAssessment/assess-from-response", gen_res,
@@ -397,7 +871,7 @@ class BenchmarkApp(ctk.CTk):
         self.log(f"   -> Hoàn thành Coverage Assessment.")
         self.set_progress(0.5)
 
-        self.set_status(f"Trạng thái: Đang chấm điểm Accuracy ({mode})...")
+        self.set_status(f"Status: Đang chấm điểm Accuracy ({mode})...")
         self.log(f"3. Calling Accuracy Assessment ({mode})...")
         acc_res = self.post_with_retry(
             f"{api_url}/api/WorkflowAssessment/assess-accuracy", gen_res,
@@ -406,7 +880,7 @@ class BenchmarkApp(ctk.CTk):
         self.log(f"   -> Hoàn thành Accuracy Assessment.")
         self.set_progress(0.7)
 
-        self.set_status(f"Trạng thái: Đang đánh giá Độ khó ({mode})...")
+        self.set_status(f"Status: Đang đánh giá Độ khó ({mode})...")
         self.log(f"4. Calling Difficulty Assessment ({mode})...")
         diff_res = self.post_with_retry(
             f"{api_url}/api/WorkflowAssessment/assess-difficulty", gen_res,
@@ -416,7 +890,7 @@ class BenchmarkApp(ctk.CTk):
         self.set_progress(0.9)
         
         self.log(f"Hoàn tất Pipeline {mode}.")
-        self.set_status(f"Trạng thái: Đã hoàn tất Pipeline {mode}.")
+        self.set_status(f"Status: Đã hoàn tất Pipeline {mode}.")
         return gen_time, gen_res, cov_res, acc_res, diff_res
 
     def assemble_results(self, gen_time, gen_res, cov_res, acc_res, diff_res):
@@ -474,7 +948,7 @@ class BenchmarkApp(ctk.CTk):
             self.log(f"[CHÚ Ý] Sẽ XÓA TOÀN BỘ dữ liệu cũ trước khi ghi.")
             
         self.set_progress(0.0)
-        self.set_status("Trạng thái: Chuẩn bị chạy...")
+        self.set_status("Status: Chuẩn bị chạy...")
         
         results = {
             "runId": run_id,
@@ -566,17 +1040,17 @@ class BenchmarkApp(ctk.CTk):
                 
         except Exception as e:
             self.log(f"\n[LỖI API] Đã có lỗi xảy ra: {str(e)}")
-            self.set_status("Trạng thái: LỖI")
+            self.set_status("Status: LỖI")
             self.btn_run.configure(state="normal")
             return
 
         self.set_progress(1.0)
-        self.set_status("Trạng thái: Đang ghi dữ liệu vào Excel...")
+        self.set_status("Status: Đang ghi dữ liệu vào Excel...")
         self.log("\nTiến hành ghi dữ liệu vào Excel...")
         self.save_to_excel(results, method, clear_old_data)
         
         self.btn_run.configure(state="normal")
-        self.set_status("Trạng thái: HOÀN TẤT!")
+        self.set_status("Status: HOÀN TẤT!")
         self.log("\n✅ BENCHMARK HOÀN TẤT THÀNH CÔNG!")
         
     def save_to_excel(self, results, method, clear_old_data=False):
@@ -614,7 +1088,7 @@ class BenchmarkApp(ctk.CTk):
                 
             ws_report.append(['BÁO CÁO KẾT QUẢ THỬ NGHIỆM SO SÁNH 3 PHƯƠNG PHÁP: TRADITIONAL VS CFG VS E2E'])
             ws_report.append([])
-            ws_report.append(['Hạng mục Đánh giá (Metrics)', 'Đơn vị', 'Code Thô (Traditional)', 'Đồ thị (CFG)', 'E2E (3 Tầng)', 'E2E vs Trad (Delta)', 'E2E vs CFG (Delta)', 'Ghi chú & Nhận xét'])
+            ws_report.append(['Hạng mục Đánh giá (Metrics)', 'Đơn vị', 'Code Thô (Traditional)', 'Đồ thị (CFG)', 'E2E (Hybrid 3-Tier)', 'E2E vs Trad (Delta)', 'E2E vs CFG (Delta)', 'Ghi chú & Nhận xét'])
             ws_report.append(['Độ bao phủ trung bình (Average Total Coverage)', '%', '', '', '', '=E4-C4', '=E4-D4', 'Chỉ số từ API assess-from-response'])
             ws_report.append(['Độ bao phủ theo Workflow (Coverage Workflow/Global)', '%', '', '', '', '=E5-C5', '=E5-D5', 'Tỷ lệ nút workflow được chạm đến'])
             ws_report.append(['Độ chính xác trung bình (Average Accuracy Rate)', '%', '', '', '', '=E6-C6', '=E6-D6', 'Chỉ số từ API assess-accuracy'])
@@ -770,12 +1244,12 @@ class BenchmarkApp(ctk.CTk):
     def open_logs_viewer(self):
         log_dir = "benchmark_logs"
         if not os.path.exists(log_dir):
-            messagebox.showinfo("Thông báo", "Chưa có dữ liệu log nào được ghi nhận.")
+            messagebox.showinfo("Information", "Chưa có dữ liệu log nào được ghi nhận.")
             return
             
         json_files = [f for f in os.listdir(log_dir) if f.endswith(".json")]
         if not json_files:
-            messagebox.showinfo("Thông báo", "Chưa có file log JSON nào trong thư mục.")
+            messagebox.showinfo("Information", "Chưa có file log JSON nào trong thư mục.")
             return
             
         json_files.sort(reverse=True) # Newest first
@@ -913,7 +1387,7 @@ class BenchmarkApp(ctk.CTk):
                         
                 # Add buttons for E2E
                 if current_data.get("e2e"):
-                    lbl_e = ctk.CTkLabel(left_panel, text="E2E (3 Tầng)", font=ctk.CTkFont(weight="bold"), text_color="#0066CC")
+                    lbl_e = ctk.CTkLabel(left_panel, text="E2E (Hybrid 3-Tier)", font=ctk.CTkFont(weight="bold"), text_color="#0066CC")
                     lbl_e.pack(pady=(15, 5), anchor="w", padx=10)
                     
                     e_gen = current_data["e2e"]["generate"].get("generatedQuestionDtos", current_data["e2e"]["generate"].get("GeneratedQuestionDtos", []))
@@ -925,7 +1399,7 @@ class BenchmarkApp(ctk.CTk):
                         
             except Exception as e:
                 txt_details.configure(state="normal")
-                txt_details.insert("end", f"Lỗi đọc file: {str(e)}")
+                txt_details.insert("end", f"Error đọc file: {str(e)}")
                 txt_details.configure(state="disabled")
                 
         btn_load = ctk.CTkButton(top_frame, text="Mở File & Phân Tích", command=load_selected_log, fg_color="#0066CC")

@@ -146,4 +146,5 @@ benchmark_tools\Tang_3_QA\run_tang_3.bat
 cd benchmark_tools\Tang_3_QA
 python run_gui_benchmark.py
 ```
+Đây là một Desktop App hoàn chỉnh (Source Code Question Generator). Bạn có thể chọn Repository trực tiếp từ Database hoặc trỏ tới thư mục mã nguồn nội bộ. Ứng dụng cung cấp tính năng **Graph Viewer** tiên tiến với **Smart Path Tracing** (chế độ Step-by-step mô phỏng Debugger) để theo dõi luồng đồ thị một cách trực quan nhất.
 

@@ -53,17 +53,6 @@ namespace Repo_Into_Graph_API.Controllers
             return Ok(business);
         }
 
-        [HttpGet("{id:guid}/codeflow")]
-        public async Task<ActionResult<CodeFlowDto>> GetCodeFlow(Guid id)
-        {
-            var codeFlow = await _codeQueryable.GetCodeFlowAsync(id);
-            if (codeFlow == null)
-            {
-                return NotFound(new { message = $"Không tìm thấy Code Flow của Business với ID: {id}" });
-            }
-            return Ok(codeFlow);
-        }
-
         [HttpGet("{businessId:guid}/graph")]
         public async Task<ActionResult<BusinessWorkflowGraphDto>> GetGraph(Guid businessId)
         {

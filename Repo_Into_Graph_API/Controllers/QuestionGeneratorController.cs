@@ -61,19 +61,6 @@ namespace Repo_Into_Graph_API.Controllers
             return Ok(result);
         }
 
-        [HttpPost("highlight-graph")]
-        public async Task<IActionResult> HighlightGraph([FromBody] AssessmentRequestDto request)
-        {
-            if (request == null)
-                throw new BadRequestException("Request body không được để trống.");
-
-            if (string.IsNullOrWhiteSpace(request.Question))
-                throw new BadRequestException("Trường 'question' không được để trống.");
-
-            var result = await _workflowAssessmentService.Coverage.AssessAsync(request);
-            return Ok(result);
-        }
-
         [HttpPost("generate-e2e")]
         public async Task<IActionResult> GenerateE2EQuestions([FromBody] GenerateQuestionsRequest request)
         {

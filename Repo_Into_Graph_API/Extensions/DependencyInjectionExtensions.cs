@@ -19,6 +19,7 @@ using Repo_Into_Graph_Application.Services.WorkflowAssessment.CoverageEvaluate;
 using Repo_Into_Graph_Application.Services.WorkflowAssessment.DifficultyEvaluate;
 using Repo_Into_Graph_DataAccess.Repository.Impl;
 using Repo_Into_Graph_DataAccess.Repository.Interface;
+using Repo_Into_Graph_Application.Services.StudentAnswerEvaluation;
 
 namespace Repo_Into_Graph_API.Extensions
 {
@@ -75,6 +76,9 @@ namespace Repo_Into_Graph_API.Extensions
             services.AddScoped<IContextAggregatorService, ContextAggregatorService>();
             services.AddScoped<IPromptBuilderService, PromptBuilderService>();
             services.AddScoped<IE2EOrchestratorService, E2EOrchestratorService>();
+
+            // Student Answer Evaluation
+            services.AddScoped<IStudentEvaluationService, StudentEvaluationService>();
 
             // AutoMapper
             services.AddAutoMapper(cfg => cfg.AddMaps(AppDomain.CurrentDomain.GetAssemblies()));

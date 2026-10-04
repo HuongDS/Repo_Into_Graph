@@ -29,6 +29,7 @@ namespace Repo_Into_Graph_Application.Services.StudentAnswerEvaluation
             var context = String.Empty;
             switch (request.ContextModel.ToLower())
             {
+                case "raw":
                 case "raw-code":
                     var codeFlow = await _codeQueryable.GetCodeFlowAsync(request.BusinessId);
 
@@ -68,6 +69,37 @@ namespace Repo_Into_Graph_Application.Services.StudentAnswerEvaluation
                         }
                         context = sb.ToString();
                     }
+                    break;
+                case "hybrid":
+                    var sbHybrid = new StringBuilder();
+                    var hybridGraph = await _workflowAssessmentService.GetBusinessWorkflowGraphAsync(request.BusinessId);
+                    if (hybridGraph != null && hybridGraph.Nodes.Any())
+                    {
+                        sbHybrid.AppendLine("Dưới đây là đồ thị luồng xử lý của nghiệp vụ " + hybridGraph.BusinessName + ":");
+                        sbHybrid.AppendLine("Các nút - nodes trong đồ thị:");
+                        foreach (var node in hybridGraph.Nodes)
+                        {
+                            sbHybrid.AppendLine($"- NodeId: {node.Id}| Tên: {node.Name}| Mô tả: {node.Description} | Phân loại: {node.Type}");
+                        }
+                        sbHybrid.AppendLine("Các cạnh - edges trong đồ thị:");
+                        foreach (var edge in hybridGraph.Edges)
+                        {
+                            sbHybrid.AppendLine($"- Từ {edge.FromNodeId} -> Đến {edge.ToNodeId} | Điều kiện: {(string.IsNullOrEmpty(edge.Condition) ? "Không có" : edge.Condition)}");
+                        }
+                    }
+                    var hybridCode = await _codeQueryable.GetCodeFlowAsync(request.BusinessId);
+                    if (hybridCode != null && hybridCode.Methods != null && hybridCode.Methods.Any())
+                    {
+                        sbHybrid.AppendLine("\nDưới đây là mã nguồn của nghiệp vụ:");
+                        foreach (var method in hybridCode.Methods)
+                        {
+                            sbHybrid.AppendLine($"(Lớp: {method.ClassName}) - Hàm: {method.MethodName}");
+                            sbHybrid.AppendLine(method.SourceCode);
+                            sbHybrid.AppendLine();
+                        }
+                    }
+                    context = sbHybrid.ToString();
+                    if (string.IsNullOrEmpty(context)) context = "Không tìm thấy dữ liệu (graph hoặc code) cho nghiệp vụ này.";
                     break;
                 default:
                     context = "Chế độ ContextMode không hợp lệ. Vui lòng chọn raw, graph, hoặc hybrid.";
